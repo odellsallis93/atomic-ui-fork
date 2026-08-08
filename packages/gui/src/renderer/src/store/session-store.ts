@@ -1,14 +1,19 @@
 import { create } from "zustand";
 import type {
+	AuthCatalog,
 	EngineStatus,
 	ExtensionUiRequest,
 	GuiRpcEvent,
+	InputFormRequest,
 	ModelInfo,
 	SessionListItem,
 	SessionTreeNodeInfo,
 	SlashCommandInfo,
 	ThemeSummary,
+	TrustOption,
+	TrustStatus,
 } from "../../../shared/ipc.ts";
+import { parseOverlayOptions, type GuiOverlayOptions } from "../../../shared/overlay-options.ts";
 
 export type EntryKind = "user" | "assistant" | "tool" | "bash" | "system" | "compaction" | "branchSummary" | "raw";
 
@@ -44,7 +49,7 @@ export interface WidgetItem {
 	placement: "aboveEditor" | "belowEditor";
 }
 
-export type ModalKind = "none" | "sessions" | "models" | "dialog" | "tree" | "settings";
+export type ModalKind = "none" | "sessions" | "models" | "dialog" | "tree" | "settings" | "auth" | "trust" | "inputForm";
 
 export interface CustomFrame {
 	componentId: string;
@@ -53,6 +58,14 @@ export interface CustomFrame {
 	widgetPlacement?: "aboveEditor" | "belowEditor";
 	lines: string[];
 	requestId?: number;
+	appliedRequestId: number;
+	/** Bumped when the child asks for a fresh `engine_custom_render`. */
+	renderGeneration: number;
+	overlayOptions?: GuiOverlayOptions;
+	handlesCtrlC: boolean;
+	hidden: boolean;
+	focused: boolean;
+	mouseScrollTracking: boolean;
 }
 
 export interface SessionState {
@@ -80,6 +93,11 @@ export interface SessionState {
 	themes: ThemeSummary[];
 	themeName: string;
 	frames: CustomFrame[];
+	authCatalog: AuthCatalog | null;
+	authBusyProvider?: string;
+	trustStatus?: TrustStatus;
+	trustOptions: TrustOption[];
+	inputForm?: InputFormRequest;
 	modal: ModalKind;
 	activeDialog?: ExtensionUiRequest;
 	setStatus: (status: EngineStatus) => void;
@@ -104,6 +122,10 @@ export interface SessionState {
 	setTree: (nodes: SessionTreeNodeInfo[], leafId: string | null) => void;
 	setThemes: (themes: ThemeSummary[]) => void;
 	setThemeName: (name: string) => void;
+	setAuthCatalog: (catalog: AuthCatalog | null) => void;
+	setAuthBusyProvider: (provider: string | undefined) => void;
+	setTrust: (status: TrustStatus, options: TrustOption[]) => void;
+	clearInputForm: () => void;
 	setModal: (modal: ModalKind) => void;
 	setUsageLabel: (label: string) => void;
 }
@@ -187,6 +209,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	themes: [],
 	themeName: "dark",
 	frames: [],
+	authCatalog: null,
+	trustOptions: [],
 	modal: "none",
 	setStatus: (status) => set({ status, errorBanner: status.error }),
 	setComposerText: (text) => set({ composerText: text, historyIndex: -1 }),
@@ -231,6 +255,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	setTree: (nodes, leafId) => set({ treeNodes: nodes, treeLeafId: leafId }),
 	setThemes: (themes) => set({ themes }),
 	setThemeName: (name) => set({ themeName: name }),
+	setAuthCatalog: (catalog) => set({ authCatalog: catalog }),
+	setAuthBusyProvider: (provider) => set({ authBusyProvider: provider }),
+	setTrust: (status, options) => set({ trustStatus: status, trustOptions: options }),
+	clearInputForm: () =>
+		set({ inputForm: undefined, modal: get().modal === "inputForm" ? "none" : get().modal }),
 	setModal: (modal) => set({ modal }),
 	setUsageLabel: (label) => set({ usageLabel: label }),
 	dismissToast: (id) => set((state) => ({ toasts: state.toasts.filter((toast) => toast.id !== id) })),
@@ -238,6 +267,32 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		set((state) => ({ frames: state.frames.filter((frame) => frame.componentId !== componentId) })),
 	clearDialog: () => set({ activeDialog: undefined, modal: get().modal === "dialog" ? "none" : get().modal }),
 	ingestExtensionUi: (request) => {
+		if (request.method === "oauth_manual_code_cancel") {
+			set({ activeDialog: undefined, modal: get().modal === "dialog" ? "none" : get().modal });
+			return;
+		}
+		if (request.method === "oauth_progress" || request.method === "oauth_info") {
+			const toast: ToastItem = {
+				id: request.id,
+				message: typeof request.message === "string" ? request.message : "OAuth update",
+				notifyType: "info",
+			};
+			set((state) => ({ toasts: [...state.toasts.slice(-4), toast] }));
+			if (request.method === "oauth_info") {
+				set({ activeDialog: request, modal: "dialog" });
+			}
+			return;
+		}
+		if (
+			request.method === "oauth_auth" ||
+			request.method === "oauth_device_code" ||
+			request.method === "oauth_prompt" ||
+			request.method === "oauth_select" ||
+			request.method === "oauth_manual_code"
+		) {
+			set({ activeDialog: request, modal: "dialog" });
+			return;
+		}
 		if (request.method === "notify") {
 			const toast: ToastItem = {
 				id: request.id,
@@ -296,6 +351,44 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 	ingestEvent: (event) => {
 		const type = event.type;
+		if (type === "engine_input_form_open") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			const title = typeof event.title === "string" ? event.title : "Input";
+			const fields = Array.isArray(event.fields)
+				? event.fields
+						.filter((field): field is Record<string, unknown> => typeof field === "object" && field !== null)
+						.map((field) => ({
+							name: String(field.name ?? "value"),
+							type: String(field.type ?? "string"),
+							initialValue: typeof field.initialValue === "string" ? field.initialValue : "",
+							description: typeof field.description === "string" ? field.description : undefined,
+							required: typeof field.required === "boolean" ? field.required : undefined,
+							choices: Array.isArray(field.choices) ? field.choices.map(String) : undefined,
+							placeholder: typeof field.placeholder === "string" ? field.placeholder : undefined,
+						}))
+				: [];
+			if (!componentId) return;
+			set({
+				inputForm: {
+					componentId,
+					title,
+					fields,
+					heading: typeof event.heading === "string" ? event.heading : undefined,
+					submitLabel: typeof event.submitLabel === "string" ? event.submitLabel : undefined,
+				},
+				modal: "inputForm",
+			});
+			return;
+		}
+		if (type === "engine_input_form_close") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			if (!componentId) return;
+			const current = get().inputForm;
+			if (current?.componentId === componentId) {
+				set({ inputForm: undefined, modal: get().modal === "inputForm" ? "none" : get().modal });
+			}
+			return;
+		}
 		if (type === "engine_custom_open") {
 			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
 			if (!componentId) return;
@@ -305,38 +398,125 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				widgetKey: typeof event.widgetKey === "string" ? event.widgetKey : undefined,
 				widgetPlacement: event.widgetPlacement === "aboveEditor" ? "aboveEditor" : "belowEditor",
 				lines: [],
+				appliedRequestId: 0,
+				renderGeneration: 1,
+				overlayOptions: parseOverlayOptions(event.overlayOptions),
+				handlesCtrlC: event.handlesCtrlC === true,
+				hidden: false,
+				focused: event.overlay === true,
+				mouseScrollTracking: false,
 			};
-			set((state) => ({
-				frames: [...state.frames.filter((item) => item.componentId !== componentId), frame],
-			}));
+			set((state) => {
+				const frames = [...state.frames.filter((item) => item.componentId !== componentId), frame];
+				let widgets = state.widgets;
+				if (frame.widgetKey) {
+					widgets = [
+						...state.widgets.filter((widget) => widget.key !== frame.widgetKey),
+						{ key: frame.widgetKey, lines: [], placement: frame.widgetPlacement ?? "belowEditor" },
+					];
+				}
+				return { frames, widgets };
+			});
 			return;
 		}
 		if (type === "engine_custom_frame") {
 			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
 			const lines = Array.isArray(event.lines) ? event.lines.map(String) : [];
 			if (!componentId) return;
+			const requestId = typeof event.requestId === "number" ? event.requestId : undefined;
 			set((state) => {
 				const existing = state.frames.find((frame) => frame.componentId === componentId);
+				if (existing && requestId !== undefined && requestId < existing.appliedRequestId) {
+					return state;
+				}
 				const next: CustomFrame = {
 					componentId,
 					overlay: existing?.overlay ?? true,
 					widgetKey: existing?.widgetKey,
 					widgetPlacement: existing?.widgetPlacement,
 					lines,
-					requestId: typeof event.requestId === "number" ? event.requestId : undefined,
+					requestId,
+					appliedRequestId: requestId ?? existing?.appliedRequestId ?? 0,
+					renderGeneration: existing?.renderGeneration ?? 0,
+					overlayOptions: existing?.overlayOptions,
+					handlesCtrlC: existing?.handlesCtrlC ?? false,
+					hidden: existing?.hidden ?? false,
+					focused: existing?.focused ?? true,
+					mouseScrollTracking: existing?.mouseScrollTracking ?? false,
 				};
-				return {
-					frames: [...state.frames.filter((frame) => frame.componentId !== componentId), next],
-				};
+				const frames = [...state.frames.filter((frame) => frame.componentId !== componentId), next];
+				let widgets = state.widgets;
+				if (next.widgetKey) {
+					widgets = [
+						...state.widgets.filter((widget) => widget.key !== next.widgetKey),
+						{
+							key: next.widgetKey,
+							lines,
+							placement: next.widgetPlacement ?? "belowEditor",
+						},
+					];
+				}
+				return { frames, widgets };
 			});
+			return;
+		}
+		if (type === "engine_custom_invalidate") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			if (!componentId) return;
+			set((state) => ({
+				frames: state.frames.map((frame) =>
+					frame.componentId === componentId
+						? { ...frame, renderGeneration: frame.renderGeneration + 1 }
+						: frame,
+				),
+			}));
+			return;
+		}
+		if (type === "engine_custom_control") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			const action = event.action;
+			if (!componentId || typeof action !== "string") return;
+			set((state) => ({
+				frames: state.frames.map((frame) => {
+					if (frame.componentId !== componentId) {
+						if (action === "focus") return { ...frame, focused: false };
+						return frame;
+					}
+					if (action === "hide") return { ...frame, hidden: true, focused: false };
+					if (action === "show") return { ...frame, hidden: false };
+					if (action === "focus") return { ...frame, hidden: false, focused: true };
+					if (action === "unfocus") return { ...frame, focused: false };
+					return frame;
+				}),
+			}));
+			return;
+		}
+		if (type === "engine_custom_terminal") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			const control = event.control;
+			if (!componentId || typeof control !== "object" || control === null) return;
+			const kind = (control as { kind?: unknown }).kind;
+			const enabled = (control as { enabled?: unknown }).enabled === true;
+			if (kind !== "mouse-scroll-tracking") return;
+			set((state) => ({
+				frames: state.frames.map((frame) =>
+					frame.componentId === componentId ? { ...frame, mouseScrollTracking: enabled } : frame,
+				),
+			}));
 			return;
 		}
 		if (type === "engine_custom_close" || type === "engine_custom_done") {
 			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
 			if (!componentId) return;
-			set((state) => ({
-				frames: state.frames.filter((frame) => frame.componentId !== componentId),
-			}));
+			set((state) => {
+				const closing = state.frames.find((frame) => frame.componentId === componentId);
+				return {
+					frames: state.frames.filter((frame) => frame.componentId !== componentId),
+					widgets: closing?.widgetKey
+						? state.widgets.filter((widget) => widget.key !== closing.widgetKey)
+						: state.widgets,
+				};
+			});
 			return;
 		}
 		if (type === "agent_start" || type === "turn_start") {

@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useRef } from "react";
 import { ansiLinesToHtml } from "../helpers/ansi";
+import { nextFrameRenderRequestId } from "../helpers/frame-render-ids";
+import { encodeTerminalKey } from "../helpers/key-encode";
+import { encodeWheelDelta } from "../helpers/mouse-scroll";
+import { defaultRenderGrid, overlayOptionsToStyle } from "../helpers/overlay-geometry";
 import type { CustomFrame } from "../store/session-store";
 
 export function FrameOverlay(props: {
 	frames: CustomFrame[];
 	onDismiss: (componentId: string) => void;
 	onInput: (componentId: string, data: string) => void;
+	onRender: (componentId: string, requestId: number, width: number, rows: number) => void;
 }) {
-	const overlays = props.frames.filter((frame) => frame.overlay || !frame.widgetKey);
+	const overlays = props.frames.filter((frame) => !frame.hidden && (frame.overlay || !frame.widgetKey));
 	if (overlays.length === 0) return null;
 
 	return (
@@ -18,53 +23,91 @@ export function FrameOverlay(props: {
 					frame={frame}
 					onDismiss={() => props.onDismiss(frame.componentId)}
 					onInput={(data) => props.onInput(frame.componentId, data)}
+					onRender={(requestId, width, rows) => props.onRender(frame.componentId, requestId, width, rows)}
 				/>
 			))}
 		</>
 	);
 }
 
-function FrameSurface(props: { frame: CustomFrame; onDismiss: () => void; onInput: (data: string) => void }) {
+function FrameSurface(props: {
+	frame: CustomFrame;
+	onDismiss: () => void;
+	onInput: (data: string) => void;
+	onRender: (requestId: number, width: number, rows: number) => void;
+}) {
 	const html = useMemo(() => ansiLinesToHtml(props.frame.lines), [props.frame.lines]);
-	const closeRef = useRef<HTMLButtonElement>(null);
-	const { onDismiss, onInput } = props;
+	const surfaceRef = useRef<HTMLDivElement>(null);
+	const bodyRef = useRef<HTMLPreElement>(null);
+	const { onDismiss, onInput, onRender, frame } = props;
+	const onInputRef = useRef(onInput);
+	const onRenderRef = useRef(onRender);
+	onInputRef.current = onInput;
+	onRenderRef.current = onRender;
 
 	useEffect(() => {
-		closeRef.current?.focus();
+		if (!frame.focused) return;
 		const onKeyDown = (event: KeyboardEvent): void => {
-			if (event.key === "Escape") {
-				event.preventDefault();
-				onDismiss();
-				return;
-			}
-			if (event.key === "Enter") {
-				event.preventDefault();
-				onInput("\r");
-				return;
-			}
-			if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-				event.preventDefault();
-				onInput(event.key);
-			}
+			const encoded = encodeTerminalKey(event);
+			if (encoded === undefined) return;
+			event.preventDefault();
+			event.stopPropagation();
+			onInputRef.current(encoded);
+			const el = bodyRef.current ?? surfaceRef.current;
+			const rect = el?.getBoundingClientRect();
+			const grid = defaultRenderGrid({
+				widthPx: rect?.width && rect.width > 0 ? rect.width : window.innerWidth * 0.8,
+				heightPx: rect?.height && rect.height > 0 ? rect.height : window.innerHeight * 0.6,
+			});
+			onRenderRef.current(nextFrameRenderRequestId(frame.componentId), grid.width, grid.rows);
 		};
 		window.addEventListener("keydown", onKeyDown, true);
 		return () => window.removeEventListener("keydown", onKeyDown, true);
-	}, [onDismiss, onInput]);
+	}, [frame.componentId, frame.focused]);
+
+	useEffect(() => {
+		if (!frame.mouseScrollTracking || !frame.focused) return;
+		const onWheel = (event: WheelEvent): void => {
+			const encoded = encodeWheelDelta(event.deltaY);
+			if (!encoded) return;
+			event.preventDefault();
+			onInputRef.current(encoded);
+			const el = bodyRef.current ?? surfaceRef.current;
+			const rect = el?.getBoundingClientRect();
+			const grid = defaultRenderGrid({
+				widthPx: rect?.width && rect.width > 0 ? rect.width : window.innerWidth * 0.8,
+				heightPx: rect?.height && rect.height > 0 ? rect.height : window.innerHeight * 0.6,
+			});
+			onRenderRef.current(nextFrameRenderRequestId(frame.componentId), grid.width, grid.rows);
+		};
+		window.addEventListener("wheel", onWheel, { passive: false, capture: true });
+		return () => window.removeEventListener("wheel", onWheel, true);
+	}, [frame.componentId, frame.focused, frame.mouseScrollTracking]);
+
+	const style = useMemo(
+		() => overlayOptionsToStyle(frame.overlayOptions),
+		[frame.overlayOptions],
+	);
 
 	return (
 		<div
-			className={`frame-overlay${props.frame.overlay ? " frame-overlay-modal" : " frame-overlay-inline"}`}
+			ref={surfaceRef}
+			className={`frame-overlay${frame.overlay ? " frame-overlay-modal" : " frame-overlay-inline"}${
+				frame.overlayOptions ? " frame-overlay-positioned" : ""
+			}`}
+			style={style}
 			role="dialog"
 			aria-label="Extension UI"
+			aria-hidden={!frame.focused}
 		>
 			<div className="frame-chrome">
-				<span>Extension UI · {props.frame.componentId}</span>
-				<button ref={closeRef} type="button" className="btn" onClick={props.onDismiss}>
+				<span>Extension UI · {frame.componentId}</span>
+				<button type="button" className="btn" onClick={onDismiss}>
 					Close
 				</button>
 			</div>
 			{/* biome-ignore lint/security/noDangerouslySetInnerHtml: ANSI→HTML from engine frames; escaped in ansi.ts */}
-			<pre className="frame-body" dangerouslySetInnerHTML={{ __html: html }} />
+			<pre ref={bodyRef} className="frame-body" dangerouslySetInnerHTML={{ __html: html }} />
 		</div>
 	);
 }

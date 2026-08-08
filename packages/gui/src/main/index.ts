@@ -115,6 +115,22 @@ function registerIpc(): void {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getModels();
 	});
+	ipcMain.handle(IPC_CHANNELS.getAuthCatalog, async () => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.getAuthCatalog();
+	});
+	ipcMain.handle(IPC_CHANNELS.loginProvider, async (_event, provider: string, authType?: "api_key" | "oauth") => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.loginProvider(provider, authType);
+	});
+	ipcMain.handle(IPC_CHANNELS.logoutProvider, async (_event, provider: string) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.logoutProvider(provider);
+	});
+	ipcMain.handle(IPC_CHANNELS.cancelLoginProvider, async (_event, provider: string) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.cancelLoginProvider(provider);
+	});
 	ipcMain.handle(IPC_CHANNELS.setModel, async (_event, provider: string, modelId: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.setModel(provider, modelId);
@@ -163,6 +179,18 @@ function registerIpc(): void {
 	ipcMain.handle(IPC_CHANNELS.setTheme, (_event, name: string) => {
 		if (!supervisor) throw new Error("No window");
 		return supervisor.setTheme(name);
+	});
+	ipcMain.handle(IPC_CHANNELS.getTrustStatus, (_event, cwd?: string) => supervisor?.getTrustStatus(cwd));
+	ipcMain.handle(IPC_CHANNELS.getTrustOptions, (_event, cwd?: string) => supervisor?.getTrustOptions(cwd) ?? []);
+	ipcMain.handle(IPC_CHANNELS.applyTrust, (_event, optionId: string, cwd?: string) => {
+		if (!supervisor) throw new Error("No window");
+		return supervisor.applyTrust(optionId, cwd);
+	});
+	ipcMain.handle(IPC_CHANNELS.submitInputForm, (_event, componentId: string, values: Record<string, string>) => {
+		supervisor?.submitInputForm(componentId, values);
+	});
+	ipcMain.handle(IPC_CHANNELS.cancelInputForm, (_event, componentId: string) => {
+		supervisor?.cancelInputForm(componentId);
 	});
 	ipcMain.handle(IPC_CHANNELS.sendEngineCommand, (_event, command: { type: string; [key: string]: unknown }) => {
 		supervisor?.sendEngineCommand(command);

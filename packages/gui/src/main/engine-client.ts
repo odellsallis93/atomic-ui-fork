@@ -3,11 +3,13 @@ import { rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
+	AuthCatalog,
 	EngineStatus,
 	ExtensionUiRequest,
 	ExtensionUiResponse,
 	GuiRpcEvent,
 	ModelInfo,
+	OAuthProviderInfo,
 	PromptRequest,
 	RpcResult,
 	SessionStatsSummary,
@@ -295,8 +297,20 @@ export class EngineClient {
 	}
 
 	async getModels(): Promise<RpcResult<ModelInfo[]>> {
+		const catalog = await this.getAuthCatalog();
+		if (!catalog.ok || !catalog.data) return { ok: false, error: catalog.error };
+		return { ok: true, data: catalog.data.models };
+	}
+
+	async getAuthCatalog(): Promise<RpcResult<AuthCatalog>> {
 		const result = await this.command<{
 			models?: Array<{ provider?: string; id?: string; name?: string; thinking?: boolean }>;
+			oauthProviders?: Array<{
+				id?: string;
+				name?: string;
+				loginLabel?: string;
+				usesCallbackServer?: boolean;
+			}>;
 		}>({ type: "get_available_models" });
 		if (!result.ok) return { ok: false, error: result.error };
 		const models = (result.data?.models ?? [])
@@ -307,7 +321,28 @@ export class EngineClient {
 				name: typeof model.name === "string" ? model.name : undefined,
 				thinking: typeof model.thinking === "boolean" ? model.thinking : undefined,
 			}));
-		return { ok: true, data: models };
+		const oauthProviders: OAuthProviderInfo[] = (result.data?.oauthProviders ?? [])
+			.filter((provider) => typeof provider.id === "string" && typeof provider.name === "string")
+			.map((provider) => ({
+				id: provider.id as string,
+				name: provider.name as string,
+				loginLabel: typeof provider.loginLabel === "string" ? provider.loginLabel : undefined,
+				usesCallbackServer: typeof provider.usesCallbackServer === "boolean" ? provider.usesCallbackServer : undefined,
+			}));
+		const providers = [...new Set([...models.map((model) => model.provider), ...oauthProviders.map((p) => p.id)])].sort();
+		return { ok: true, data: { models, oauthProviders, providers } };
+	}
+
+	async loginProvider(provider: string, authType: "api_key" | "oauth" = "api_key"): Promise<RpcResult> {
+		return await this.command({ type: "login_provider", provider, authType, loginId: provider }, 300_000);
+	}
+
+	async logoutProvider(provider: string): Promise<RpcResult> {
+		return await this.command({ type: "logout_provider", provider });
+	}
+
+	async cancelLoginProvider(provider: string): Promise<RpcResult> {
+		return await this.command({ type: "cancel_login_provider", provider, loginId: provider });
 	}
 
 	async setModel(provider: string, modelId: string): Promise<RpcResult> {
@@ -448,7 +483,8 @@ export class EngineClient {
 			return;
 		}
 		if (isExtensionUiRequest(value)) {
-			this.options.onExtensionUi?.(value as ExtensionUiRequest);
+			// Runtime shape is validated loosely; known methods are narrowed by consumers.
+			this.options.onExtensionUi?.(value as unknown as ExtensionUiRequest);
 			return;
 		}
 		if (isEngineMessage(value) || isRpcEvent(value)) {

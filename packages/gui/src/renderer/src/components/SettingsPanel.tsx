@@ -5,6 +5,7 @@ export function SettingsPanel(props: {
 	themes: ThemeSummary[];
 	currentTheme: string;
 	onClose: () => void;
+	onOpenAuth?: () => void;
 	onSelectTheme: (name: string) => void;
 }) {
 	const [selected, setSelected] = useState(props.currentTheme);
@@ -42,6 +43,11 @@ export function SettingsPanel(props: {
 					builtins and `~/.atomic/agent/themes/` is supported.
 				</p>
 				<div className="modal-actions">
+					{props.onOpenAuth ? (
+						<button type="button" className="btn" onClick={props.onOpenAuth}>
+							Provider auth
+						</button>
+					) : null}
 					<button
 						type="button"
 						className="btn btn-primary"

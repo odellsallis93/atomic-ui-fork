@@ -28,6 +28,11 @@ beforeEach(() => {
 		themes: [],
 		themeName: "dark",
 		frames: [],
+		authCatalog: null,
+		authBusyProvider: undefined,
+		trustStatus: undefined,
+		trustOptions: [],
+		inputForm: undefined,
 		modal: "none",
 		activeDialog: undefined,
 	});
@@ -113,7 +118,17 @@ test("extension UI notify/status/widget land in store", () => {
 
 test("engine_custom_open/frame/close manage frame surfaces", () => {
 	const { ingestEvent } = useSessionStore.getState();
-	ingestEvent({ type: "engine_custom_open", componentId: "c1", overlay: true });
+	ingestEvent({
+		type: "engine_custom_open",
+		componentId: "c1",
+		overlay: true,
+		overlayOptions: { anchor: "top", width: 40 },
+		handlesCtrlC: true,
+	});
+	const opened = useSessionStore.getState().frames[0];
+	assert.equal(opened?.overlayOptions?.anchor, "top");
+	assert.equal(opened?.handlesCtrlC, true);
+	assert.equal(opened?.renderGeneration, 1);
 	ingestEvent({
 		type: "engine_custom_frame",
 		componentId: "c1",
@@ -124,4 +139,64 @@ test("engine_custom_open/frame/close manage frame surfaces", () => {
 	assert.equal(useSessionStore.getState().frames[0]?.lines[0], "\x1b[32mok\x1b[0m");
 	ingestEvent({ type: "engine_custom_close", componentId: "c1" });
 	assert.equal(useSessionStore.getState().frames.length, 0);
+});
+
+test("engine_custom_invalidate and control update frame host state", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({ type: "engine_custom_open", componentId: "c2", overlay: true });
+	const gen1 = useSessionStore.getState().frames[0]?.renderGeneration ?? 0;
+	ingestEvent({ type: "engine_custom_invalidate", componentId: "c2" });
+	assert.equal(useSessionStore.getState().frames[0]?.renderGeneration, gen1 + 1);
+	ingestEvent({ type: "engine_custom_control", componentId: "c2", action: "hide" });
+	assert.equal(useSessionStore.getState().frames[0]?.hidden, true);
+	ingestEvent({ type: "engine_custom_control", componentId: "c2", action: "show" });
+	assert.equal(useSessionStore.getState().frames[0]?.hidden, false);
+	ingestEvent({
+		type: "engine_custom_terminal",
+		componentId: "c2",
+		control: { kind: "mouse-scroll-tracking", enabled: true },
+	});
+	assert.equal(useSessionStore.getState().frames[0]?.mouseScrollTracking, true);
+	ingestEvent({
+		type: "engine_custom_frame",
+		componentId: "c2",
+		requestId: 1,
+		lines: ["a"],
+	});
+	ingestEvent({
+		type: "engine_custom_frame",
+		componentId: "c2",
+		requestId: 0,
+		lines: ["stale"],
+	});
+	assert.equal(useSessionStore.getState().frames[0]?.lines[0], "a");
+});
+
+test("engine_input_form_open mounts the input form modal", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({
+		type: "engine_input_form_open",
+		componentId: "form1",
+		title: "API key",
+		heading: "PROVIDER LOGIN",
+		fields: [{ name: "value", type: "string", initialValue: "", placeholder: "sk-..." }],
+	});
+	const state = useSessionStore.getState();
+	assert.equal(state.modal, "inputForm");
+	assert.equal(state.inputForm?.componentId, "form1");
+	assert.equal(state.inputForm?.fields[0]?.name, "value");
+});
+
+test("oauth_prompt opens dialog modal", () => {
+	const { ingestExtensionUi } = useSessionStore.getState();
+	ingestExtensionUi({
+		id: "o1",
+		method: "oauth_prompt",
+		provider: "openai",
+		loginId: "openai",
+		prompt: { message: "Enter code", placeholder: "code" },
+	});
+	const state = useSessionStore.getState();
+	assert.equal(state.modal, "dialog");
+	assert.equal(state.activeDialog?.method, "oauth_prompt");
 });

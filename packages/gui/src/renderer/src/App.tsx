@@ -1,15 +1,19 @@
 import { useCallback, useEffect } from "react";
 import type { ExtensionUiResponse } from "../../shared/ipc";
+import { AuthPanel } from "./components/AuthPanel";
 import { Composer } from "./components/Composer";
 import { DialogModal } from "./components/DialogModal";
 import { Footer } from "./components/Footer";
 import { FrameOverlay } from "./components/FrameOverlay";
+import { FrameRenderHost } from "./components/FrameRenderHost";
+import { InputFormModal } from "./components/InputFormModal";
 import { ModelPicker } from "./components/ModelPicker";
 import { SessionPicker } from "./components/SessionPicker";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { ToastStack } from "./components/ToastStack";
 import { Transcript } from "./components/Transcript";
 import { TreeNavigator } from "./components/TreeNavigator";
+import { TrustDialog } from "./components/TrustDialog";
 import { formatUsage, useSessionStore } from "./store/session-store";
 
 function hasGuiApi(): boolean {
@@ -43,6 +47,11 @@ export function App() {
 	const themes = useSessionStore((s) => s.themes);
 	const themeName = useSessionStore((s) => s.themeName);
 	const frames = useSessionStore((s) => s.frames);
+	const authCatalog = useSessionStore((s) => s.authCatalog);
+	const authBusyProvider = useSessionStore((s) => s.authBusyProvider);
+	const trustStatus = useSessionStore((s) => s.trustStatus);
+	const trustOptions = useSessionStore((s) => s.trustOptions);
+	const inputForm = useSessionStore((s) => s.inputForm);
 	const modal = useSessionStore((s) => s.modal);
 	const activeDialog = useSessionStore((s) => s.activeDialog);
 	const widgets = useSessionStore((s) => s.widgets);
@@ -66,6 +75,10 @@ export function App() {
 	const setTree = useSessionStore((s) => s.setTree);
 	const setThemes = useSessionStore((s) => s.setThemes);
 	const setThemeName = useSessionStore((s) => s.setThemeName);
+	const setAuthCatalog = useSessionStore((s) => s.setAuthCatalog);
+	const setAuthBusyProvider = useSessionStore((s) => s.setAuthBusyProvider);
+	const setTrust = useSessionStore((s) => s.setTrust);
+	const clearInputForm = useSessionStore((s) => s.clearInputForm);
 	const setModal = useSessionStore((s) => s.setModal);
 	const setUsageLabel = useSessionStore((s) => s.setUsageLabel);
 	const clearDialog = useSessionStore((s) => s.clearDialog);
@@ -161,6 +174,25 @@ export function App() {
 		setModal("settings");
 	}, [setModal, setThemeName, setThemes]);
 
+	const openAuth = useCallback(async (): Promise<void> => {
+		if (!hasGuiApi()) return;
+		const result = await window.atomicGui.getAuthCatalog();
+		if (result.ok && result.data) {
+			setAuthCatalog(result.data);
+			setModels(result.data.models);
+		}
+		setModal("auth");
+	}, [setAuthCatalog, setModal, setModels]);
+
+	const maybePromptTrust = useCallback(async (): Promise<void> => {
+		if (!hasGuiApi()) return;
+		const statusResult = await window.atomicGui.getTrustStatus(status.cwd);
+		if (!statusResult?.needsTrustPrompt) return;
+		const options = await window.atomicGui.getTrustOptions(status.cwd);
+		setTrust(statusResult, options);
+		setModal("trust");
+	}, [setModal, setTrust, status.cwd]);
+
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent): void => {
 			if (!hasGuiApi() || status.state !== "ready") return;
@@ -189,12 +221,16 @@ export function App() {
 			} else if (event.ctrlKey && event.key.toLowerCase() === ",") {
 				event.preventDefault();
 				void openSettings();
+			} else if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "a") {
+				event.preventDefault();
+				void openAuth();
 			}
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [
 		entries,
+		openAuth,
 		openModels,
 		openSettings,
 		refreshMetadata,
@@ -210,6 +246,8 @@ export function App() {
 			return;
 		}
 		try {
+			await maybePromptTrust();
+			if (useSessionStore.getState().modal === "trust") return;
 			const next = await window.atomicGui.startEngine({ cwd: status.cwd, sessionPath });
 			setStatus(next);
 			resetTranscript();
@@ -303,6 +341,9 @@ export function App() {
 					>
 						Compact
 					</button>
+					<button type="button" className="btn" disabled={!ready} onClick={() => void openAuth()}>
+						Auth
+					</button>
 					<button type="button" className="btn" onClick={() => void openSettings()}>
 						Settings
 					</button>
@@ -375,6 +416,18 @@ export function App() {
 
 			<ToastStack toasts={toasts} onDismiss={dismissToast} />
 
+			<FrameRenderHost
+				frames={frames}
+				onRender={(componentId, requestId, width, rows) => {
+					void window.atomicGui.sendEngineCommand({
+						type: "engine_custom_render",
+						componentId,
+						requestId,
+						width,
+						rows,
+					});
+				}}
+			/>
 			<FrameOverlay
 				frames={frames}
 				onDismiss={(componentId) => {
@@ -383,6 +436,15 @@ export function App() {
 				}}
 				onInput={(componentId, data) => {
 					void window.atomicGui.sendEngineCommand({ type: "engine_custom_input", componentId, data });
+				}}
+				onRender={(componentId, requestId, width, rows) => {
+					void window.atomicGui.sendEngineCommand({
+						type: "engine_custom_render",
+						componentId,
+						requestId,
+						width,
+						rows,
+					});
 				}}
 			/>
 
@@ -507,6 +569,7 @@ export function App() {
 					themes={themes}
 					currentTheme={themeName}
 					onClose={() => setModal("none")}
+					onOpenAuth={() => void openAuth()}
 					onSelectTheme={(name) => {
 						void window.atomicGui.setTheme(name).then((theme) => {
 							applyThemeCss(theme.cssVariables);
@@ -517,8 +580,83 @@ export function App() {
 				/>
 			) : null}
 
+			{modal === "auth" ? (
+				<AuthPanel
+					catalog={authCatalog}
+					busyProvider={authBusyProvider}
+					onClose={() => setModal("none")}
+					onRefresh={() => {
+						void window.atomicGui.getAuthCatalog().then((result) => {
+							if (result.ok && result.data) setAuthCatalog(result.data);
+						});
+					}}
+					onLogin={(provider, authType) => {
+						setAuthBusyProvider(provider);
+						void window.atomicGui.loginProvider(provider, authType).then((result) => {
+							setAuthBusyProvider(undefined);
+							if (!result.ok) setErrorBanner(result.error);
+							else {
+								useSessionStore.getState().ingestExtensionUi({
+									id: `login-${Date.now()}`,
+									method: "notify",
+									message: `Logged in to ${provider}`,
+									notifyType: "info",
+								});
+								void window.atomicGui.getAuthCatalog().then((catalog) => {
+									if (catalog.ok && catalog.data) {
+										setAuthCatalog(catalog.data);
+										setModels(catalog.data.models);
+									}
+								});
+							}
+						});
+					}}
+					onLogout={(provider) => {
+						void window.atomicGui.logoutProvider(provider).then((result) => {
+							if (!result.ok) setErrorBanner(result.error);
+							else void openAuth();
+						});
+					}}
+					onCancel={(provider) => {
+						void window.atomicGui.cancelLoginProvider(provider).then(() => setAuthBusyProvider(undefined));
+					}}
+				/>
+			) : null}
+
+			{modal === "trust" && trustStatus ? (
+				<TrustDialog
+					status={trustStatus}
+					options={trustOptions}
+					onChoose={(optionId) => {
+						void window.atomicGui.applyTrust(optionId, status.cwd).then((next) => {
+							setTrust(next, trustOptions);
+							setModal("none");
+							void startEngine();
+						});
+					}}
+				/>
+			) : null}
+
+			{modal === "inputForm" && inputForm ? (
+				<InputFormModal
+					request={inputForm}
+					onCancel={() => {
+						void window.atomicGui.cancelInputForm(inputForm.componentId);
+						clearInputForm();
+					}}
+					onSubmit={(values) => {
+						void window.atomicGui.submitInputForm(inputForm.componentId, values);
+						clearInputForm();
+					}}
+				/>
+			) : null}
+
 			{modal === "dialog" && activeDialog ? (
-				<DialogModal request={activeDialog} onRespond={(response) => void respondDialog(response)} />
+				<DialogModal
+					request={activeDialog}
+					onRespond={(response) => void respondDialog(response)}
+					onDismiss={() => clearDialog()}
+				/>
 			) : null}
 		</div>
 	);

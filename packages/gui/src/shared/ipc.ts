@@ -88,6 +88,51 @@ export interface GuiSettingsSnapshot {
 	exists: boolean;
 }
 
+export interface OAuthProviderInfo {
+	id: string;
+	name: string;
+	loginLabel?: string;
+	usesCallbackServer?: boolean;
+}
+
+export interface AuthCatalog {
+	models: ModelInfo[];
+	oauthProviders: OAuthProviderInfo[];
+	providers: string[];
+}
+
+export interface TrustStatus {
+	cwd: string;
+	needsTrustPrompt: boolean;
+	decision: boolean | null;
+	hasProjectResources: boolean;
+}
+
+export interface TrustOption {
+	id: string;
+	label: string;
+	trusted: boolean;
+	persistPath: string | null;
+}
+
+export interface InputFormField {
+	name: string;
+	type: string;
+	initialValue: string;
+	description?: string;
+	required?: boolean;
+	choices?: string[];
+	placeholder?: string;
+}
+
+export interface InputFormRequest {
+	componentId: string;
+	title: string;
+	fields: InputFormField[];
+	heading?: string;
+	submitLabel?: string;
+}
+
 export type ExtensionUiRequest =
 	| { id: string; method: "select"; title: string; options: string[]; timeout?: number }
 	| { id: string; method: "confirm"; title: string; message: string; timeout?: number }
@@ -104,7 +149,45 @@ export type ExtensionUiRequest =
 	  }
 	| { id: string; method: "setTitle"; title: string }
 	| { id: string; method: "set_editor_text"; text: string }
-	| { id: string; method: string; [key: string]: unknown };
+	| {
+			id: string;
+			method: "oauth_auth";
+			provider: string;
+			loginId: string;
+			info: { url: string; instructions?: string };
+	  }
+	| {
+			id: string;
+			method: "oauth_device_code";
+			provider: string;
+			loginId: string;
+			info: { userCode: string; verificationUri: string; intervalSeconds?: number; expiresInSeconds?: number };
+	  }
+	| { id: string; method: "oauth_progress"; provider: string; loginId: string; message: string }
+	| {
+			id: string;
+			method: "oauth_info";
+			provider: string;
+			loginId: string;
+			message: string;
+			links: Array<{ label?: string; url: string }>;
+	  }
+	| {
+			id: string;
+			method: "oauth_prompt";
+			provider: string;
+			loginId: string;
+			prompt: { message: string; placeholder?: string; allowEmpty?: boolean };
+	  }
+	| {
+			id: string;
+			method: "oauth_select";
+			provider: string;
+			loginId: string;
+			prompt: { message: string; options: Array<{ id: string; label: string }> };
+	  }
+	| { id: string; method: "oauth_manual_code"; provider: string; loginId: string }
+	| { id: string; method: "oauth_manual_code_cancel"; provider: string; loginId: string };
 
 export type ExtensionUiResponse =
 	| { id: string; value: string }
@@ -143,6 +226,10 @@ export interface GuiHostApi {
 	navigateTree(targetId: string): Promise<RpcResult<{ cancelled: boolean; editorText?: string }>>;
 	getCommands(): Promise<RpcResult<SlashCommandInfo[]>>;
 	getModels(): Promise<RpcResult<ModelInfo[]>>;
+	getAuthCatalog(): Promise<RpcResult<AuthCatalog>>;
+	loginProvider(provider: string, authType?: "api_key" | "oauth"): Promise<PromptResult>;
+	logoutProvider(provider: string): Promise<PromptResult>;
+	cancelLoginProvider(provider: string): Promise<PromptResult>;
 	setModel(provider: string, modelId: string): Promise<PromptResult>;
 	cycleModel(direction?: "forward" | "backward"): Promise<RpcResult<{ label: string } | null>>;
 	cycleThinking(): Promise<RpcResult<{ level: string } | null>>;
@@ -156,6 +243,11 @@ export interface GuiHostApi {
 	getThemeCss(name?: string): Promise<ResolvedThemeCss>;
 	getSettings(): Promise<GuiSettingsSnapshot>;
 	setTheme(name: string): Promise<ResolvedThemeCss>;
+	getTrustStatus(cwd?: string): Promise<TrustStatus>;
+	getTrustOptions(cwd?: string): Promise<TrustOption[]>;
+	applyTrust(optionId: string, cwd?: string): Promise<TrustStatus>;
+	submitInputForm(componentId: string, values: Record<string, string>): Promise<void>;
+	cancelInputForm(componentId: string): Promise<void>;
 	sendEngineCommand(command: { type: string; [key: string]: unknown }): Promise<void>;
 	respondExtensionUi(response: ExtensionUiResponse): Promise<void>;
 	onStatus(listener: (status: EngineStatus) => void): () => void;
@@ -181,6 +273,10 @@ export const IPC_CHANNELS = {
 	navigateTree: "gui:navigate-tree",
 	getCommands: "gui:get-commands",
 	getModels: "gui:get-models",
+	getAuthCatalog: "gui:get-auth-catalog",
+	loginProvider: "gui:login-provider",
+	logoutProvider: "gui:logout-provider",
+	cancelLoginProvider: "gui:cancel-login-provider",
 	setModel: "gui:set-model",
 	cycleModel: "gui:cycle-model",
 	cycleThinking: "gui:cycle-thinking",
@@ -194,6 +290,11 @@ export const IPC_CHANNELS = {
 	getThemeCss: "gui:get-theme-css",
 	getSettings: "gui:get-settings",
 	setTheme: "gui:set-theme",
+	getTrustStatus: "gui:get-trust-status",
+	getTrustOptions: "gui:get-trust-options",
+	applyTrust: "gui:apply-trust",
+	submitInputForm: "gui:submit-input-form",
+	cancelInputForm: "gui:cancel-input-form",
 	sendEngineCommand: "gui:send-engine-command",
 	respondExtensionUi: "gui:respond-extension-ui",
 	status: "gui:status",
