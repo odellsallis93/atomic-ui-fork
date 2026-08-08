@@ -10,8 +10,9 @@ This repo is the private `atomic-monorepo` npm workspace. It currently houses:
 - `@bastani/mcp` in `packages/mcp` — builtin MCP adapter extension that exposes MCP servers as agent tools.
 - `@bastani/web-access` in `packages/web-access` — builtin web search, URL fetching, GitHub repository, PDF, and video extraction tools.
 - `@bastani/intercom` in `packages/intercom` — builtin coordination channel for parent/child and cross-session agent communication.
+- `@bastani/atomic-gui` in `packages/gui` — optional Electron desktop host for Atomic (private; not published inside `@bastani/atomic`).
 
-Companion packages under `packages/*` ship as **raw TypeScript** (no compile step) and are bundled into `@bastani/atomic` at build time rather than published independently. The coding-agent package follows upstream pi's compiled-package layout.
+Companion packages under `packages/*` ship as **raw TypeScript** (no compile step) and are bundled into `@bastani/atomic` at build time rather than published independently. The coding-agent package follows upstream pi's compiled-package layout. **Exception:** `packages/gui` is a standalone Electron app with its own electron-vite build and is excluded from the `@bastani/atomic` bundle.
 
 ## Tech Stack
 
@@ -69,7 +70,7 @@ name it.
 
 - Avoid ambiguous types like `any` and `unknown`. Use specific types instead.
 - Source files use `.js` import extensions (TypeScript ESM convention). The repo ships as `.ts` files; Bun resolves `.js` specifiers to the underlying `.ts` source directly — no loader hook required. atomic's loader follows the same convention as pi.
-- Do not add a build step (`dist/`, `tsconfig.build.json`, etc.) to `packages/workflows`; it distributes raw TypeScript and the host loads it directly. `packages/coding-agent` is copied from upstream pi and keeps its existing build setup.
+- Do not add a build step (`dist/`, `tsconfig.build.json`, etc.) to `packages/workflows`; it distributes raw TypeScript and the host loads it directly. `packages/coding-agent` is copied from upstream pi and keeps its existing build setup. `packages/gui` is the deliberate exception: it is an Electron app and uses electron-vite (`out/`), not a companion extension bundle.
 - When using skills, if you see a frontmatter of `metadata: internal` set to `true` (if missing assume `false`), that means the skill is for internal developers of this package. If this flag is omitted, the skill is meant for consumers/everyday users.
 
 ## Design Context
@@ -302,7 +303,7 @@ Note: npm provenance publishing uses GitHub OIDC trusted publishing and must not
 4. When modifying this extension, follow pi's extension and SDK conventions.
 
 <EXTREMELY_IMPORTANT>
-`@bastani/workflows` ships raw `.ts` files with no build step — do NOT introduce `dist/`, `tsconfig.build.json`, `outDir`, or any bundling.
+`@bastani/workflows` ships raw `.ts` files with no build step — do NOT introduce `dist/`, `tsconfig.build.json`, `outDir`, or any bundling. `packages/gui` (`@bastani/atomic-gui`) is excluded from that rule because it is a standalone Electron app with an electron-vite build.
 
 Install with `npm ci --ignore-scripts`, and add dependencies with `npm install`. Never run
 `yarn install` or `pnpm install`, and do not bring back `bun install`: each writes a competing

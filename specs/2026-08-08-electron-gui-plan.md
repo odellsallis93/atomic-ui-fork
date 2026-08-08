@@ -1,6 +1,6 @@
 # Atomic Electron GUI — Implementation Plan
 
-Status: **Plan** (no implementation yet)
+Status: **In progress** — M0 done; M1/M2 partial in `packages/gui` (`@bastani/atomic-gui`)
 
 ## Summary
 
