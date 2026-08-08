@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
-import { renderMarkdown } from "../lib/markdown";
+import { renderMarkdown } from "../helpers/markdown";
 import type { TranscriptEntry } from "../store/session-store";
 
 function MarkdownBody({ source }: { source: string }) {

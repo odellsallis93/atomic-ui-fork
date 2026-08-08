@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { ansiLinesToHtml, ansiLineToHtml } from "../src/renderer/src/lib/ansi.ts";
+import { ansiLinesToHtml, ansiLineToHtml } from "../src/renderer/src/helpers/ansi.ts";
 
 test("ansiLineToHtml escapes HTML and applies SGR colors", () => {
 	const html = ansiLineToHtml("hello <world> \x1b[31mbad\x1b[0m");

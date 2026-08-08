@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { ansiLinesToHtml } from "../lib/ansi";
+import { ansiLinesToHtml } from "../helpers/ansi";
 import type { CustomFrame } from "../store/session-store";
 
 export function FrameOverlay(props: {
