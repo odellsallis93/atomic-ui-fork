@@ -64,7 +64,8 @@
           "sdk",
           "rpc",
           "json",
-          "tui"
+          "tui",
+          "gui"
         ]
       },
       {
