@@ -10,10 +10,21 @@ beforeEach(() => {
 		workingLabel: "thinking",
 		rawLines: [],
 		showRawLog: false,
+		hideThinking: false,
 		queue: [],
 		composerText: "",
+		promptHistory: [],
+		historyIndex: -1,
 		errorBanner: undefined,
 		usageLabel: "—",
+		statusSegments: {},
+		widgets: [],
+		toasts: [],
+		commands: [],
+		models: [],
+		sessions: [],
+		modal: "none",
+		activeDialog: undefined,
 	});
 });
 
@@ -64,4 +75,33 @@ test("tool execution start/end creates expandable tool entry", () => {
 	assert.equal(entry?.toolName, "bash");
 	assert.equal(entry?.streaming, false);
 	assert.match(entry?.text ?? "", /output/);
+});
+
+test("bash execution updates append streaming output", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({ type: "bash_execution_start", id: "b1", command: "echo hi" });
+	ingestEvent({ type: "bash_execution_update", id: "b1", delta: "hi\n" });
+	ingestEvent({ type: "bash_execution_end", id: "b1" });
+	const entry = useSessionStore.getState().entries[0];
+	assert.equal(entry?.kind, "bash");
+	assert.match(entry?.text ?? "", /echo hi/);
+	assert.match(entry?.text ?? "", /hi/);
+	assert.equal(entry?.streaming, false);
+});
+
+test("extension UI notify/status/widget land in store", () => {
+	const { ingestExtensionUi } = useSessionStore.getState();
+	ingestExtensionUi({ id: "n1", method: "notify", message: "hello", notifyType: "info" });
+	ingestExtensionUi({ id: "s1", method: "setStatus", statusKey: "mcp", statusText: "ok" });
+	ingestExtensionUi({
+		id: "w1",
+		method: "setWidget",
+		widgetKey: "bg",
+		widgetLines: ["running"],
+		widgetPlacement: "belowEditor",
+	});
+	const state = useSessionStore.getState();
+	assert.equal(state.toasts[0]?.message, "hello");
+	assert.equal(state.statusSegments.mcp, "ok");
+	assert.equal(state.widgets[0]?.lines[0], "running");
 });
