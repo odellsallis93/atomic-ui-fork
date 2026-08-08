@@ -10,6 +10,7 @@ import type {
 import { IPC_CHANNELS } from "../shared/ipc.ts";
 import { EngineClient } from "./engine-client.ts";
 import { searchFiles } from "./file-search.ts";
+import { applyTrustDecision, getTrustOptions, getTrustStatus } from "./project-trust.ts";
 import { listSessions } from "./session-list.ts";
 import { deleteSessionFile, renameSessionFile } from "./session-ops.ts";
 import { readGuiSettings, writeThemeSetting } from "./settings-store.ts";
@@ -22,6 +23,7 @@ export class EngineSupervisor {
 	private client: EngineClient | null = null;
 	private readonly window: BrowserWindow;
 	private cwd = process.cwd();
+	private sessionTrustOverride: boolean | undefined;
 
 	constructor(window: BrowserWindow) {
 		this.window = window;
@@ -117,6 +119,26 @@ export class EngineSupervisor {
 		return await this.client.getModels();
 	}
 
+	async getAuthCatalog() {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.getAuthCatalog();
+	}
+
+	async loginProvider(provider: string, authType?: "api_key" | "oauth") {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.loginProvider(provider, authType);
+	}
+
+	async logoutProvider(provider: string) {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.logoutProvider(provider);
+	}
+
+	async cancelLoginProvider(provider: string) {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.cancelLoginProvider(provider);
+	}
+
 	async setModel(provider: string, modelId: string) {
 		if (!this.client) return { ok: false as const, error: "Engine is not started" };
 		return await this.client.setModel(provider, modelId);
@@ -185,6 +207,40 @@ export class EngineSupervisor {
 	setTheme(name: string) {
 		writeThemeSetting(name);
 		return loadThemeCss(name);
+	}
+
+	getTrustStatus(cwd?: string) {
+		const status = getTrustStatus(cwd ?? this.cwd);
+		if (this.sessionTrustOverride !== undefined) {
+			return {
+				...status,
+				decision: this.sessionTrustOverride,
+				needsTrustPrompt: false,
+			};
+		}
+		return status;
+	}
+
+	getTrustOptions(cwd?: string) {
+		return getTrustOptions(cwd ?? this.cwd);
+	}
+
+	applyTrust(optionId: string, cwd?: string) {
+		const option = getTrustOptions(cwd ?? this.cwd).find((item) => item.id === optionId);
+		if (option && option.persistPath === null) {
+			this.sessionTrustOverride = option.trusted;
+			return this.getTrustStatus(cwd);
+		}
+		this.sessionTrustOverride = undefined;
+		return applyTrustDecision(cwd ?? this.cwd, optionId);
+	}
+
+	submitInputForm(componentId: string, values: Record<string, string>): void {
+		this.client?.sendEngineCommand({ type: "engine_input_form_submit", componentId, values });
+	}
+
+	cancelInputForm(componentId: string): void {
+		this.client?.sendEngineCommand({ type: "engine_input_form_cancel", componentId });
 	}
 
 	sendEngineCommand(command: { type: string; [key: string]: unknown }): void {

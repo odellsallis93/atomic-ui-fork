@@ -28,6 +28,11 @@ beforeEach(() => {
 		themes: [],
 		themeName: "dark",
 		frames: [],
+		authCatalog: null,
+		authBusyProvider: undefined,
+		trustStatus: undefined,
+		trustOptions: [],
+		inputForm: undefined,
 		modal: "none",
 		activeDialog: undefined,
 	});
@@ -124,4 +129,33 @@ test("engine_custom_open/frame/close manage frame surfaces", () => {
 	assert.equal(useSessionStore.getState().frames[0]?.lines[0], "\x1b[32mok\x1b[0m");
 	ingestEvent({ type: "engine_custom_close", componentId: "c1" });
 	assert.equal(useSessionStore.getState().frames.length, 0);
+});
+
+test("engine_input_form_open mounts the input form modal", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({
+		type: "engine_input_form_open",
+		componentId: "form1",
+		title: "API key",
+		heading: "PROVIDER LOGIN",
+		fields: [{ name: "value", type: "string", initialValue: "", placeholder: "sk-..." }],
+	});
+	const state = useSessionStore.getState();
+	assert.equal(state.modal, "inputForm");
+	assert.equal(state.inputForm?.componentId, "form1");
+	assert.equal(state.inputForm?.fields[0]?.name, "value");
+});
+
+test("oauth_prompt opens dialog modal", () => {
+	const { ingestExtensionUi } = useSessionStore.getState();
+	ingestExtensionUi({
+		id: "o1",
+		method: "oauth_prompt",
+		provider: "openai",
+		loginId: "openai",
+		prompt: { message: "Enter code", placeholder: "code" },
+	});
+	const state = useSessionStore.getState();
+	assert.equal(state.modal, "dialog");
+	assert.equal(state.activeDialog?.method, "oauth_prompt");
 });

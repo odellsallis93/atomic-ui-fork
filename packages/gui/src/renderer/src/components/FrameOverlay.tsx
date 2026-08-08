@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { ansiLinesToHtml } from "../helpers/ansi";
+import { encodeTerminalKey } from "../helpers/key-encode";
 import type { CustomFrame } from "../store/session-store";
 
 export function FrameOverlay(props: {
@@ -32,20 +33,15 @@ function FrameSurface(props: { frame: CustomFrame; onDismiss: () => void; onInpu
 	useEffect(() => {
 		closeRef.current?.focus();
 		const onKeyDown = (event: KeyboardEvent): void => {
-			if (event.key === "Escape") {
-				event.preventDefault();
+			const encoded = encodeTerminalKey(event);
+			if (encoded === undefined) return;
+			event.preventDefault();
+			event.stopPropagation();
+			if (encoded === "\x1b") {
 				onDismiss();
 				return;
 			}
-			if (event.key === "Enter") {
-				event.preventDefault();
-				onInput("\r");
-				return;
-			}
-			if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-				event.preventDefault();
-				onInput(event.key);
-			}
+			onInput(encoded);
 		};
 		window.addEventListener("keydown", onKeyDown, true);
 		return () => window.removeEventListener("keydown", onKeyDown, true);

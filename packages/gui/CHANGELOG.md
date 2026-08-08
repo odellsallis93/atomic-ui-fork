@@ -19,3 +19,9 @@
 - ANSI frame overlay for `engine_custom_open` / `engine_custom_frame` /
   `engine_custom_close`, with basic keyboard input forwarded as
   `engine_custom_input`.
+- Provider auth panel (API key + OAuth), OAuth extension UI dialogs, and
+  `engine_input_form_*` host for credential prompts.
+- Project trust prompt backed by `~/.atomic/agent/trust.json` (including
+  session-only decisions) before engine start.
+- Frame key encoding maps arrows, function keys, ctrl/alt chords, and shift-tab
+  to legacy terminal sequences that pi-tui `matchesKey` accepts.

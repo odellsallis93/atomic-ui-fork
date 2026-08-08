@@ -1,6 +1,6 @@
 # Atomic Electron GUI — Implementation Plan
 
-Status: **In progress** — M0–M2 largely done; M3 sessions (picker/tree/clone/export/rename/delete/compact) in; M4 theme+settings write-through started; M5 dialogs + ANSI frame overlays started in `packages/gui`
+Status: **In progress** — M0–M3 largely done; M4 theme/settings + provider auth/OAuth + project trust started; M5 dialogs/input-forms + ANSI frames with legacy key encoding started in `packages/gui`
 
 ## Summary
 
