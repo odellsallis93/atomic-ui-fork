@@ -63,6 +63,31 @@ export interface FileMentionItem {
 	label: string;
 }
 
+export interface SessionTreeNodeInfo {
+	id: string;
+	kind: string;
+	summary: string;
+	label?: string;
+	children: SessionTreeNodeInfo[];
+}
+
+export interface ThemeSummary {
+	name: string;
+	source: "builtin" | "user";
+	path: string;
+}
+
+export interface ResolvedThemeCss {
+	name: string;
+	cssVariables: Record<string, string>;
+}
+
+export interface GuiSettingsSnapshot {
+	theme: string;
+	path: string;
+	exists: boolean;
+}
+
 export type ExtensionUiRequest =
 	| { id: string; method: "select"; title: string; options: string[]; timeout?: number }
 	| { id: string; method: "confirm"; title: string; message: string; timeout?: number }
@@ -111,6 +136,11 @@ export interface GuiHostApi {
 	newSession(): Promise<PromptResult>;
 	switchSession(sessionPath: string): Promise<PromptResult>;
 	setSessionName(name: string): Promise<PromptResult>;
+	cloneSession(): Promise<PromptResult>;
+	exportHtml(outputPath?: string): Promise<RpcResult<{ path: string }>>;
+	compact(): Promise<PromptResult>;
+	getTree(): Promise<RpcResult<{ nodes: SessionTreeNodeInfo[]; leafId: string | null }>>;
+	navigateTree(targetId: string): Promise<RpcResult<{ cancelled: boolean; editorText?: string }>>;
 	getCommands(): Promise<RpcResult<SlashCommandInfo[]>>;
 	getModels(): Promise<RpcResult<ModelInfo[]>>;
 	setModel(provider: string, modelId: string): Promise<PromptResult>;
@@ -119,7 +149,14 @@ export interface GuiHostApi {
 	getSessionStats(): Promise<RpcResult<SessionStatsSummary>>;
 	refreshState(): Promise<RpcResult<EngineStatus>>;
 	listSessions(options?: { cwd?: string; all?: boolean }): Promise<SessionListItem[]>;
+	renameSession(sessionPath: string, name: string): Promise<RpcResult>;
+	deleteSession(sessionPath: string): Promise<RpcResult>;
 	searchFiles(query: string, cwd?: string): Promise<FileMentionItem[]>;
+	listThemes(): Promise<ThemeSummary[]>;
+	getThemeCss(name?: string): Promise<ResolvedThemeCss>;
+	getSettings(): Promise<GuiSettingsSnapshot>;
+	setTheme(name: string): Promise<ResolvedThemeCss>;
+	sendEngineCommand(command: { type: string; [key: string]: unknown }): Promise<void>;
 	respondExtensionUi(response: ExtensionUiResponse): Promise<void>;
 	onStatus(listener: (status: EngineStatus) => void): () => void;
 	onEvent(listener: (event: GuiRpcEvent) => void): () => void;
@@ -137,6 +174,11 @@ export const IPC_CHANNELS = {
 	newSession: "gui:new-session",
 	switchSession: "gui:switch-session",
 	setSessionName: "gui:set-session-name",
+	cloneSession: "gui:clone-session",
+	exportHtml: "gui:export-html",
+	compact: "gui:compact",
+	getTree: "gui:get-tree",
+	navigateTree: "gui:navigate-tree",
 	getCommands: "gui:get-commands",
 	getModels: "gui:get-models",
 	setModel: "gui:set-model",
@@ -145,7 +187,14 @@ export const IPC_CHANNELS = {
 	getSessionStats: "gui:get-session-stats",
 	refreshState: "gui:refresh-state",
 	listSessions: "gui:list-sessions",
+	renameSession: "gui:rename-session",
+	deleteSession: "gui:delete-session",
 	searchFiles: "gui:search-files",
+	listThemes: "gui:list-themes",
+	getThemeCss: "gui:get-theme-css",
+	getSettings: "gui:get-settings",
+	setTheme: "gui:set-theme",
+	sendEngineCommand: "gui:send-engine-command",
 	respondExtensionUi: "gui:respond-extension-ui",
 	status: "gui:status",
 	event: "gui:event",

@@ -4,7 +4,7 @@
 
 ### Added
 
-- Documented the optional Electron GUI host (`packages/gui` / `@bastani/atomic-gui`) and how it speaks the interactive-engine protocol alongside the TUI (`docs/gui.md`).
+- Documented the optional Electron GUI host (`packages/gui` / `@bastani/atomic-gui`) and how it speaks the interactive-engine protocol alongside the TUI, including current milestone coverage and shortcuts (`docs/gui.md`).
 
 ### Fixed
 

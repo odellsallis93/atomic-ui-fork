@@ -87,6 +87,26 @@ function registerIpc(): void {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.setSessionName(name);
 	});
+	ipcMain.handle(IPC_CHANNELS.cloneSession, async () => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.cloneSession();
+	});
+	ipcMain.handle(IPC_CHANNELS.exportHtml, async (_event, outputPath?: string) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.exportHtml(outputPath);
+	});
+	ipcMain.handle(IPC_CHANNELS.compact, async () => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.compact();
+	});
+	ipcMain.handle(IPC_CHANNELS.getTree, async () => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.getTree();
+	});
+	ipcMain.handle(IPC_CHANNELS.navigateTree, async (_event, targetId: string) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.navigateTree(targetId);
+	});
 	ipcMain.handle(IPC_CHANNELS.getCommands, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getCommands();
@@ -119,9 +139,33 @@ function registerIpc(): void {
 		if (!supervisor) return [];
 		return await supervisor.listSessions(options);
 	});
+	ipcMain.handle(IPC_CHANNELS.renameSession, async (_event, sessionPath: string, name: string) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.renameSession(sessionPath, name);
+	});
+	ipcMain.handle(IPC_CHANNELS.deleteSession, async (_event, sessionPath: string) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.deleteSession(sessionPath);
+	});
 	ipcMain.handle(IPC_CHANNELS.searchFiles, async (_event, query: string, cwd?: string) => {
 		if (!supervisor) return [];
 		return await supervisor.searchFiles(query, cwd);
+	});
+	ipcMain.handle(IPC_CHANNELS.listThemes, () => supervisor?.listThemes() ?? []);
+	ipcMain.handle(
+		IPC_CHANNELS.getThemeCss,
+		(_event, name?: string) => supervisor?.getThemeCss(name) ?? { name: "dark", cssVariables: {} },
+	);
+	ipcMain.handle(
+		IPC_CHANNELS.getSettings,
+		() => supervisor?.getSettings() ?? { theme: "dark", path: "", exists: false },
+	);
+	ipcMain.handle(IPC_CHANNELS.setTheme, (_event, name: string) => {
+		if (!supervisor) throw new Error("No window");
+		return supervisor.setTheme(name);
+	});
+	ipcMain.handle(IPC_CHANNELS.sendEngineCommand, (_event, command: { type: string; [key: string]: unknown }) => {
+		supervisor?.sendEngineCommand(command);
 	});
 	ipcMain.handle(IPC_CHANNELS.respondExtensionUi, async (_event, response: ExtensionUiResponse) => {
 		await supervisor?.respondExtensionUi(response);
