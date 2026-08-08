@@ -12,11 +12,14 @@ for the full parity plan and milestone map.
 Milestone coverage in this package:
 
 - **M0** — window shell, engine spawn + protocol handshake, typed IPC, raw event log
-- **M1 (partial)** — transcript for user/assistant/tool/compaction, working indicator, footer
-- **M2 (partial)** — CodeMirror composer, Enter/Alt+Enter/Escape, queue chips, bash-mode border
+- **M1** — transcript for user/assistant/tool/bash/compaction, thinking toggle, footer + usage
+- **M2** — CodeMirror composer, `/` + `@` autocomplete, history, `!`/`!!` bash, queue chips
+- **M3 (partial)** — host-side resume picker, new/switch session
+- **M4 (partial)** — model picker + cycle model/thinking
+- **M5 (partial)** — native dialogs, notify toasts, status segments, widgets
 
-Later milestones (sessions, settings/theme/auth, full `ctx.ui.*` frame surface,
-bundled-extension parity, packaging) are not done yet.
+Still open: full settings/theme/auth, ANSI `ctx.ui.custom()` frame surface, bundled-extension
+parity walkthroughs, packaging/CI topology jobs.
 
 ## Develop
 

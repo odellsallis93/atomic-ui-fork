@@ -26,6 +26,16 @@ process.stdout.write(JSON.stringify({
 const rl = createInterface({ input: process.stdin });
 rl.on("line", (line) => {
   const msg = JSON.parse(line);
+  if (msg.type === "get_state") {
+    process.stdout.write(JSON.stringify({
+      id: msg.id,
+      type: "response",
+      command: "get_state",
+      success: true,
+      data: { sessionId: "s1", thinkingLevel: "off", model: { provider: "test", id: "tiny" } },
+    }) + "\\n");
+    return;
+  }
   if (msg.type === "prompt") {
     process.stdout.write(JSON.stringify({
       type: "message_start",
@@ -61,6 +71,7 @@ rl.on("line", (line) => {
 		const status = await client.start();
 		assert.equal(status.state, "ready");
 		assert.equal(status.protocolVersion, INTERACTIVE_ENGINE_PROTOCOL_VERSION);
+		assert.equal(status.modelLabel, "test/tiny");
 
 		const result = await client.prompt({ message: "ping" });
 		assert.equal(result.ok, true);

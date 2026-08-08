@@ -17,9 +17,12 @@ the engine child.
 | Milestone | Status |
 |---|---|
 | M0 Skeleton + engine bridge | Done |
-| M1 Core chat parity | Partial (user/assistant/tool/compaction, footer, working indicator) |
-| M2 Input system | Partial (CodeMirror composer, steer/follow-up/abort, queue chips, bash-mode border) |
-| M3–M7 | Not started |
+| M1 Core chat parity | Mostly done — user/assistant/tool/bash/compaction, thinking toggle, footer + usage meter, working indicator |
+| M2 Input system | Mostly done — CodeMirror composer, `/` + `@` autocomplete, history, `!`/`!!` bash, steer/follow-up/abort, queue chips |
+| M3 Sessions | Partial — host-side resume picker, new session, switch session, naming via RPC (`list_sessions` still host-local per plan §5.1) |
+| M4 Models / settings | Partial — model picker, cycle model/thinking, footer model/thinking labels (full settings/theme/auth still open) |
+| M5 Extension UI host | Partial — native `select`/`confirm`/`input`/`editor` dialogs, notify toasts, status segments, widgets (ANSI `custom()` frame surface still open) |
+| M6–M7 | Not started |
 
 The authoritative plan lives at
 [`specs/2026-08-08-electron-gui-plan.md`](../../../specs/2026-08-08-electron-gui-plan.md).
@@ -39,6 +42,21 @@ ATOMIC_GUI_CLI=/path/to/atomic npm run dev --workspace=@bastani/atomic-gui
 ATOMIC_GUI_CLI_ENTRY=packages/coding-agent/src/cli.ts ATOMIC_GUI_RUNTIME=bun \
   npm run dev --workspace=@bastani/atomic-gui
 ```
+
+## Useful shortcuts (focused window)
+
+| Shortcut | Action |
+|---|---|
+| Enter | Send (or steer while streaming) |
+| Alt+Enter | Follow-up while streaming |
+| Escape | Abort |
+| Ctrl+L | Open model picker |
+| Ctrl+P | Cycle model |
+| Shift+Tab | Cycle thinking level |
+| Ctrl+T | Hide/show thinking blocks |
+| Ctrl+O | Expand/collapse latest tool card |
+| `/…` / `@…` | Slash-command and file mention autocomplete |
+| `!` / `!!` | Bash (in-context / excluded) |
 
 ## Security model
 
