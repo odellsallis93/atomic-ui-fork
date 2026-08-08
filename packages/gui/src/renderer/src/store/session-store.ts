@@ -1,5 +1,14 @@
 import { create } from "zustand";
-import type { EngineStatus, GuiRpcEvent } from "../../../shared/ipc.ts";
+import type {
+	EngineStatus,
+	ExtensionUiRequest,
+	GuiRpcEvent,
+	ModelInfo,
+	SessionListItem,
+	SessionTreeNodeInfo,
+	SlashCommandInfo,
+	ThemeSummary,
+} from "../../../shared/ipc.ts";
 
 export type EntryKind = "user" | "assistant" | "tool" | "bash" | "system" | "compaction" | "branchSummary" | "raw";
 
@@ -13,6 +22,7 @@ export interface TranscriptEntry {
 	toolCallId?: string;
 	streaming: boolean;
 	expanded: boolean;
+	excludeFromContext?: boolean;
 	error?: string;
 }
 
@@ -22,6 +32,29 @@ export interface QueueChip {
 	behavior: "steer" | "followUp";
 }
 
+export interface ToastItem {
+	id: string;
+	message: string;
+	notifyType: "info" | "warning" | "error";
+}
+
+export interface WidgetItem {
+	key: string;
+	lines: string[];
+	placement: "aboveEditor" | "belowEditor";
+}
+
+export type ModalKind = "none" | "sessions" | "models" | "dialog" | "tree" | "settings";
+
+export interface CustomFrame {
+	componentId: string;
+	overlay: boolean;
+	widgetKey?: string;
+	widgetPlacement?: "aboveEditor" | "belowEditor";
+	lines: string[];
+	requestId?: number;
+}
+
 export interface SessionState {
 	status: EngineStatus;
 	entries: TranscriptEntry[];
@@ -29,18 +62,50 @@ export interface SessionState {
 	workingLabel: string;
 	rawLines: string[];
 	showRawLog: boolean;
+	hideThinking: boolean;
 	queue: QueueChip[];
 	composerText: string;
+	promptHistory: string[];
+	historyIndex: number;
 	errorBanner?: string;
 	usageLabel: string;
+	statusSegments: Record<string, string>;
+	widgets: WidgetItem[];
+	toasts: ToastItem[];
+	commands: SlashCommandInfo[];
+	models: ModelInfo[];
+	sessions: SessionListItem[];
+	treeNodes: SessionTreeNodeInfo[];
+	treeLeafId: string | null;
+	themes: ThemeSummary[];
+	themeName: string;
+	frames: CustomFrame[];
+	modal: ModalKind;
+	activeDialog?: ExtensionUiRequest;
 	setStatus: (status: EngineStatus) => void;
 	setComposerText: (text: string) => void;
+	pushPromptHistory: (text: string) => void;
+	historyUp: () => string | undefined;
+	historyDown: () => string | undefined;
 	toggleRawLog: () => void;
+	toggleThinking: () => void;
 	appendRawLine: (line: string) => void;
 	ingestEvent: (event: GuiRpcEvent) => void;
+	ingestExtensionUi: (request: ExtensionUiRequest) => void;
+	clearDialog: () => void;
+	dismissToast: (id: string) => void;
+	dismissFrame: (componentId: string) => void;
 	resetTranscript: () => void;
 	setErrorBanner: (message: string | undefined) => void;
 	toggleEntryExpanded: (id: string) => void;
+	setCommands: (commands: SlashCommandInfo[]) => void;
+	setModels: (models: ModelInfo[]) => void;
+	setSessions: (sessions: SessionListItem[]) => void;
+	setTree: (nodes: SessionTreeNodeInfo[], leafId: string | null) => void;
+	setThemes: (themes: ThemeSummary[]) => void;
+	setThemeName: (name: string) => void;
+	setModal: (modal: ModalKind) => void;
+	setUsageLabel: (label: string) => void;
 }
 
 let entryCounter = 0;
@@ -81,6 +146,23 @@ function thinkingFromContent(content: unknown): string | undefined {
 	return parts.length > 0 ? parts.join("\n") : undefined;
 }
 
+function formatUsage(
+	tokens?: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+		total: number;
+	},
+	cost?: number,
+	contextPercent?: number | null,
+): string {
+	if (!tokens) return "—";
+	const ctx = contextPercent === null || contextPercent === undefined ? "?" : `${contextPercent.toFixed(1)}%`;
+	const costLabel = typeof cost === "number" ? `$${cost.toFixed(4)}` : "";
+	return `↑${tokens.input} ↓${tokens.output} R${tokens.cacheRead} W${tokens.cacheWrite} · ${ctx}${costLabel ? ` · ${costLabel}` : ""}`;
+}
+
 export const useSessionStore = create<SessionState>((set, get) => ({
 	status: { state: "idle" },
 	entries: [],
@@ -88,24 +170,175 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	workingLabel: "thinking",
 	rawLines: [],
 	showRawLog: false,
+	hideThinking: false,
 	queue: [],
 	composerText: "",
+	promptHistory: [],
+	historyIndex: -1,
 	usageLabel: "—",
+	statusSegments: {},
+	widgets: [],
+	toasts: [],
+	commands: [],
+	models: [],
+	sessions: [],
+	treeNodes: [],
+	treeLeafId: null,
+	themes: [],
+	themeName: "dark",
+	frames: [],
+	modal: "none",
 	setStatus: (status) => set({ status, errorBanner: status.error }),
-	setComposerText: (text) => set({ composerText: text }),
+	setComposerText: (text) => set({ composerText: text, historyIndex: -1 }),
+	pushPromptHistory: (text) =>
+		set((state) => ({
+			promptHistory: [...state.promptHistory.filter((item) => item !== text), text].slice(-100),
+			historyIndex: -1,
+		})),
+	historyUp: () => {
+		const { promptHistory, historyIndex, composerText } = get();
+		if (promptHistory.length === 0) return undefined;
+		const next = historyIndex < 0 ? promptHistory.length - 1 : Math.max(0, historyIndex - 1);
+		set({ historyIndex: next, composerText: promptHistory[next] ?? composerText });
+		return promptHistory[next];
+	},
+	historyDown: () => {
+		const { promptHistory, historyIndex } = get();
+		if (historyIndex < 0) return undefined;
+		if (historyIndex >= promptHistory.length - 1) {
+			set({ historyIndex: -1, composerText: "" });
+			return "";
+		}
+		const next = historyIndex + 1;
+		set({ historyIndex: next, composerText: promptHistory[next] ?? "" });
+		return promptHistory[next];
+	},
 	toggleRawLog: () => set({ showRawLog: !get().showRawLog }),
+	toggleThinking: () => set({ hideThinking: !get().hideThinking }),
 	appendRawLine: (line) =>
 		set((state) => ({
 			rawLines: [...state.rawLines.slice(-400), line],
 		})),
-	resetTranscript: () => set({ entries: [], queue: [], working: false }),
+	resetTranscript: () => set({ entries: [], queue: [], working: false, frames: [] }),
 	setErrorBanner: (message) => set({ errorBanner: message }),
 	toggleEntryExpanded: (id) =>
 		set((state) => ({
 			entries: state.entries.map((entry) => (entry.id === id ? { ...entry, expanded: !entry.expanded } : entry)),
 		})),
+	setCommands: (commands) => set({ commands }),
+	setModels: (models) => set({ models }),
+	setSessions: (sessions) => set({ sessions }),
+	setTree: (nodes, leafId) => set({ treeNodes: nodes, treeLeafId: leafId }),
+	setThemes: (themes) => set({ themes }),
+	setThemeName: (name) => set({ themeName: name }),
+	setModal: (modal) => set({ modal }),
+	setUsageLabel: (label) => set({ usageLabel: label }),
+	dismissToast: (id) => set((state) => ({ toasts: state.toasts.filter((toast) => toast.id !== id) })),
+	dismissFrame: (componentId) =>
+		set((state) => ({ frames: state.frames.filter((frame) => frame.componentId !== componentId) })),
+	clearDialog: () => set({ activeDialog: undefined, modal: get().modal === "dialog" ? "none" : get().modal }),
+	ingestExtensionUi: (request) => {
+		if (request.method === "notify") {
+			const toast: ToastItem = {
+				id: request.id,
+				message: typeof request.message === "string" ? request.message : "Notification",
+				notifyType:
+					request.notifyType === "warning" || request.notifyType === "error" ? request.notifyType : "info",
+			};
+			set((state) => ({ toasts: [...state.toasts.slice(-4), toast] }));
+			return;
+		}
+		if (request.method === "setStatus") {
+			set((state) => {
+				const statusSegments = { ...state.statusSegments };
+				if (typeof request.statusText === "string" && request.statusText.length > 0) {
+					statusSegments[String(request.statusKey)] = request.statusText;
+				} else {
+					delete statusSegments[String(request.statusKey)];
+				}
+				return { statusSegments };
+			});
+			return;
+		}
+		if (request.method === "setWidget") {
+			set((state) => {
+				const without = state.widgets.filter((widget) => widget.key !== String(request.widgetKey));
+				if (!Array.isArray(request.widgetLines)) return { widgets: without };
+				return {
+					widgets: [
+						...without,
+						{
+							key: String(request.widgetKey),
+							lines: request.widgetLines.map(String),
+							placement: request.widgetPlacement === "aboveEditor" ? "aboveEditor" : "belowEditor",
+						},
+					],
+				};
+			});
+			return;
+		}
+		if (request.method === "setTitle" && typeof request.title === "string") {
+			document.title = request.title;
+			return;
+		}
+		if (request.method === "set_editor_text" && typeof request.text === "string") {
+			set({ composerText: request.text });
+			return;
+		}
+		if (
+			request.method === "select" ||
+			request.method === "confirm" ||
+			request.method === "input" ||
+			request.method === "editor"
+		) {
+			set({ activeDialog: request, modal: "dialog" });
+		}
+	},
 	ingestEvent: (event) => {
 		const type = event.type;
+		if (type === "engine_custom_open") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			if (!componentId) return;
+			const frame: CustomFrame = {
+				componentId,
+				overlay: event.overlay === true,
+				widgetKey: typeof event.widgetKey === "string" ? event.widgetKey : undefined,
+				widgetPlacement: event.widgetPlacement === "aboveEditor" ? "aboveEditor" : "belowEditor",
+				lines: [],
+			};
+			set((state) => ({
+				frames: [...state.frames.filter((item) => item.componentId !== componentId), frame],
+			}));
+			return;
+		}
+		if (type === "engine_custom_frame") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			const lines = Array.isArray(event.lines) ? event.lines.map(String) : [];
+			if (!componentId) return;
+			set((state) => {
+				const existing = state.frames.find((frame) => frame.componentId === componentId);
+				const next: CustomFrame = {
+					componentId,
+					overlay: existing?.overlay ?? true,
+					widgetKey: existing?.widgetKey,
+					widgetPlacement: existing?.widgetPlacement,
+					lines,
+					requestId: typeof event.requestId === "number" ? event.requestId : undefined,
+				};
+				return {
+					frames: [...state.frames.filter((frame) => frame.componentId !== componentId), next],
+				};
+			});
+			return;
+		}
+		if (type === "engine_custom_close" || type === "engine_custom_done") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			if (!componentId) return;
+			set((state) => ({
+				frames: state.frames.filter((frame) => frame.componentId !== componentId),
+			}));
+			return;
+		}
 		if (type === "agent_start" || type === "turn_start") {
 			set({ working: true, workingLabel: "thinking" });
 			return;
@@ -114,15 +347,55 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			set({ working: false });
 			return;
 		}
+		if (type === "bash_execution_start" || type === "user_bash_start") {
+			const id = typeof event.id === "string" ? event.id : nextId("bash");
+			const command = typeof event.command === "string" ? event.command : "";
+			set((state) => ({
+				working: true,
+				workingLabel: "bash",
+				entries: [
+					...state.entries,
+					{
+						id,
+						kind: "bash",
+						text: command ? `$ ${command}\n` : "",
+						streaming: true,
+						expanded: true,
+						excludeFromContext: event.excludeFromContext === true,
+					},
+				],
+			}));
+			return;
+		}
+		if (type === "bash_execution_update") {
+			const id = typeof event.id === "string" ? event.id : undefined;
+			const delta = typeof event.delta === "string" ? event.delta : "";
+			if (!id || !delta) return;
+			set((state) => ({
+				entries: state.entries.map((entry) =>
+					entry.id === id ? { ...entry, text: `${entry.text}${delta}`, streaming: true } : entry,
+				),
+			}));
+			return;
+		}
+		if (type === "bash_execution_end" || type === "user_bash_end") {
+			const id = typeof event.id === "string" ? event.id : undefined;
+			if (!id) return;
+			set((state) => ({
+				working: false,
+				entries: state.entries.map((entry) => (entry.id === id ? { ...entry, streaming: false } : entry)),
+			}));
+			return;
+		}
 		if (type === "message_start") {
-			const message = event.message as { role?: string; content?: unknown } | undefined;
+			const message = event.message as { role?: string; content?: unknown; id?: string } | undefined;
 			const role = message?.role ?? "assistant";
 			const kind: EntryKind = role === "user" ? "user" : role === "toolResult" ? "tool" : "assistant";
 			const id =
 				typeof event.messageId === "string"
 					? event.messageId
-					: typeof (message as { id?: string } | undefined)?.id === "string"
-						? (message as { id: string }).id
+					: typeof message?.id === "string"
+						? message.id
 						: nextId(kind);
 			set((state) => ({
 				working: role !== "user",
@@ -269,5 +542,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				],
 			}));
 		}
+		if (type === "session_stats" || type === "usage_update") {
+			const tokens = event.tokens as
+				| { input: number; output: number; cacheRead: number; cacheWrite: number; total: number }
+				| undefined;
+			set({
+				usageLabel: formatUsage(
+					tokens,
+					typeof event.cost === "number" ? event.cost : undefined,
+					typeof event.contextPercent === "number" ? event.contextPercent : null,
+				),
+			});
+		}
 	},
 }));
+
+export { formatUsage };

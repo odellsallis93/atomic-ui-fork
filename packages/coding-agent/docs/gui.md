@@ -17,9 +17,12 @@ the engine child.
 | Milestone | Status |
 |---|---|
 | M0 Skeleton + engine bridge | Done |
-| M1 Core chat parity | Partial (user/assistant/tool/compaction, footer, working indicator) |
-| M2 Input system | Partial (CodeMirror composer, steer/follow-up/abort, queue chips, bash-mode border) |
-| M3–M7 | Not started |
+| M1 Core chat parity | Mostly done — user/assistant/tool/bash/compaction, thinking toggle, footer + usage meter, working indicator |
+| M2 Input system | Mostly done — CodeMirror composer, `/` + `@` autocomplete, history, `!`/`!!` bash, steer/follow-up/abort, queue chips |
+| M3 Sessions | Mostly done — resume picker (search/sort/all-projects), rename/delete, clone, export HTML, compact, session tree navigator (`list_sessions` still host-local per plan §5.1) |
+| M4 Models / settings | Partial — model picker, cycle model/thinking, theme loader + settings write-through for `theme` (auth/trust/onboarding still open) |
+| M5 Extension UI host | Partial — native dialogs/notify/status/widgets plus ANSI `engine_custom_*` frame overlay (full key encoding / footer-header swap still open) |
+| M6–M7 | Not started |
 
 The authoritative plan lives at
 [`specs/2026-08-08-electron-gui-plan.md`](../../../specs/2026-08-08-electron-gui-plan.md).
@@ -40,12 +43,46 @@ ATOMIC_GUI_CLI_ENTRY=packages/coding-agent/src/cli.ts ATOMIC_GUI_RUNTIME=bun \
   npm run dev --workspace=@bastani/atomic-gui
 ```
 
+## Useful shortcuts (focused window)
+
+| Shortcut | Action |
+|---|---|
+| Enter | Send (or steer while streaming) |
+| Alt+Enter | Follow-up while streaming |
+| Escape | Abort (or dismiss focused extension frame) |
+| Ctrl+L | Open model picker |
+| Ctrl+P | Cycle model |
+| Ctrl+, | Open settings / theme picker |
+| Shift+Tab | Cycle thinking level |
+| Ctrl+T | Hide/show thinking blocks |
+| Ctrl+O | Expand/collapse latest tool card |
+| `/…` / `@…` | Slash-command and file mention autocomplete |
+| `!` / `!!` | Bash (in-context / excluded) |
+
+## Sessions
+
+The Sessions modal lists JSONL sessions under `~/.atomic/agent/sessions/`
+(host-side until engine `list_sessions` lands). From there you can:
+
+- Search, sort (modified/created/name/messages), and toggle all-projects
+- Resume / new session / rename / delete
+- Clone the current leaf (`clone` RPC) and export HTML (`export_html` RPC)
+- Open **Tree** for `get_tree` / `navigate_tree`
+
+## Themes
+
+Settings writes `theme` into `~/.atomic/agent/settings.json` and applies Atomic
+theme JSON tokens as CSS custom properties (`--atomic-*`, plus a few shell
+aliases). Builtin themes ship with `@bastani/atomic`; user themes load from
+`~/.atomic/agent/themes/`.
+
 ## Security model
 
 - `contextIsolation: true`, `nodeIntegration: false`, sandboxed renderer
 - Preload exposes a narrow typed `window.atomicGui` API over `contextBridge`
 - Engine credentials (when supplied) travel through the interactive-engine
   bootstrap file, never argv/env of descendant processes
+- ANSI frames are escaped before `dangerouslySetInnerHTML`
 
 ## Relation to the TUI
 

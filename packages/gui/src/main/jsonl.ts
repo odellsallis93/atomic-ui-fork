@@ -54,13 +54,16 @@ export function parseEngineReady(line: string): { protocolVersion: number; pid: 
 	return undefined;
 }
 
-export function isRpcResponse(value: unknown): value is {
+export interface RpcResponseMessage {
 	id?: string;
 	type: "response";
 	command: string;
 	success: boolean;
 	error?: string;
-} {
+	data?: unknown;
+}
+
+export function isRpcResponse(value: unknown): value is RpcResponseMessage {
 	return (
 		typeof value === "object" &&
 		value !== null &&
@@ -71,6 +74,32 @@ export function isRpcResponse(value: unknown): value is {
 	);
 }
 
+export function isExtensionUiRequest(
+	value: unknown,
+): value is { type: "extension_ui_request"; id: string; method: string } {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"type" in value &&
+		(value as { type: unknown }).type === "extension_ui_request" &&
+		"id" in value &&
+		typeof (value as { id: unknown }).id === "string" &&
+		"method" in value &&
+		typeof (value as { method: unknown }).method === "string"
+	);
+}
+
+export function isEngineMessage(value: unknown): value is { type: string } {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"type" in value &&
+		typeof (value as { type: unknown }).type === "string" &&
+		(value as { type: string }).type.startsWith("engine_") &&
+		(value as { type: string }).type !== "engine_ready"
+	);
+}
+
 export function isRpcEvent(value: unknown): value is { type: string } {
 	return (
 		typeof value === "object" &&
@@ -78,6 +107,7 @@ export function isRpcEvent(value: unknown): value is { type: string } {
 		"type" in value &&
 		typeof (value as { type: unknown }).type === "string" &&
 		(value as { type: string }).type !== "response" &&
+		(value as { type: string }).type !== "extension_ui_request" &&
 		!(value as { type: string }).type.startsWith("engine_")
 	);
 }

@@ -1,6 +1,6 @@
 # Atomic Electron GUI — Implementation Plan
 
-Status: **In progress** — M0 done; M1/M2 partial in `packages/gui` (`@bastani/atomic-gui`)
+Status: **In progress** — M0–M2 largely done; M3 sessions (picker/tree/clone/export/rename/delete/compact) in; M4 theme+settings write-through started; M5 dialogs + ANSI frame overlays started in `packages/gui`
 
 ## Summary
 
