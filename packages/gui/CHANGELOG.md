@@ -25,3 +25,6 @@
   session-only decisions) before engine start.
 - Frame key encoding maps arrows, function keys, ctrl/alt chords, and shift-tab
   to legacy terminal sequences that pi-tui `matchesKey` accepts.
+- Frame host render loop: `engine_custom_render` on open/invalidate, pipelined
+  after input, `overlayOptions` geometry, hide/show/focus control, and
+  mouse-scroll-tracking wheel reports.

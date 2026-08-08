@@ -694,6 +694,10 @@ input {
 	max-height: 40vh;
 }
 
+.frame-overlay-positioned {
+	inset: auto;
+}
+
 .frame-chrome {
 	display: flex;
 	justify-content: space-between;

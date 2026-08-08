@@ -13,6 +13,7 @@ import type {
 	TrustOption,
 	TrustStatus,
 } from "../../../shared/ipc.ts";
+import { parseOverlayOptions, type GuiOverlayOptions } from "../../../shared/overlay-options.ts";
 
 export type EntryKind = "user" | "assistant" | "tool" | "bash" | "system" | "compaction" | "branchSummary" | "raw";
 
@@ -57,6 +58,14 @@ export interface CustomFrame {
 	widgetPlacement?: "aboveEditor" | "belowEditor";
 	lines: string[];
 	requestId?: number;
+	appliedRequestId: number;
+	/** Bumped when the child asks for a fresh `engine_custom_render`. */
+	renderGeneration: number;
+	overlayOptions?: GuiOverlayOptions;
+	handlesCtrlC: boolean;
+	hidden: boolean;
+	focused: boolean;
+	mouseScrollTracking: boolean;
 }
 
 export interface SessionState {
@@ -389,6 +398,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				widgetKey: typeof event.widgetKey === "string" ? event.widgetKey : undefined,
 				widgetPlacement: event.widgetPlacement === "aboveEditor" ? "aboveEditor" : "belowEditor",
 				lines: [],
+				appliedRequestId: 0,
+				renderGeneration: 1,
+				overlayOptions: parseOverlayOptions(event.overlayOptions),
+				handlesCtrlC: event.handlesCtrlC === true,
+				hidden: false,
+				focused: event.overlay === true,
+				mouseScrollTracking: false,
 			};
 			set((state) => {
 				const frames = [...state.frames.filter((item) => item.componentId !== componentId), frame];
@@ -407,15 +423,26 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
 			const lines = Array.isArray(event.lines) ? event.lines.map(String) : [];
 			if (!componentId) return;
+			const requestId = typeof event.requestId === "number" ? event.requestId : undefined;
 			set((state) => {
 				const existing = state.frames.find((frame) => frame.componentId === componentId);
+				if (existing && requestId !== undefined && requestId < existing.appliedRequestId) {
+					return state;
+				}
 				const next: CustomFrame = {
 					componentId,
 					overlay: existing?.overlay ?? true,
 					widgetKey: existing?.widgetKey,
 					widgetPlacement: existing?.widgetPlacement,
 					lines,
-					requestId: typeof event.requestId === "number" ? event.requestId : undefined,
+					requestId,
+					appliedRequestId: requestId ?? existing?.appliedRequestId ?? 0,
+					renderGeneration: existing?.renderGeneration ?? 0,
+					overlayOptions: existing?.overlayOptions,
+					handlesCtrlC: existing?.handlesCtrlC ?? false,
+					hidden: existing?.hidden ?? false,
+					focused: existing?.focused ?? true,
+					mouseScrollTracking: existing?.mouseScrollTracking ?? false,
 				};
 				const frames = [...state.frames.filter((frame) => frame.componentId !== componentId), next];
 				let widgets = state.widgets;
@@ -431,6 +458,51 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				}
 				return { frames, widgets };
 			});
+			return;
+		}
+		if (type === "engine_custom_invalidate") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			if (!componentId) return;
+			set((state) => ({
+				frames: state.frames.map((frame) =>
+					frame.componentId === componentId
+						? { ...frame, renderGeneration: frame.renderGeneration + 1 }
+						: frame,
+				),
+			}));
+			return;
+		}
+		if (type === "engine_custom_control") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			const action = event.action;
+			if (!componentId || typeof action !== "string") return;
+			set((state) => ({
+				frames: state.frames.map((frame) => {
+					if (frame.componentId !== componentId) {
+						if (action === "focus") return { ...frame, focused: false };
+						return frame;
+					}
+					if (action === "hide") return { ...frame, hidden: true, focused: false };
+					if (action === "show") return { ...frame, hidden: false };
+					if (action === "focus") return { ...frame, hidden: false, focused: true };
+					if (action === "unfocus") return { ...frame, focused: false };
+					return frame;
+				}),
+			}));
+			return;
+		}
+		if (type === "engine_custom_terminal") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			const control = event.control;
+			if (!componentId || typeof control !== "object" || control === null) return;
+			const kind = (control as { kind?: unknown }).kind;
+			const enabled = (control as { enabled?: unknown }).enabled === true;
+			if (kind !== "mouse-scroll-tracking") return;
+			set((state) => ({
+				frames: state.frames.map((frame) =>
+					frame.componentId === componentId ? { ...frame, mouseScrollTracking: enabled } : frame,
+				),
+			}));
 			return;
 		}
 		if (type === "engine_custom_close" || type === "engine_custom_done") {

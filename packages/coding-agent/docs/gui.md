@@ -21,7 +21,7 @@ the engine child.
 | M2 Input system | Mostly done — CodeMirror composer, `/` + `@` autocomplete, history, `!`/`!!` bash, steer/follow-up/abort, queue chips |
 | M3 Sessions | Mostly done — resume picker (search/sort/all-projects), rename/delete, clone, export HTML, compact, session tree navigator (`list_sessions` still host-local per plan §5.1) |
 | M4 Models / settings | Partial — model picker, cycle model/thinking, theme loader, provider login/logout + OAuth UI, project trust prompt (full onboarding still open) |
-| M5 Extension UI host | Partial — native dialogs/notify/status/widgets, `engine_input_form_*`, ANSI frame overlays with legacy terminal key encoding (custom footer/header/editor swap still open) |
+| M5 Extension UI host | Partial — native dialogs/notify/status/widgets, `engine_input_form_*`, ANSI frame overlays with render loop + `overlayOptions` + control/invalidate + legacy key encoding + mouse-scroll wheel (custom footer/header/editor swap still blocked under isolation; kitty key-release still open) |
 | M6–M7 | Not started |
 
 The authoritative plan lives at
@@ -85,6 +85,21 @@ aliases). Builtin themes ship with `@bastani/atomic`; user themes load from
 - **Trust** prompts before engine start when the cwd has project resources and
   `~/.atomic/agent/trust.json` has no decision, matching TUI trust options
   (including session-only).
+
+## Extension frames
+
+Custom extension UIs (`ctx.ui.custom`) arrive as `engine_custom_*` messages.
+The host:
+
+1. Opens a frame on `engine_custom_open` (persisting `overlayOptions` / `handlesCtrlC`)
+2. Sends `engine_custom_render` with a measured cell grid
+3. Paints `engine_custom_frame` lines through the ANSI→HTML helper
+4. Forwards keyboard (and optional mouse-scroll) as `engine_custom_input`, then
+   pipelines another render request
+5. Honors `engine_custom_invalidate` and `engine_custom_control` (hide/show/focus)
+
+Chrome swap (`setFooter` / `setHeader` / `setEditorComponent`) is still unsupported
+under interactive-engine isolation until protocol §5.3 lands.
 
 ## Security model
 

@@ -1,3 +1,4 @@
+import { widgetLinesToHtml } from "../helpers/ansi-widgets";
 import type { WidgetItem } from "../store/session-store";
 
 export function Widgets({ widgets, placement }: { widgets: WidgetItem[]; placement: "aboveEditor" | "belowEditor" }) {
@@ -6,9 +7,12 @@ export function Widgets({ widgets, placement }: { widgets: WidgetItem[]; placeme
 	return (
 		<div className="widget-stack">
 			{items.map((widget) => (
-				<pre key={widget.key} className="widget-block">
-					{widget.lines.join("\n")}
-				</pre>
+				// biome-ignore lint/security/noDangerouslySetInnerHtml: ANSI→HTML from engine widgets; escaped in ansi.ts
+				<pre
+					key={widget.key}
+					className="widget-block"
+					dangerouslySetInnerHTML={{ __html: widgetLinesToHtml(widget.lines) }}
+				/>
 			))}
 		</div>
 	);

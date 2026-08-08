@@ -5,6 +5,7 @@ import { Composer } from "./components/Composer";
 import { DialogModal } from "./components/DialogModal";
 import { Footer } from "./components/Footer";
 import { FrameOverlay } from "./components/FrameOverlay";
+import { FrameRenderHost } from "./components/FrameRenderHost";
 import { InputFormModal } from "./components/InputFormModal";
 import { ModelPicker } from "./components/ModelPicker";
 import { SessionPicker } from "./components/SessionPicker";
@@ -415,6 +416,18 @@ export function App() {
 
 			<ToastStack toasts={toasts} onDismiss={dismissToast} />
 
+			<FrameRenderHost
+				frames={frames}
+				onRender={(componentId, requestId, width, rows) => {
+					void window.atomicGui.sendEngineCommand({
+						type: "engine_custom_render",
+						componentId,
+						requestId,
+						width,
+						rows,
+					});
+				}}
+			/>
 			<FrameOverlay
 				frames={frames}
 				onDismiss={(componentId) => {
@@ -423,6 +436,15 @@ export function App() {
 				}}
 				onInput={(componentId, data) => {
 					void window.atomicGui.sendEngineCommand({ type: "engine_custom_input", componentId, data });
+				}}
+				onRender={(componentId, requestId, width, rows) => {
+					void window.atomicGui.sendEngineCommand({
+						type: "engine_custom_render",
+						componentId,
+						requestId,
+						width,
+						rows,
+					});
 				}}
 			/>
 
