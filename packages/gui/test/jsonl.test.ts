@@ -4,6 +4,7 @@ import { test } from "vitest";
 import {
 	attachJsonlLineReader,
 	INTERACTIVE_ENGINE_PROTOCOL_VERSION,
+	isEngineMessage,
 	isRpcEvent,
 	isRpcResponse,
 	parseEngineReady,
@@ -34,5 +35,7 @@ test("response and event discriminators", () => {
 	assert.equal(isRpcResponse({ type: "response", command: "prompt", success: true }), true);
 	assert.equal(isRpcEvent({ type: "message_update" }), true);
 	assert.equal(isRpcEvent({ type: "engine_heartbeat" }), false);
+	assert.equal(isEngineMessage({ type: "engine_custom_frame", componentId: "c1", lines: [] }), true);
+	assert.equal(isEngineMessage({ type: "engine_ready" }), false);
 	assert.equal(isRpcEvent({ type: "response", success: true }), false);
 });

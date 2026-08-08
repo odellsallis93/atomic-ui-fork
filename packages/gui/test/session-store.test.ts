@@ -23,6 +23,11 @@ beforeEach(() => {
 		commands: [],
 		models: [],
 		sessions: [],
+		treeNodes: [],
+		treeLeafId: null,
+		themes: [],
+		themeName: "dark",
+		frames: [],
 		modal: "none",
 		activeDialog: undefined,
 	});
@@ -104,4 +109,19 @@ test("extension UI notify/status/widget land in store", () => {
 	assert.equal(state.toasts[0]?.message, "hello");
 	assert.equal(state.statusSegments.mcp, "ok");
 	assert.equal(state.widgets[0]?.lines[0], "running");
+});
+
+test("engine_custom_open/frame/close manage frame surfaces", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({ type: "engine_custom_open", componentId: "c1", overlay: true });
+	ingestEvent({
+		type: "engine_custom_frame",
+		componentId: "c1",
+		requestId: 1,
+		lines: ["\x1b[32mok\x1b[0m"],
+	});
+	assert.equal(useSessionStore.getState().frames.length, 1);
+	assert.equal(useSessionStore.getState().frames[0]?.lines[0], "\x1b[32mok\x1b[0m");
+	ingestEvent({ type: "engine_custom_close", componentId: "c1" });
+	assert.equal(useSessionStore.getState().frames.length, 0);
 });

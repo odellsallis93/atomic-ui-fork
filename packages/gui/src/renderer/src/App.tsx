@@ -3,14 +3,24 @@ import type { ExtensionUiResponse } from "../../shared/ipc";
 import { Composer } from "./components/Composer";
 import { DialogModal } from "./components/DialogModal";
 import { Footer } from "./components/Footer";
+import { FrameOverlay } from "./components/FrameOverlay";
 import { ModelPicker } from "./components/ModelPicker";
 import { SessionPicker } from "./components/SessionPicker";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { ToastStack } from "./components/ToastStack";
 import { Transcript } from "./components/Transcript";
+import { TreeNavigator } from "./components/TreeNavigator";
 import { formatUsage, useSessionStore } from "./store/session-store";
 
 function hasGuiApi(): boolean {
 	return typeof window !== "undefined" && typeof window.atomicGui !== "undefined";
+}
+
+function applyThemeCss(vars: Record<string, string>): void {
+	const root = document.documentElement;
+	for (const [key, value] of Object.entries(vars)) {
+		root.style.setProperty(key, value);
+	}
 }
 
 export function App() {
@@ -28,6 +38,11 @@ export function App() {
 	const commands = useSessionStore((s) => s.commands);
 	const models = useSessionStore((s) => s.models);
 	const sessions = useSessionStore((s) => s.sessions);
+	const treeNodes = useSessionStore((s) => s.treeNodes);
+	const treeLeafId = useSessionStore((s) => s.treeLeafId);
+	const themes = useSessionStore((s) => s.themes);
+	const themeName = useSessionStore((s) => s.themeName);
+	const frames = useSessionStore((s) => s.frames);
 	const modal = useSessionStore((s) => s.modal);
 	const activeDialog = useSessionStore((s) => s.activeDialog);
 	const widgets = useSessionStore((s) => s.widgets);
@@ -48,10 +63,14 @@ export function App() {
 	const setCommands = useSessionStore((s) => s.setCommands);
 	const setModels = useSessionStore((s) => s.setModels);
 	const setSessions = useSessionStore((s) => s.setSessions);
+	const setTree = useSessionStore((s) => s.setTree);
+	const setThemes = useSessionStore((s) => s.setThemes);
+	const setThemeName = useSessionStore((s) => s.setThemeName);
 	const setModal = useSessionStore((s) => s.setModal);
 	const setUsageLabel = useSessionStore((s) => s.setUsageLabel);
 	const clearDialog = useSessionStore((s) => s.clearDialog);
 	const dismissToast = useSessionStore((s) => s.dismissToast);
+	const dismissFrame = useSessionStore((s) => s.dismissFrame);
 	const resetTranscript = useSessionStore((s) => s.resetTranscript);
 
 	const refreshMetadata = useCallback(async (): Promise<void> => {
@@ -74,6 +93,13 @@ export function App() {
 		if (!hasGuiApi()) return;
 		const api = window.atomicGui;
 		void api.getStatus().then(setStatus);
+		void (async () => {
+			const settings = await api.getSettings();
+			setThemeName(settings.theme);
+			const theme = await api.getThemeCss(settings.theme);
+			applyThemeCss(theme.cssVariables);
+			setThemes(await api.listThemes());
+		})();
 		const offStatus = api.onStatus(setStatus);
 		const offEvent = api.onEvent(ingestEvent);
 		const offRaw = api.onRawLine(appendRawLine);
@@ -84,7 +110,7 @@ export function App() {
 			offRaw();
 			offUi();
 		};
-	}, [appendRawLine, ingestEvent, ingestExtensionUi, setStatus]);
+	}, [appendRawLine, ingestEvent, ingestExtensionUi, setStatus, setThemeName, setThemes]);
 
 	useEffect(() => {
 		if (status.state !== "ready") return;
@@ -116,6 +142,25 @@ export function App() {
 		setModal("sessions");
 	}, [setModal, setSessions, status.cwd]);
 
+	const openTree = useCallback(async (): Promise<void> => {
+		if (!hasGuiApi()) return;
+		const result = await window.atomicGui.getTree();
+		if (!result.ok || !result.data) {
+			setErrorBanner(result.error ?? "Failed to load session tree");
+			return;
+		}
+		setTree(result.data.nodes, result.data.leafId);
+		setModal("tree");
+	}, [setErrorBanner, setModal, setTree]);
+
+	const openSettings = useCallback(async (): Promise<void> => {
+		if (!hasGuiApi()) return;
+		setThemes(await window.atomicGui.listThemes());
+		const settings = await window.atomicGui.getSettings();
+		setThemeName(settings.theme);
+		setModal("settings");
+	}, [setModal, setThemeName, setThemes]);
+
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent): void => {
 			if (!hasGuiApi() || status.state !== "ready") return;
@@ -141,11 +186,23 @@ export function App() {
 				event.preventDefault();
 				const lastTool = [...entries].reverse().find((entry) => entry.kind === "tool");
 				if (lastTool) toggleEntryExpanded(lastTool.id);
+			} else if (event.ctrlKey && event.key.toLowerCase() === ",") {
+				event.preventDefault();
+				void openSettings();
 			}
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [entries, openModels, refreshMetadata, setErrorBanner, status.state, toggleEntryExpanded, toggleThinking]);
+	}, [
+		entries,
+		openModels,
+		openSettings,
+		refreshMetadata,
+		setErrorBanner,
+		status.state,
+		toggleEntryExpanded,
+		toggleThinking,
+	]);
 
 	const startEngine = async (sessionPath?: string): Promise<void> => {
 		if (!hasGuiApi()) {
@@ -216,7 +273,7 @@ export function App() {
 			<header className="topbar">
 				<div className="brand">
 					<span className="brand-mark">∀ Atomic</span>
-					<span className="brand-sub">GUI host</span>
+					<span className="brand-sub">GUI host · {themeName}</span>
 				</div>
 				<div className="status-chip">
 					<span className={`status-dot ${status.state}`} />
@@ -227,8 +284,27 @@ export function App() {
 					<button type="button" className="btn" disabled={!ready} onClick={() => void openSessions()}>
 						Sessions
 					</button>
+					<button type="button" className="btn" disabled={!ready} onClick={() => void openTree()}>
+						Tree
+					</button>
 					<button type="button" className="btn" disabled={!ready} onClick={() => void openModels()}>
 						Models
+					</button>
+					<button
+						type="button"
+						className="btn"
+						disabled={!ready}
+						onClick={() => {
+							void window.atomicGui.compact().then((result) => {
+								if (!result.ok) setErrorBanner(result.error);
+								else void refreshMetadata();
+							});
+						}}
+					>
+						Compact
+					</button>
+					<button type="button" className="btn" onClick={() => void openSettings()}>
+						Settings
 					</button>
 					<button type="button" className="btn" onClick={toggleRawLog}>
 						{showRawLog ? "Hide log" : "Raw log"}
@@ -299,16 +375,74 @@ export function App() {
 
 			<ToastStack toasts={toasts} onDismiss={dismissToast} />
 
+			<FrameOverlay
+				frames={frames}
+				onDismiss={(componentId) => {
+					dismissFrame(componentId);
+					void window.atomicGui.sendEngineCommand({ type: "engine_custom_dispose", componentId });
+				}}
+				onInput={(componentId, data) => {
+					void window.atomicGui.sendEngineCommand({ type: "engine_custom_input", componentId, data });
+				}}
+			/>
+
 			{modal === "sessions" ? (
 				<SessionPicker
 					sessions={sessions}
+					currentPath={status.sessionFile}
 					onClose={() => setModal("none")}
+					onRefresh={(options) => {
+						void window.atomicGui.listSessions({ cwd: status.cwd, all: options.all }).then(setSessions);
+					}}
 					onNew={() => {
 						void window.atomicGui.newSession().then((result) => {
 							if (!result.ok) setErrorBanner(result.error);
 							else {
 								resetTranscript();
 								setModal("none");
+								void refreshMetadata();
+							}
+						});
+					}}
+					onClone={() => {
+						void window.atomicGui.cloneSession().then((result) => {
+							if (!result.ok) setErrorBanner(result.error);
+							else {
+								resetTranscript();
+								setModal("none");
+								void refreshMetadata();
+							}
+						});
+					}}
+					onExport={() => {
+						void window.atomicGui.exportHtml().then((result) => {
+							if (!result.ok) setErrorBanner(result.error);
+							else {
+								useSessionStore.getState().ingestExtensionUi({
+									id: `export-${Date.now()}`,
+									method: "notify",
+									message: `Exported HTML → ${result.data?.path ?? "(unknown path)"}`,
+									notifyType: "info",
+								});
+							}
+						});
+					}}
+					onRename={(session, name) => {
+						void window.atomicGui.renameSession(session.path, name).then(async (result) => {
+							if (!result.ok) setErrorBanner(result.error);
+							else {
+								setSessions(await window.atomicGui.listSessions({ cwd: status.cwd }));
+								void refreshMetadata();
+							}
+						});
+					}}
+					onDelete={(session) => {
+						if (!window.confirm(`Delete session ${session.name || session.id}?`)) return;
+						void window.atomicGui.deleteSession(session.path).then(async (result) => {
+							if (!result.ok) setErrorBanner(result.error);
+							else {
+								if (session.path === status.sessionFile) resetTranscript();
+								setSessions(await window.atomicGui.listSessions({ cwd: status.cwd }));
 								void refreshMetadata();
 							}
 						});
@@ -344,6 +478,40 @@ export function App() {
 								setModal("none");
 								void refreshMetadata();
 							}
+						});
+					}}
+				/>
+			) : null}
+
+			{modal === "tree" ? (
+				<TreeNavigator
+					nodes={treeNodes}
+					leafId={treeLeafId}
+					onClose={() => setModal("none")}
+					onNavigate={(entryId) => {
+						void window.atomicGui.navigateTree(entryId).then((result) => {
+							if (!result.ok) setErrorBanner(result.error);
+							else {
+								if (result.data?.editorText) setComposerText(result.data.editorText);
+								resetTranscript();
+								setModal("none");
+								void refreshMetadata();
+							}
+						});
+					}}
+				/>
+			) : null}
+
+			{modal === "settings" ? (
+				<SettingsPanel
+					themes={themes}
+					currentTheme={themeName}
+					onClose={() => setModal("none")}
+					onSelectTheme={(name) => {
+						void window.atomicGui.setTheme(name).then((theme) => {
+							applyThemeCss(theme.cssVariables);
+							setThemeName(theme.name);
+							setModal("none");
 						});
 					}}
 				/>

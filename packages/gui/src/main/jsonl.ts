@@ -89,6 +89,17 @@ export function isExtensionUiRequest(
 	);
 }
 
+export function isEngineMessage(value: unknown): value is { type: string } {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"type" in value &&
+		typeof (value as { type: unknown }).type === "string" &&
+		(value as { type: string }).type.startsWith("engine_") &&
+		(value as { type: string }).type !== "engine_ready"
+	);
+}
+
 export function isRpcEvent(value: unknown): value is { type: string } {
 	return (
 		typeof value === "object" &&

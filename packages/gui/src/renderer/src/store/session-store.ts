@@ -5,7 +5,9 @@ import type {
 	GuiRpcEvent,
 	ModelInfo,
 	SessionListItem,
+	SessionTreeNodeInfo,
 	SlashCommandInfo,
+	ThemeSummary,
 } from "../../../shared/ipc.ts";
 
 export type EntryKind = "user" | "assistant" | "tool" | "bash" | "system" | "compaction" | "branchSummary" | "raw";
@@ -42,7 +44,16 @@ export interface WidgetItem {
 	placement: "aboveEditor" | "belowEditor";
 }
 
-export type ModalKind = "none" | "sessions" | "models" | "dialog";
+export type ModalKind = "none" | "sessions" | "models" | "dialog" | "tree" | "settings";
+
+export interface CustomFrame {
+	componentId: string;
+	overlay: boolean;
+	widgetKey?: string;
+	widgetPlacement?: "aboveEditor" | "belowEditor";
+	lines: string[];
+	requestId?: number;
+}
 
 export interface SessionState {
 	status: EngineStatus;
@@ -64,6 +75,11 @@ export interface SessionState {
 	commands: SlashCommandInfo[];
 	models: ModelInfo[];
 	sessions: SessionListItem[];
+	treeNodes: SessionTreeNodeInfo[];
+	treeLeafId: string | null;
+	themes: ThemeSummary[];
+	themeName: string;
+	frames: CustomFrame[];
 	modal: ModalKind;
 	activeDialog?: ExtensionUiRequest;
 	setStatus: (status: EngineStatus) => void;
@@ -78,12 +94,16 @@ export interface SessionState {
 	ingestExtensionUi: (request: ExtensionUiRequest) => void;
 	clearDialog: () => void;
 	dismissToast: (id: string) => void;
+	dismissFrame: (componentId: string) => void;
 	resetTranscript: () => void;
 	setErrorBanner: (message: string | undefined) => void;
 	toggleEntryExpanded: (id: string) => void;
 	setCommands: (commands: SlashCommandInfo[]) => void;
 	setModels: (models: ModelInfo[]) => void;
 	setSessions: (sessions: SessionListItem[]) => void;
+	setTree: (nodes: SessionTreeNodeInfo[], leafId: string | null) => void;
+	setThemes: (themes: ThemeSummary[]) => void;
+	setThemeName: (name: string) => void;
 	setModal: (modal: ModalKind) => void;
 	setUsageLabel: (label: string) => void;
 }
@@ -162,6 +182,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	commands: [],
 	models: [],
 	sessions: [],
+	treeNodes: [],
+	treeLeafId: null,
+	themes: [],
+	themeName: "dark",
+	frames: [],
 	modal: "none",
 	setStatus: (status) => set({ status, errorBanner: status.error }),
 	setComposerText: (text) => set({ composerText: text, historyIndex: -1 }),
@@ -194,7 +219,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		set((state) => ({
 			rawLines: [...state.rawLines.slice(-400), line],
 		})),
-	resetTranscript: () => set({ entries: [], queue: [], working: false }),
+	resetTranscript: () => set({ entries: [], queue: [], working: false, frames: [] }),
 	setErrorBanner: (message) => set({ errorBanner: message }),
 	toggleEntryExpanded: (id) =>
 		set((state) => ({
@@ -203,9 +228,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	setCommands: (commands) => set({ commands }),
 	setModels: (models) => set({ models }),
 	setSessions: (sessions) => set({ sessions }),
+	setTree: (nodes, leafId) => set({ treeNodes: nodes, treeLeafId: leafId }),
+	setThemes: (themes) => set({ themes }),
+	setThemeName: (name) => set({ themeName: name }),
 	setModal: (modal) => set({ modal }),
 	setUsageLabel: (label) => set({ usageLabel: label }),
 	dismissToast: (id) => set((state) => ({ toasts: state.toasts.filter((toast) => toast.id !== id) })),
+	dismissFrame: (componentId) =>
+		set((state) => ({ frames: state.frames.filter((frame) => frame.componentId !== componentId) })),
 	clearDialog: () => set({ activeDialog: undefined, modal: get().modal === "dialog" ? "none" : get().modal }),
 	ingestExtensionUi: (request) => {
 		if (request.method === "notify") {
@@ -266,6 +296,49 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 	ingestEvent: (event) => {
 		const type = event.type;
+		if (type === "engine_custom_open") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			if (!componentId) return;
+			const frame: CustomFrame = {
+				componentId,
+				overlay: event.overlay === true,
+				widgetKey: typeof event.widgetKey === "string" ? event.widgetKey : undefined,
+				widgetPlacement: event.widgetPlacement === "aboveEditor" ? "aboveEditor" : "belowEditor",
+				lines: [],
+			};
+			set((state) => ({
+				frames: [...state.frames.filter((item) => item.componentId !== componentId), frame],
+			}));
+			return;
+		}
+		if (type === "engine_custom_frame") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			const lines = Array.isArray(event.lines) ? event.lines.map(String) : [];
+			if (!componentId) return;
+			set((state) => {
+				const existing = state.frames.find((frame) => frame.componentId === componentId);
+				const next: CustomFrame = {
+					componentId,
+					overlay: existing?.overlay ?? true,
+					widgetKey: existing?.widgetKey,
+					widgetPlacement: existing?.widgetPlacement,
+					lines,
+					requestId: typeof event.requestId === "number" ? event.requestId : undefined,
+				};
+				return {
+					frames: [...state.frames.filter((frame) => frame.componentId !== componentId), next],
+				};
+			});
+			return;
+		}
+		if (type === "engine_custom_close" || type === "engine_custom_done") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			if (!componentId) return;
+			set((state) => ({
+				frames: state.frames.filter((frame) => frame.componentId !== componentId),
+			}));
+			return;
+		}
 		if (type === "agent_start" || type === "turn_start") {
 			set({ working: true, workingLabel: "thinking" });
 			return;
