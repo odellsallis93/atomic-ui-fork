@@ -89,6 +89,7 @@ export interface SessionState {
 	entries: TranscriptEntry[];
 	working: boolean;
 	workingLabel: string;
+	workingVisible: boolean;
 	rawLines: string[];
 	showRawLog: boolean;
 	hideThinking: boolean;
@@ -296,6 +297,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	entries: [],
 	working: false,
 	workingLabel: "thinking",
+	workingVisible: true,
 	rawLines: [],
 	showRawLog: false,
 	hideThinking: false,
@@ -428,6 +430,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				}
 				return { statusSegments };
 			});
+			return;
+		}
+		if (request.method === "setWorking") {
+			set((state) => ({
+				workingLabel: typeof request.message === "string" ? request.message : state.workingLabel,
+				workingVisible: typeof request.visible === "boolean" ? request.visible : state.workingVisible,
+			}));
 			return;
 		}
 		if (request.method === "setWidget") {

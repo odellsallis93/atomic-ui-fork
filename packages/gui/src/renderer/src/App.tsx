@@ -81,6 +81,7 @@ export function App() {
 	const entries = useSessionStore((s) => s.entries);
 	const working = useSessionStore((s) => s.working);
 	const workingLabel = useSessionStore((s) => s.workingLabel);
+	const workingVisible = useSessionStore((s) => s.workingVisible);
 	const rawLines = useSessionStore((s) => s.rawLines);
 	const showRawLog = useSessionStore((s) => s.showRawLog);
 	const hideThinking = useSessionStore((s) => s.hideThinking);
@@ -488,7 +489,7 @@ export function App() {
 				<Composer
 					value={composerText}
 					disabled={!ready}
-					working={working}
+					working={working && workingVisible}
 					queue={queue}
 					commands={commands}
 					widgets={widgets}

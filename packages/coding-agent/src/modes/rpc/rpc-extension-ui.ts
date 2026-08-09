@@ -184,12 +184,12 @@ export function createRpcExtensionUIContext({
 			emitExtensionUIRequest(output, { method: "setStatus", statusKey: key, statusText: text });
 		},
 
-		setWorkingMessage(_message?: string): void {
-			// Working message not supported in RPC mode - requires TUI loader access
+		setWorkingMessage(message?: string): void {
+			emitExtensionUIRequest(output, { method: "setWorking", message });
 		},
 
-		setWorkingVisible(_visible: boolean): void {
-			// Working visibility not supported in RPC mode - requires TUI loader access
+		setWorkingVisible(visible: boolean): void {
+			emitExtensionUIRequest(output, { method: "setWorking", visible });
 		},
 
 		setWorkingIndicator(_options?: WorkingIndicatorOptions): void {

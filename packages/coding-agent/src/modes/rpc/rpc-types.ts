@@ -417,6 +417,7 @@ export type RpcExtensionUIRequest =
 			statusKey: string;
 			statusText: string | undefined;
 	  }
+	| { type: "extension_ui_request"; id: string; method: "setWorking"; message?: string; visible?: boolean }
 	| {
 			type: "extension_ui_request";
 			id: string;
