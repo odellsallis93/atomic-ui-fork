@@ -1,6 +1,7 @@
 export interface AutocompleteItem {
 	id: string;
 	label: string;
+	insertText?: string;
 	description?: string;
 }
 

@@ -1,11 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { defaultRenderGrid, overlayOptionsToStyle } from "../src/renderer/src/helpers/overlay-geometry.ts";
+import { nextFrameRenderRequestId, resetFrameRenderRequestIds } from "../src/renderer/src/helpers/frame-render-ids.ts";
 import { encodeWheelDelta } from "../src/renderer/src/helpers/mouse-scroll.ts";
-import {
-	nextFrameRenderRequestId,
-	resetFrameRenderRequestIds,
-} from "../src/renderer/src/helpers/frame-render-ids.ts";
+import { defaultRenderGrid, overlayOptionsToStyle } from "../src/renderer/src/helpers/overlay-geometry.ts";
 
 test("overlayOptionsToStyle centers by default and maps cell sizes", () => {
 	const style = overlayOptionsToStyle(

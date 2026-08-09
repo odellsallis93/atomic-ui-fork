@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 
 export type TrustDecision = boolean | null;
 
@@ -109,9 +109,7 @@ export function getTrustStatus(cwd: string, env: NodeJS.ProcessEnv = process.env
 export function getTrustOptions(cwd: string): TrustOption[] {
 	const trustPath = normalizeCwd(cwd);
 	const parent = dirname(trustPath);
-	const options: TrustOption[] = [
-		{ id: "trust", label: "Trust", trusted: true, persistPath: trustPath },
-	];
+	const options: TrustOption[] = [{ id: "trust", label: "Trust", trusted: true, persistPath: trustPath }];
 	if (parent !== trustPath) {
 		options.push({
 			id: "trust-parent",
@@ -128,11 +126,7 @@ export function getTrustOptions(cwd: string): TrustOption[] {
 	return options;
 }
 
-export function applyTrustDecision(
-	cwd: string,
-	optionId: string,
-	env: NodeJS.ProcessEnv = process.env,
-): TrustStatus {
+export function applyTrustDecision(cwd: string, optionId: string, env: NodeJS.ProcessEnv = process.env): TrustStatus {
 	const option = getTrustOptions(cwd).find((item) => item.id === optionId);
 	if (!option) throw new Error(`Unknown trust option: ${optionId}`);
 	if (option.persistPath) {

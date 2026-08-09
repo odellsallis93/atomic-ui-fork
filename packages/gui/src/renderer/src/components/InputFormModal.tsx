@@ -39,7 +39,11 @@ export function InputFormModal(props: {
 							<input
 								id={`field-${field.name}`}
 								className="modal-input"
-								type={field.type === "string" && /key|token|secret|password/i.test(field.name) ? "password" : "text"}
+								type={
+									field.type === "string" && /key|token|secret|password/i.test(field.name)
+										? "password"
+										: "text"
+								}
 								placeholder={field.placeholder}
 								value={values[field.name] ?? ""}
 								onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}

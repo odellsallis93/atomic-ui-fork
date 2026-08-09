@@ -25,6 +25,11 @@ const api: GuiHostApi = {
 	getTree: () => ipcRenderer.invoke(IPC_CHANNELS.getTree),
 	navigateTree: (targetId) => ipcRenderer.invoke(IPC_CHANNELS.navigateTree, targetId),
 	getCommands: () => ipcRenderer.invoke(IPC_CHANNELS.getCommands),
+	getCommandCompletions: (commandName, argumentPrefix) =>
+		ipcRenderer.invoke(IPC_CHANNELS.getCommandCompletions, commandName, argumentPrefix),
+	getEntries: () => ipcRenderer.invoke(IPC_CHANNELS.getEntries),
+	getShortcuts: () => ipcRenderer.invoke(IPC_CHANNELS.getShortcuts),
+	invokeShortcut: (key) => ipcRenderer.invoke(IPC_CHANNELS.invokeShortcut, key),
 	getModels: () => ipcRenderer.invoke(IPC_CHANNELS.getModels),
 	getAuthCatalog: () => ipcRenderer.invoke(IPC_CHANNELS.getAuthCatalog),
 	loginProvider: (provider, authType) => ipcRenderer.invoke(IPC_CHANNELS.loginProvider, provider, authType),

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef } from "react";
-import { ansiLinesToHtml } from "../helpers/ansi";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { ansiLineToSegments } from "../helpers/ansi";
 import { nextFrameRenderRequestId } from "../helpers/frame-render-ids";
 import { encodeTerminalKey, encodeTerminalKeyRelease } from "../helpers/key-encode";
 import { encodeWheelDelta } from "../helpers/mouse-scroll";
@@ -36,7 +36,6 @@ function FrameSurface(props: {
 	onInput: (data: string) => void;
 	onRender: (requestId: number, width: number, rows: number) => void;
 }) {
-	const html = useMemo(() => ansiLinesToHtml(props.frame.lines), [props.frame.lines]);
 	const surfaceRef = useRef<HTMLDivElement>(null);
 	const bodyRef = useRef<HTMLPreElement>(null);
 	const { onDismiss, onInput, onRender, frame } = props;
@@ -45,7 +44,7 @@ function FrameSurface(props: {
 	onInputRef.current = onInput;
 	onRenderRef.current = onRender;
 
-	const pipelineRender = (): void => {
+	const pipelineRender = useCallback((): void => {
 		const el = bodyRef.current ?? surfaceRef.current;
 		const rect = el?.getBoundingClientRect();
 		const grid = defaultRenderGrid({
@@ -53,7 +52,7 @@ function FrameSurface(props: {
 			heightPx: rect?.height && rect.height > 0 ? rect.height : window.innerHeight * 0.6,
 		});
 		onRenderRef.current(nextFrameRenderRequestId(frame.componentId), grid.width, grid.rows);
-	};
+	}, [frame.componentId]);
 
 	useEffect(() => {
 		if (!frame.focused) return;
@@ -79,7 +78,7 @@ function FrameSurface(props: {
 			window.removeEventListener("keydown", onKeyDown, true);
 			window.removeEventListener("keyup", onKeyUp, true);
 		};
-	}, [frame.componentId, frame.focused]);
+	}, [frame.focused, pipelineRender]);
 
 	useEffect(() => {
 		if (!frame.mouseScrollTracking || !frame.focused) return;
@@ -92,12 +91,9 @@ function FrameSurface(props: {
 		};
 		window.addEventListener("wheel", onWheel, { passive: false, capture: true });
 		return () => window.removeEventListener("wheel", onWheel, true);
-	}, [frame.componentId, frame.focused, frame.mouseScrollTracking]);
+	}, [frame.focused, frame.mouseScrollTracking, pipelineRender]);
 
-	const style = useMemo(
-		() => overlayOptionsToStyle(frame.overlayOptions),
-		[frame.overlayOptions],
-	);
+	const style = useMemo(() => overlayOptionsToStyle(frame.overlayOptions), [frame.overlayOptions]);
 
 	return (
 		<div
@@ -116,12 +112,26 @@ function FrameSurface(props: {
 					Close
 				</button>
 			</div>
-			{/* biome-ignore lint/security/noDangerouslySetInnerHtml: ANSI→HTML from engine frames; escaped in ansi.ts */}
-			<pre
-				ref={bodyRef}
-				className={`frame-body${frame.terminalAutowrap ? "" : " frame-body-no-wrap"}`}
-				dangerouslySetInnerHTML={{ __html: html }}
-			/>
+			<pre ref={bodyRef} className={`frame-body${frame.terminalAutowrap ? "" : " frame-body-no-wrap"}`}>
+				{frame.lines.map((line) => (
+					<div key={`${frame.componentId}-${line}`} className="ansi-line">
+						{ansiLineToSegments(line).map((segment) => (
+							<span
+								key={`${frame.componentId}-${line}-${segment.text}-${segment.fg ?? ""}-${segment.bg ?? ""}`}
+								style={{
+									color: segment.fg,
+									background: segment.bg,
+									fontWeight: segment.bold ? 700 : undefined,
+									opacity: segment.dim ? 0.65 : undefined,
+									textDecoration: segment.underline ? "underline" : undefined,
+								}}
+							>
+								{segment.text}
+							</span>
+						))}
+					</div>
+				))}
+			</pre>
 		</div>
 	);
 }

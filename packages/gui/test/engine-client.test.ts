@@ -36,6 +36,45 @@ rl.on("line", (line) => {
     }) + "\\n");
     return;
   }
+  if (msg.type === "get_command_completions") {
+    process.stdout.write(JSON.stringify({
+      id: msg.id,
+      type: "response",
+      command: "get_command_completions",
+      success: true,
+      data: { completions: [{ value: "fast", label: "Fast mode", description: "Use the fast mode" }] },
+    }) + "\\n");
+    return;
+  }
+  if (msg.type === "get_entries") {
+    process.stdout.write(JSON.stringify({
+      id: msg.id,
+      type: "response",
+      command: "get_entries",
+      success: true,
+      data: { entries: [{ type: "message", message: { role: "user", content: "hello" } }], leafId: "leaf-1" },
+    }) + "\\n");
+    return;
+  }
+  if (msg.type === "get_shortcuts") {
+    process.stdout.write(JSON.stringify({
+      id: msg.id,
+      type: "response",
+      command: "get_shortcuts",
+      success: true,
+      data: { shortcuts: [{ key: "ctrl+k", description: "Run extension action" }] },
+    }) + "\\n");
+    return;
+  }
+  if (msg.type === "invoke_shortcut") {
+    process.stdout.write(JSON.stringify({
+      id: msg.id,
+      type: "response",
+      command: "invoke_shortcut",
+      success: true,
+    }) + "\\n");
+    return;
+  }
   if (msg.type === "prompt") {
     process.stdout.write(JSON.stringify({
       type: "message_start",
@@ -72,6 +111,23 @@ rl.on("line", (line) => {
 		assert.equal(status.state, "ready");
 		assert.equal(status.protocolVersion, INTERACTIVE_ENGINE_PROTOCOL_VERSION);
 		assert.equal(status.modelLabel, "test/tiny");
+
+		const completions = await client.getCommandCompletions("mode", "fa");
+		assert.deepEqual(completions, {
+			ok: true,
+			data: [{ value: "fast", label: "Fast mode", description: "Use the fast mode" }],
+		});
+		const entries = await client.getEntries();
+		assert.deepEqual(entries, {
+			ok: true,
+			data: { entries: [{ type: "message", message: { role: "user", content: "hello" } }], leafId: "leaf-1" },
+		});
+		const shortcuts = await client.getShortcuts();
+		assert.deepEqual(shortcuts, {
+			ok: true,
+			data: [{ key: "ctrl+k", description: "Run extension action" }],
+		});
+		assert.deepEqual(await client.invokeShortcut("ctrl+k"), { ok: true, data: undefined });
 
 		const result = await client.prompt({ message: "ping" });
 		assert.equal(result.ok, true);

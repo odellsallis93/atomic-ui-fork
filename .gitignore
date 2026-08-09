@@ -300,3 +300,8 @@ evals/jobs/
 
 # subagent test scratch
 .atomic/subagents/
+packages/gui/.atomic/workflows/runs/fan-out-and-synthesize-07f732dc-c714-43ce-ad14-5e532f43b192/branch-01-git-comparison.md
+packages/gui/.atomic/workflows/runs/fan-out-and-synthesize-07f732dc-c714-43ce-ad14-5e532f43b192/branch-02-runtime-capability.md
+packages/gui/.atomic/workflows/runs/fan-out-and-synthesize-07f732dc-c714-43ce-ad14-5e532f43b192/manifest.json
+packages/gui/.atomic/workflows/runs/fan-out-and-synthesize-07f732dc-c714-43ce-ad14-5e532f43b192/partition-plan.json
+packages/gui/.atomic/workflows/runs/fan-out-and-synthesize-07f732dc-c714-43ce-ad14-5e532f43b192/synthesis.md

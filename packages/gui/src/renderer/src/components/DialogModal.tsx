@@ -200,7 +200,9 @@ export function DialogModal(props: {
 						<button
 							type="button"
 							className="btn btn-primary"
-							onClick={() => (props.onDismiss ? props.onDismiss() : props.onRespond({ id: request.id, value: "ok" }))}
+							onClick={() =>
+								props.onDismiss ? props.onDismiss() : props.onRespond({ id: request.id, value: "ok" })
+							}
 						>
 							OK
 						</button>
@@ -220,7 +222,9 @@ export function DialogModal(props: {
 						<button
 							type="button"
 							className="btn btn-primary"
-							onClick={() => (props.onDismiss ? props.onDismiss() : props.onRespond({ id: request.id, value: "ok" }))}
+							onClick={() =>
+								props.onDismiss ? props.onDismiss() : props.onRespond({ id: request.id, value: "ok" })
+							}
 						>
 							OK
 						</button>

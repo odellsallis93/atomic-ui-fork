@@ -30,7 +30,9 @@ export function HostSessionPickerModal(props: {
 					</button>
 				</div>
 				{props.showRenameHint ? (
-					<p className="settings-hint">Rename is available in the built-in TUI resume picker; select a row to continue.</p>
+					<p className="settings-hint">
+						Rename is available in the built-in TUI resume picker; select a row to continue.
+					</p>
 				) : null}
 				{props.errorMessage ? <p className="banner banner-error">{props.errorMessage}</p> : null}
 				<input
@@ -38,13 +40,16 @@ export function HostSessionPickerModal(props: {
 					placeholder="Search sessions…"
 					value={query}
 					onChange={(e) => setQuery(e.target.value)}
-					autoFocus
 				/>
 				<ul className="modal-list">
 					{filtered.map((session) => (
 						<li key={session.path}>
 							<div className="session-row">
-								<button type="button" className="session-select btn" onClick={() => props.onSelect(session.path)}>
+								<button
+									type="button"
+									className="session-select btn"
+									onClick={() => props.onSelect(session.path)}
+								>
 									<strong>{session.name || session.id}</strong>
 									<span className="session-meta">
 										{session.messageCount} msgs · {session.cwd}

@@ -40,6 +40,17 @@ export interface SlashCommandInfo {
 	hasArgumentCompletions?: boolean;
 }
 
+export interface CommandCompletionInfo {
+	value: string;
+	label: string;
+	description?: string;
+}
+
+export interface ExtensionShortcutInfo {
+	key: string;
+	description?: string;
+}
+
 export interface ModelInfo {
 	provider: string;
 	id: string;
@@ -245,6 +256,13 @@ export interface GuiHostApi {
 	getTree(): Promise<RpcResult<{ nodes: SessionTreeNodeInfo[]; leafId: string | null }>>;
 	navigateTree(targetId: string): Promise<RpcResult<{ cancelled: boolean; editorText?: string }>>;
 	getCommands(): Promise<RpcResult<SlashCommandInfo[]>>;
+	getCommandCompletions(
+		commandName: string,
+		argumentPrefix: string,
+	): Promise<RpcResult<CommandCompletionInfo[] | null>>;
+	getEntries(): Promise<RpcResult<{ entries: unknown[]; leafId: string | null }>>;
+	getShortcuts(): Promise<RpcResult<ExtensionShortcutInfo[]>>;
+	invokeShortcut(key: string): Promise<RpcResult>;
 	getModels(): Promise<RpcResult<ModelInfo[]>>;
 	getAuthCatalog(): Promise<RpcResult<AuthCatalog>>;
 	loginProvider(provider: string, authType?: "api_key" | "oauth"): Promise<PromptResult>;
@@ -292,6 +310,10 @@ export const IPC_CHANNELS = {
 	getTree: "gui:get-tree",
 	navigateTree: "gui:navigate-tree",
 	getCommands: "gui:get-commands",
+	getCommandCompletions: "gui:get-command-completions",
+	getEntries: "gui:get-entries",
+	getShortcuts: "gui:get-shortcuts",
+	invokeShortcut: "gui:invoke-shortcut",
 	getModels: "gui:get-models",
 	getAuthCatalog: "gui:get-auth-catalog",
 	loginProvider: "gui:login-provider",

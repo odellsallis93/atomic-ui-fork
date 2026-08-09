@@ -2,20 +2,21 @@ import { create } from "zustand";
 import type {
 	AuthCatalog,
 	EngineStatus,
+	ExtensionShortcutInfo,
 	ExtensionUiRequest,
 	GuiRpcEvent,
+	HostSessionPickerRow,
+	HostSessionPickerState,
 	InputFormRequest,
 	ModelInfo,
 	SessionListItem,
-	HostSessionPickerRow,
-	HostSessionPickerState,
 	SessionTreeNodeInfo,
 	SlashCommandInfo,
 	ThemeSummary,
 	TrustOption,
 	TrustStatus,
 } from "../../../shared/ipc.ts";
-import { parseOverlayOptions, type GuiOverlayOptions } from "../../../shared/overlay-options.ts";
+import { type GuiOverlayOptions, parseOverlayOptions } from "../../../shared/overlay-options.ts";
 
 export type EntryKind = "user" | "assistant" | "tool" | "bash" | "system" | "compaction" | "branchSummary" | "raw";
 
@@ -100,6 +101,7 @@ export interface SessionState {
 	widgets: WidgetItem[];
 	toasts: ToastItem[];
 	commands: SlashCommandInfo[];
+	extensionShortcuts: ExtensionShortcutInfo[];
 	models: ModelInfo[];
 	sessions: SessionListItem[];
 	treeNodes: SessionTreeNodeInfo[];
@@ -129,9 +131,11 @@ export interface SessionState {
 	dismissToast: (id: string) => void;
 	dismissFrame: (componentId: string) => void;
 	resetTranscript: () => void;
+	hydrateTranscript: (entries: unknown[]) => void;
 	setErrorBanner: (message: string | undefined) => void;
 	toggleEntryExpanded: (id: string) => void;
 	setCommands: (commands: SlashCommandInfo[]) => void;
+	setExtensionShortcuts: (shortcuts: ExtensionShortcutInfo[]) => void;
 	setModels: (models: ModelInfo[]) => void;
 	setSessions: (sessions: SessionListItem[]) => void;
 	setTree: (nodes: SessionTreeNodeInfo[], leafId: string | null) => void;
@@ -182,6 +186,59 @@ function thinkingFromContent(content: unknown): string | undefined {
 		}
 	}
 	return parts.length > 0 ? parts.join("\n") : undefined;
+}
+
+function transcriptEntryFromSessionEntry(entry: unknown): TranscriptEntry | undefined {
+	if (typeof entry !== "object" || entry === null) return undefined;
+	const value = entry as Record<string, unknown>;
+	if (typeof value.id !== "string" || typeof value.type !== "string") return undefined;
+
+	if (value.type === "message" && typeof value.message === "object" && value.message !== null) {
+		const message = value.message as { role?: unknown; content?: unknown };
+		const role = typeof message.role === "string" ? message.role : "assistant";
+		return {
+			id: value.id,
+			kind: role === "user" ? "user" : role === "toolResult" ? "tool" : "assistant",
+			role,
+			text: textFromContent(message.content),
+			thinking: thinkingFromContent(message.content),
+			streaming: false,
+			expanded: false,
+		};
+	}
+
+	if (value.type === "custom_message" && value.display === true) {
+		return {
+			id: value.id,
+			kind: "system",
+			text: textFromContent(value.content),
+			streaming: false,
+			expanded: false,
+			excludeFromContext: value.excludeFromContext === true,
+		};
+	}
+
+	if (value.type === "compaction" || value.type === "context_compaction") {
+		return {
+			id: value.id,
+			kind: "compaction",
+			text: typeof value.summary === "string" ? value.summary : "Context compacted",
+			streaming: false,
+			expanded: false,
+		};
+	}
+
+	if (value.type === "branch_summary") {
+		return {
+			id: value.id,
+			kind: "branchSummary",
+			text: typeof value.summary === "string" ? value.summary : "Branch summary",
+			streaming: false,
+			expanded: false,
+		};
+	}
+
+	return undefined;
 }
 
 function parseHostSessionPickerRows(value: unknown): HostSessionPickerRow[] {
@@ -250,6 +307,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	widgets: [],
 	toasts: [],
 	commands: [],
+	extensionShortcuts: [],
 	models: [],
 	sessions: [],
 	treeNodes: [],
@@ -292,12 +350,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			rawLines: [...state.rawLines.slice(-400), line],
 		})),
 	resetTranscript: () => set({ entries: [], queue: [], working: false, frames: [] }),
+	hydrateTranscript: (entries) => {
+		const hydrated = entries
+			.map(transcriptEntryFromSessionEntry)
+			.filter((entry): entry is TranscriptEntry => entry !== undefined);
+		set({ entries: hydrated, queue: [], working: false, workingLabel: "thinking" });
+	},
 	setErrorBanner: (message) => set({ errorBanner: message }),
 	toggleEntryExpanded: (id) =>
 		set((state) => ({
 			entries: state.entries.map((entry) => (entry.id === id ? { ...entry, expanded: !entry.expanded } : entry)),
 		})),
 	setCommands: (commands) => set({ commands }),
+	setExtensionShortcuts: (extensionShortcuts) => set({ extensionShortcuts }),
 	setModels: (models) => set({ models }),
 	setSessions: (sessions) => set({ sessions }),
 	setTree: (nodes, leafId) => set({ treeNodes: nodes, treeLeafId: leafId }),
@@ -306,8 +371,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	setAuthCatalog: (catalog) => set({ authCatalog: catalog }),
 	setAuthBusyProvider: (provider) => set({ authBusyProvider: provider }),
 	setTrust: (status, options) => set({ trustStatus: status, trustOptions: options }),
-	clearInputForm: () =>
-		set({ inputForm: undefined, modal: get().modal === "inputForm" ? "none" : get().modal }),
+	clearInputForm: () => set({ inputForm: undefined, modal: get().modal === "inputForm" ? "none" : get().modal }),
 	clearHostSessionPicker: () =>
 		set({ hostSessionPicker: undefined, modal: get().modal === "hostSessionPicker" ? "none" : get().modal }),
 	setModal: (modal) => set({ modal }),
@@ -401,6 +465,29 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 	ingestEvent: (event) => {
 		const type = event.type;
+		if (type === "engine_keybindings_reloaded") {
+			const state = event.state;
+			if (
+				typeof state !== "object" ||
+				state === null ||
+				!Array.isArray((state as { shortcuts?: unknown }).shortcuts)
+			) {
+				return;
+			}
+			const extensionShortcuts = (state as { shortcuts: unknown[] }).shortcuts
+				.filter(
+					(shortcut): shortcut is { key: string; description?: string } =>
+						typeof shortcut === "object" &&
+						shortcut !== null &&
+						typeof (shortcut as { key?: unknown }).key === "string",
+				)
+				.map((shortcut) => ({
+					key: shortcut.key,
+					description: typeof shortcut.description === "string" ? shortcut.description : undefined,
+				}));
+			set({ extensionShortcuts });
+			return;
+		}
 		if (type === "engine_input_form_open") {
 			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
 			const title = typeof event.title === "string" ? event.title : "Input";
@@ -567,9 +654,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			if (!componentId) return;
 			set((state) => ({
 				frames: state.frames.map((frame) =>
-					frame.componentId === componentId
-						? { ...frame, renderGeneration: frame.renderGeneration + 1 }
-						: frame,
+					frame.componentId === componentId ? { ...frame, renderGeneration: frame.renderGeneration + 1 } : frame,
 				),
 			}));
 			return;

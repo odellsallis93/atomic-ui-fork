@@ -114,6 +114,26 @@ export class EngineSupervisor {
 		return await this.client.getCommands();
 	}
 
+	async getCommandCompletions(commandName: string, argumentPrefix: string) {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.getCommandCompletions(commandName, argumentPrefix);
+	}
+
+	async getEntries() {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.getEntries();
+	}
+
+	async getShortcuts() {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.getShortcuts();
+	}
+
+	async invokeShortcut(key: string) {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.invokeShortcut(key);
+	}
+
 	async getModels() {
 		if (!this.client) return { ok: false as const, error: "Engine is not started" };
 		return await this.client.getModels();

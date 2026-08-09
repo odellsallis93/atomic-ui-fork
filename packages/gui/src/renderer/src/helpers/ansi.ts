@@ -49,6 +49,10 @@ interface StyleState {
 	underline: boolean;
 }
 
+export interface AnsiSegment extends StyleState {
+	text: string;
+}
+
 function escapeHtml(text: string): string {
 	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -93,18 +97,17 @@ function applySgr(codes: number[], state: StyleState): void {
 	}
 }
 
-export function ansiLineToHtml(line: string): string {
+export function ansiLineToSegments(line: string): AnsiSegment[] {
 	const state: StyleState = { bold: false, dim: false, underline: false };
-	let html = "";
-	let open = false;
+	const segments: AnsiSegment[] = [];
+	let buffer = "";
 	let i = 0;
 	const text = line.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "");
 
-	const flushOpen = (): void => {
-		if (open) {
-			html += "</span>";
-			open = false;
-		}
+	const flush = (): void => {
+		if (!buffer) return;
+		segments.push({ text: buffer, ...state });
+		buffer = "";
 	};
 
 	while (i < text.length) {
@@ -120,13 +123,8 @@ export function ansiLineToHtml(line: string): string {
 				.filter((part) => part.length > 0)
 				.map((part) => Number.parseInt(part, 10))
 				.filter((n) => Number.isFinite(n));
-			flushOpen();
+			flush();
 			applySgr(codes, state);
-			const span = openSpan(state);
-			if (span) {
-				html += span;
-				open = true;
-			}
 			i = end + 1;
 			continue;
 		}
@@ -134,11 +132,20 @@ export function ansiLineToHtml(line: string): string {
 			i += 1;
 			continue;
 		}
-		html += escapeHtml(text[i]!);
+		buffer += text[i]!;
 		i += 1;
 	}
-	flushOpen();
-	return html || "&nbsp;";
+	flush();
+	return segments.length > 0 ? segments : [{ text: " ", ...state }];
+}
+
+export function ansiLineToHtml(line: string): string {
+	return ansiLineToSegments(line)
+		.map((segment) => {
+			const span = openSpan(segment);
+			return span ? `${span}${escapeHtml(segment.text)}</span>` : escapeHtml(segment.text);
+		})
+		.join("");
 }
 
 export function ansiLinesToHtml(lines: string[]): string {

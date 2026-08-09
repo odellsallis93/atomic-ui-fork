@@ -20,14 +20,13 @@ export function FrameRenderHost(props: {
 }) {
 	const { frames, onRender } = props;
 	const knownIds = useRef(new Set<string>());
-	const framesRef = useRef(frames);
 	const onRenderRef = useRef(onRender);
-	framesRef.current = frames;
+	const framesRef = useRef(frames);
 	onRenderRef.current = onRender;
+	framesRef.current = frames;
 	const signature = frameRenderSignature(frames);
-
 	useEffect(() => {
-		const current = framesRef.current;
+		const current = signature ? framesRef.current : [];
 		const live = new Set(current.map((frame) => frame.componentId));
 		for (const frame of current) {
 			if (frame.hidden) continue;

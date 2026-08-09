@@ -30,6 +30,8 @@
   after input, `overlayOptions` geometry, hide/show/focus control, mouse-scroll
   wheel reports, and autowrap terminal-mode styling.
 - Host-native session picker for `engine_session_picker_*` (`ctx.ui.hostSessionPicker`).
+- Durable transcript hydration when opening, switching, or navigating a session; command
+  argument completions and engine-reported extension shortcuts in the GUI host.
 
 ### Fixed
 

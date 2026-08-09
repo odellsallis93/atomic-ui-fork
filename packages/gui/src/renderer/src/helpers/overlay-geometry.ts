@@ -1,5 +1,5 @@
-import type { GuiOverlayOptions } from "../../../shared/overlay-options.ts";
 import type { CSSProperties } from "react";
+import type { GuiOverlayOptions } from "../../../shared/overlay-options.ts";
 
 const DEFAULT_CELL_WIDTH_PX = 8.4;
 const DEFAULT_CELL_HEIGHT_PX = 18;

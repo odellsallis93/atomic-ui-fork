@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
 	AuthCatalog,
+	CommandCompletionInfo,
 	EngineStatus,
+	ExtensionShortcutInfo,
 	ExtensionUiRequest,
 	ExtensionUiResponse,
 	GuiRpcEvent,
@@ -308,6 +310,68 @@ export class EngineClient {
 		return { ok: true, data };
 	}
 
+	async getCommandCompletions(
+		commandName: string,
+		argumentPrefix: string,
+	): Promise<RpcResult<CommandCompletionInfo[] | null>> {
+		const result = await this.command<{ completions?: unknown }>({
+			type: "get_command_completions",
+			commandName,
+			argumentPrefix,
+		});
+		if (!result.ok) return { ok: false, error: result.error };
+		if (result.data?.completions === null) return { ok: true, data: null };
+		const completions = Array.isArray(result.data?.completions)
+			? result.data.completions
+					.filter(
+						(item): item is { value: string; label: string; description?: string } =>
+							typeof item === "object" &&
+							item !== null &&
+							typeof (item as { value?: unknown }).value === "string" &&
+							typeof (item as { label?: unknown }).label === "string",
+					)
+					.map((item) => ({
+						value: item.value,
+						label: item.label,
+						description: typeof item.description === "string" ? item.description : undefined,
+					}))
+			: [];
+		return { ok: true, data: completions };
+	}
+
+	async getEntries(): Promise<RpcResult<{ entries: unknown[]; leafId: string | null }>> {
+		const result = await this.command<{ entries?: unknown; leafId?: unknown }>({ type: "get_entries" });
+		if (!result.ok) return { ok: false, error: result.error };
+		return {
+			ok: true,
+			data: {
+				entries: Array.isArray(result.data?.entries) ? result.data.entries : [],
+				leafId: typeof result.data?.leafId === "string" ? result.data.leafId : null,
+			},
+		};
+	}
+
+	async getShortcuts(): Promise<RpcResult<ExtensionShortcutInfo[]>> {
+		const result = await this.command<{ shortcuts?: unknown }>({ type: "get_shortcuts" });
+		if (!result.ok) return { ok: false, error: result.error };
+		const shortcuts = Array.isArray(result.data?.shortcuts)
+			? result.data.shortcuts
+					.filter(
+						(item): item is { key: string; description?: string } =>
+							typeof item === "object" && item !== null && typeof (item as { key?: unknown }).key === "string",
+					)
+					.map((item) => ({
+						key: item.key,
+						description: typeof item.description === "string" ? item.description : undefined,
+					}))
+			: [];
+		return { ok: true, data: shortcuts };
+	}
+
+	async invokeShortcut(key: string): Promise<RpcResult> {
+		return await this.command({ type: "invoke_shortcut", key });
+	}
+
 	async getModels(): Promise<RpcResult<ModelInfo[]>> {
 		const catalog = await this.getAuthCatalog();
 		if (!catalog.ok || !catalog.data) return { ok: false, error: catalog.error };
@@ -339,9 +403,12 @@ export class EngineClient {
 				id: provider.id as string,
 				name: provider.name as string,
 				loginLabel: typeof provider.loginLabel === "string" ? provider.loginLabel : undefined,
-				usesCallbackServer: typeof provider.usesCallbackServer === "boolean" ? provider.usesCallbackServer : undefined,
+				usesCallbackServer:
+					typeof provider.usesCallbackServer === "boolean" ? provider.usesCallbackServer : undefined,
 			}));
-		const providers = [...new Set([...models.map((model) => model.provider), ...oauthProviders.map((p) => p.id)])].sort();
+		const providers = [
+			...new Set([...models.map((model) => model.provider), ...oauthProviders.map((p) => p.id)]),
+		].sort();
 		return { ok: true, data: { models, oauthProviders, providers } };
 	}
 

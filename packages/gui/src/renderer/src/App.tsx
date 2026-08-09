@@ -1,12 +1,12 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { ExtensionUiResponse } from "../../shared/ipc";
 import { AuthPanel } from "./components/AuthPanel";
 import { Composer } from "./components/Composer";
 import { DialogModal } from "./components/DialogModal";
 import { Footer } from "./components/Footer";
-import { HostSessionPickerModal } from "./components/HostSessionPickerModal";
 import { FrameOverlay } from "./components/FrameOverlay";
 import { FrameRenderHost } from "./components/FrameRenderHost";
+import { HostSessionPickerModal } from "./components/HostSessionPickerModal";
 import { InputFormModal } from "./components/InputFormModal";
 import { ModelPicker } from "./components/ModelPicker";
 import { SessionPicker } from "./components/SessionPicker";
@@ -28,6 +28,53 @@ function applyThemeCss(vars: Record<string, string>): void {
 	}
 }
 
+function shortcutKeyId(event: KeyboardEvent): string | undefined {
+	if (event.key === "Control" || event.key === "Alt" || event.key === "Shift" || event.key === "Meta")
+		return undefined;
+	const specialKeys: Record<string, string> = {
+		ArrowDown: "down",
+		ArrowLeft: "left",
+		ArrowRight: "right",
+		ArrowUp: "up",
+		Backspace: "backspace",
+		Delete: "delete",
+		End: "end",
+		Enter: "enter",
+		Escape: "escape",
+		Home: "home",
+		PageDown: "pagedown",
+		PageUp: "pageup",
+		Tab: "tab",
+		" ": "space",
+	};
+	const base = specialKeys[event.key] ?? (event.key.length === 1 ? event.key.toLowerCase() : event.key.toLowerCase());
+	if (!base) return undefined;
+	const modifiers = [
+		event.ctrlKey ? "ctrl" : undefined,
+		event.shiftKey ? "shift" : undefined,
+		event.altKey ? "alt" : undefined,
+		event.metaKey ? "super" : undefined,
+	].filter((modifier): modifier is string => modifier !== undefined);
+	return [...modifiers, base].join("+");
+}
+
+function normalizedShortcutKey(key: string): string {
+	const parts = key.toLowerCase().split("+");
+	const modifiers = new Set<string>(
+		parts.filter((part) => part === "ctrl" || part === "shift" || part === "alt" || part === "super"),
+	);
+	const base = parts.filter((part) => !modifiers.has(part)).join("+");
+	return [
+		modifiers.has("ctrl") ? "ctrl" : undefined,
+		modifiers.has("shift") ? "shift" : undefined,
+		modifiers.has("alt") ? "alt" : undefined,
+		modifiers.has("super") ? "super" : undefined,
+		base,
+	]
+		.filter((part): part is string => part !== undefined)
+		.join("+");
+}
+
 export function App() {
 	const status = useSessionStore((s) => s.status);
 	const entries = useSessionStore((s) => s.entries);
@@ -41,6 +88,7 @@ export function App() {
 	const errorBanner = useSessionStore((s) => s.errorBanner);
 	const usageLabel = useSessionStore((s) => s.usageLabel);
 	const commands = useSessionStore((s) => s.commands);
+	const extensionShortcuts = useSessionStore((s) => s.extensionShortcuts);
 	const models = useSessionStore((s) => s.models);
 	const sessions = useSessionStore((s) => s.sessions);
 	const treeNodes = useSessionStore((s) => s.treeNodes);
@@ -88,14 +136,18 @@ export function App() {
 	const dismissToast = useSessionStore((s) => s.dismissToast);
 	const dismissFrame = useSessionStore((s) => s.dismissFrame);
 	const resetTranscript = useSessionStore((s) => s.resetTranscript);
+	const hydrateTranscript = useSessionStore((s) => s.hydrateTranscript);
+	const setExtensionShortcuts = useSessionStore((s) => s.setExtensionShortcuts);
+	const pendingSessionPath = useRef<string | undefined>(undefined);
 
 	const refreshMetadata = useCallback(async (): Promise<void> => {
 		if (!hasGuiApi()) return;
-		const [commandsResult, modelsResult, statsResult, stateResult] = await Promise.all([
+		const [commandsResult, modelsResult, statsResult, stateResult, shortcutsResult] = await Promise.all([
 			window.atomicGui.getCommands(),
 			window.atomicGui.getModels(),
 			window.atomicGui.getSessionStats(),
 			window.atomicGui.refreshState(),
+			window.atomicGui.getShortcuts(),
 		]);
 		if (commandsResult.ok && commandsResult.data) setCommands(commandsResult.data);
 		if (modelsResult.ok && modelsResult.data) setModels(modelsResult.data);
@@ -103,7 +155,18 @@ export function App() {
 			setUsageLabel(formatUsage(statsResult.data.tokens, statsResult.data.cost, statsResult.data.contextPercent));
 		}
 		if (stateResult.ok && stateResult.data) setStatus(stateResult.data);
-	}, [setCommands, setModels, setStatus, setUsageLabel]);
+		if (shortcutsResult.ok && shortcutsResult.data) setExtensionShortcuts(shortcutsResult.data);
+	}, [setCommands, setExtensionShortcuts, setModels, setStatus, setUsageLabel]);
+
+	const refreshTranscript = useCallback(async (): Promise<void> => {
+		if (!hasGuiApi()) return;
+		const result = await window.atomicGui.getEntries();
+		if (!result.ok || !result.data) {
+			setErrorBanner(result.error ?? "Failed to load session transcript");
+			return;
+		}
+		hydrateTranscript(result.data.entries);
+	}, [hydrateTranscript, setErrorBanner]);
 
 	useEffect(() => {
 		if (!hasGuiApi()) return;
@@ -227,12 +290,26 @@ export function App() {
 			} else if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "a") {
 				event.preventDefault();
 				void openAuth();
+			} else {
+				const key = shortcutKeyId(event);
+				const shortcut = key
+					? extensionShortcuts.find(
+							(candidate) => normalizedShortcutKey(candidate.key) === normalizedShortcutKey(key),
+						)
+					: undefined;
+				if (shortcut) {
+					event.preventDefault();
+					void window.atomicGui.invokeShortcut(shortcut.key).then((result) => {
+						if (!result.ok) setErrorBanner(result.error ?? `Shortcut ${shortcut.key} failed`);
+					});
+				}
 			}
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [
 		entries,
+		extensionShortcuts,
 		openAuth,
 		openModels,
 		openSettings,
@@ -250,10 +327,14 @@ export function App() {
 		}
 		try {
 			await maybePromptTrust();
-			if (useSessionStore.getState().modal === "trust") return;
+			if (useSessionStore.getState().modal === "trust") {
+				pendingSessionPath.current = sessionPath;
+				return;
+			}
 			const next = await window.atomicGui.startEngine({ cwd: status.cwd, sessionPath });
 			setStatus(next);
 			resetTranscript();
+			await refreshTranscript();
 			await refreshMetadata();
 		} catch (error) {
 			setErrorBanner(error instanceof Error ? error.message : String(error));
@@ -308,6 +389,12 @@ export function App() {
 		},
 		[status.cwd],
 	);
+
+	const searchCommandCompletions = useCallback(async (commandName: string, argumentPrefix: string) => {
+		if (!hasGuiApi()) return [];
+		const result = await window.atomicGui.getCommandCompletions(commandName, argumentPrefix);
+		return result.ok && result.data ? result.data : [];
+	}, []);
 
 	return (
 		<div className="app-shell">
@@ -397,6 +484,7 @@ export function App() {
 					historyDown();
 				}}
 				onSearchFiles={searchFiles}
+				onSearchCommandCompletions={searchCommandCompletions}
 			/>
 
 			<Footer
@@ -464,6 +552,7 @@ export function App() {
 							if (!result.ok) setErrorBanner(result.error);
 							else {
 								resetTranscript();
+								void refreshTranscript();
 								setModal("none");
 								void refreshMetadata();
 							}
@@ -474,6 +563,7 @@ export function App() {
 							if (!result.ok) setErrorBanner(result.error);
 							else {
 								resetTranscript();
+								void refreshTranscript();
 								setModal("none");
 								void refreshMetadata();
 							}
@@ -523,6 +613,7 @@ export function App() {
 							if (!result.ok) setErrorBanner(result.error);
 							else {
 								resetTranscript();
+								void refreshTranscript();
 								setModal("none");
 								void refreshMetadata();
 							}
@@ -559,6 +650,7 @@ export function App() {
 							else {
 								if (result.data?.editorText) setComposerText(result.data.editorText);
 								resetTranscript();
+								void refreshTranscript();
 								setModal("none");
 								void refreshMetadata();
 							}
@@ -634,7 +726,9 @@ export function App() {
 						void window.atomicGui.applyTrust(optionId, status.cwd).then((next) => {
 							setTrust(next, trustOptions);
 							setModal("none");
-							void startEngine();
+							const sessionPath = pendingSessionPath.current;
+							pendingSessionPath.current = undefined;
+							void startEngine(sessionPath);
 						});
 					}}
 				/>

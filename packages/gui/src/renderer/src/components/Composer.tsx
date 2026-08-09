@@ -8,9 +8,17 @@ import type { QueueChip, WidgetItem } from "../store/session-store";
 import { Autocomplete, type AutocompleteItem } from "./Autocomplete";
 import { Widgets } from "./Widgets";
 
-function parseCompletionQuery(text: string): { kind: "slash" | "file" | null; query: string } {
+type CompletionQuery =
+	| { kind: "slash-command"; query: string }
+	| { kind: "slash-argument"; commandName: string; query: string }
+	| { kind: "file"; query: string }
+	| { kind: null; query: string };
+
+function parseCompletionQuery(text: string): CompletionQuery {
+	const argument = text.match(/(?:^|\s)\/([^\s]+)\s+([^\s]*)$/);
+	if (argument) return { kind: "slash-argument", commandName: argument[1] ?? "", query: argument[2] ?? "" };
 	const slash = text.match(/(?:^|\s)\/([^\s]*)$/);
-	if (slash) return { kind: "slash", query: slash[1] ?? "" };
+	if (slash) return { kind: "slash-command", query: slash[1] ?? "" };
 	const file = text.match(/(?:^|\s)@([^\s]*)$/);
 	if (file) return { kind: "file", query: file[1] ?? "" };
 	return { kind: null, query: "" };
@@ -29,6 +37,10 @@ export function Composer(props: {
 	onHistoryUp: () => void;
 	onHistoryDown: () => void;
 	onSearchFiles: (query: string) => Promise<FileMentionItem[]>;
+	onSearchCommandCompletions: (
+		commandName: string,
+		argumentPrefix: string,
+	) => Promise<Array<{ value: string; label: string; description?: string }>>;
 }) {
 	const hostRef = useRef<HTMLDivElement | null>(null);
 	const viewRef = useRef<EditorView | null>(null);
@@ -36,9 +48,13 @@ export function Composer(props: {
 	propsRef.current = props;
 	const [activeIndex, setActiveIndex] = useState(0);
 	const [fileItems, setFileItems] = useState<FileMentionItem[]>([]);
+	const [argumentItems, setArgumentItems] = useState<Array<{ value: string; label: string; description?: string }>>(
+		[],
+	);
 
 	const bashMode = props.value.startsWith("!") || props.value.startsWith("!!");
 	const completion = parseCompletionQuery(props.value);
+	const argumentCommandName = completion.kind === "slash-argument" ? completion.commandName : "";
 
 	useEffect(() => {
 		if (completion.kind !== "file") {
@@ -54,8 +70,27 @@ export function Composer(props: {
 		};
 	}, [completion.kind, completion.query, props.onSearchFiles]);
 
+	useEffect(() => {
+		if (completion.kind !== "slash-argument") {
+			setArgumentItems([]);
+			return;
+		}
+		const command = props.commands.find((item) => item.name === argumentCommandName);
+		if (!command?.hasArgumentCompletions) {
+			setArgumentItems([]);
+			return;
+		}
+		let cancelled = false;
+		void props.onSearchCommandCompletions(argumentCommandName, completion.query).then((items) => {
+			if (!cancelled) setArgumentItems(items);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [argumentCommandName, completion.kind, completion.query, props.commands, props.onSearchCommandCompletions]);
+
 	const items: AutocompleteItem[] = useMemo(() => {
-		if (completion.kind === "slash") {
+		if (completion.kind === "slash-command") {
 			const needle = completion.query.toLowerCase();
 			return props.commands
 				.filter((command) => command.name.toLowerCase().includes(needle))
@@ -63,28 +98,42 @@ export function Composer(props: {
 				.map((command) => ({
 					id: command.name,
 					label: `/${command.name}`,
+					insertText: `/${command.name}`,
 					description: command.description ?? command.source,
 				}));
+		}
+		if (completion.kind === "slash-argument") {
+			if (!argumentCommandName) return [];
+			return argumentItems.map((item) => ({
+				id: `${argumentCommandName}:${item.value}`,
+				label: item.label,
+				insertText: item.value,
+				description: item.description,
+			}));
 		}
 		if (completion.kind === "file") {
 			return fileItems.map((item) => ({
 				id: item.path,
 				label: `@${item.label}`,
+				insertText: `@${item.label}`,
 				description: item.path,
 			}));
 		}
 		return [];
-	}, [completion.kind, completion.query, fileItems, props.commands]);
+	}, [argumentCommandName, argumentItems, completion.kind, completion.query, fileItems, props.commands]);
 
 	const safeActiveIndex = items.length === 0 ? 0 : activeIndex % items.length;
 
 	const applyCompletion = useCallback((item: AutocompleteItem): void => {
 		const text = propsRef.current.value;
 		const kind = parseCompletionQuery(text).kind;
+		const insertText = item.insertText ?? item.label;
 		const replaced =
-			kind === "slash"
-				? text.replace(/(^|\s)\/[^\s]*$/, `$1${item.label} `)
-				: text.replace(/(^|\s)@[^\s]*$/, `$1${item.label} `);
+			kind === "slash-command"
+				? text.replace(/(^|\s)\/[^\s]*$/, `$1${insertText} `)
+				: kind === "slash-argument"
+					? text.replace(/(^|\s)\/([^\s]+)\s+[^\s]*$/, `$1/$2 ${insertText} `)
+					: text.replace(/(^|\s)@[^\s]*$/, `$1${insertText} `);
 		propsRef.current.onChange(replaced);
 	}, []);
 

@@ -111,6 +111,22 @@ function registerIpc(): void {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getCommands();
 	});
+	ipcMain.handle(IPC_CHANNELS.getCommandCompletions, async (_event, commandName: string, argumentPrefix: string) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.getCommandCompletions(commandName, argumentPrefix);
+	});
+	ipcMain.handle(IPC_CHANNELS.getEntries, async () => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.getEntries();
+	});
+	ipcMain.handle(IPC_CHANNELS.getShortcuts, async () => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.getShortcuts();
+	});
+	ipcMain.handle(IPC_CHANNELS.invokeShortcut, async (_event, key: string) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.invokeShortcut(key);
+	});
 	ipcMain.handle(IPC_CHANNELS.getModels, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getModels();

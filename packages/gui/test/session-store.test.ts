@@ -67,6 +67,52 @@ test("ingestEvent streams assistant text deltas into one entry", () => {
 	assert.equal(entries[0]?.streaming, false);
 });
 
+test("hydrateTranscript restores durable messages and session boundaries", () => {
+	const { hydrateTranscript } = useSessionStore.getState();
+	hydrateTranscript([
+		{ type: "session_info", id: "ignore", parentId: null, timestamp: "2026-01-01T00:00:00Z", name: "Demo" },
+		{
+			type: "message",
+			id: "u1",
+			parentId: null,
+			timestamp: "2026-01-01T00:00:01Z",
+			message: { role: "user", content: "Hello" },
+		},
+		{
+			type: "message",
+			id: "a1",
+			parentId: "u1",
+			timestamp: "2026-01-01T00:00:02Z",
+			message: { role: "assistant", content: [{ type: "text", text: "Hi" }] },
+		},
+		{ type: "compaction", id: "c1", parentId: "a1", timestamp: "2026-01-01T00:00:03Z", summary: "Kept tail" },
+		{ type: "branch_summary", id: "b1", parentId: "c1", timestamp: "2026-01-01T00:00:04Z", summary: "Old branch" },
+	]);
+
+	const entries = useSessionStore.getState().entries;
+	assert.deepEqual(
+		entries.map((entry) => [entry.id, entry.kind, entry.text]),
+		[
+			["u1", "user", "Hello"],
+			["a1", "assistant", "Hi"],
+			["c1", "compaction", "Kept tail"],
+			["b1", "branchSummary", "Old branch"],
+		],
+	);
+});
+
+test("engine keybinding updates expose extension shortcuts", () => {
+	useSessionStore.getState().ingestEvent({
+		type: "engine_keybindings_reloaded",
+		state: {
+			userBindings: {},
+			effectiveBindings: {},
+			shortcuts: [{ key: "f2", description: "Open workflow graph" }],
+		},
+	});
+	assert.deepEqual(useSessionStore.getState().extensionShortcuts, [{ key: "f2", description: "Open workflow graph" }]);
+});
+
 test("tool execution start/end creates expandable tool entry", () => {
 	const { ingestEvent } = useSessionStore.getState();
 	ingestEvent({

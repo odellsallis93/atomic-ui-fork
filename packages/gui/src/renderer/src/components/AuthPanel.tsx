@@ -65,7 +65,12 @@ export function AuthPanel(props: {
 									>
 										API key
 									</button>
-									<button type="button" className="btn" disabled={busy} onClick={() => props.onLogout(provider)}>
+									<button
+										type="button"
+										className="btn"
+										disabled={busy}
+										onClick={() => props.onLogout(provider)}
+									>
 										Logout
 									</button>
 									{busy ? (
