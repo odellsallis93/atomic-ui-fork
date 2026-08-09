@@ -93,3 +93,11 @@ test("working indicator APIs emit host configuration", () => {
 		],
 	);
 });
+
+test("hidden-thinking label emits host configuration", () => {
+	const requests: Array<Record<string, unknown>> = [];
+	const ui = createRpcExtensionUIContext({ output: (request) => requests.push(request as Record<string, unknown>), pendingExtensionRequests: new Map() });
+	ui.setHiddenThinkingLabel("Reasoning privately");
+	assert.equal(requests[0]?.method, "setHiddenThinkingLabel");
+	assert.equal(requests[0]?.label, "Reasoning privately");
+});

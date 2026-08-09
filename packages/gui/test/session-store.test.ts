@@ -14,6 +14,7 @@ beforeEach(() => {
 		rawLines: [],
 		showRawLog: false,
 		hideThinking: false,
+		hiddenThinkingLabel: "Thinking...",
 		queue: [],
 		composerText: "",
 		promptHistory: [],
@@ -130,6 +131,14 @@ test("extension working configuration updates label, visibility, and animation",
 	assert.equal(state.workingVisible, false);
 	assert.deepEqual(state.workingIndicatorFrames, ["·", "•"]);
 	assert.equal(state.workingIndicatorIntervalMs, 120);
+});
+
+test("extension hidden-thinking label is applied and reset", () => {
+	const { ingestExtensionUi } = useSessionStore.getState();
+	ingestExtensionUi({ id: "thinking-1", method: "setHiddenThinkingLabel", label: "Reasoning privately" });
+	assert.equal(useSessionStore.getState().hiddenThinkingLabel, "Reasoning privately");
+	ingestExtensionUi({ id: "thinking-2", method: "setHiddenThinkingLabel" });
+	assert.equal(useSessionStore.getState().hiddenThinkingLabel, "Thinking...");
 });
 
 test("tool execution start/end creates expandable tool entry", () => {
