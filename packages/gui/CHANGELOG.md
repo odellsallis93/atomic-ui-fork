@@ -34,6 +34,8 @@
   argument completions and engine-reported extension shortcuts in the GUI host.
 - Remote custom header and footer components (`ctx.ui.setHeader` / `ctx.ui.setFooter`)
   rendered through the interactive-engine frame protocol.
+- Remote custom editor components (`ctx.ui.setEditorComponent`) with terminal-key input,
+  text get/set support, and prompt submission through the active engine session.
 
 ### Fixed
 
