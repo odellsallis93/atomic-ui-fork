@@ -10,6 +10,8 @@ export function Footer(props: {
 	statusSegments: Record<string, string>;
 	working: boolean;
 	workingLabel: string;
+	workingIndicatorFrames?: string[];
+	workingIndicatorIntervalMs?: number;
 }) {
 	const segments = Object.entries(props.statusSegments);
 	return (
@@ -27,7 +29,13 @@ export function Footer(props: {
 				))}
 			</div>
 			<div className="footer-right">
-				{props.working ? <WorkingIndicator label={props.workingLabel} /> : null}
+				{props.working ? (
+					<WorkingIndicator
+						label={props.workingLabel}
+						frames={props.workingIndicatorFrames}
+						intervalMs={props.workingIndicatorIntervalMs}
+					/>
+				) : null}
 				<span>{props.usageLabel}</span>
 			</div>
 		</footer>

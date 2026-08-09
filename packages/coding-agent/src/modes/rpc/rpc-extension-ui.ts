@@ -192,8 +192,12 @@ export function createRpcExtensionUIContext({
 			emitExtensionUIRequest(output, { method: "setWorking", visible });
 		},
 
-		setWorkingIndicator(_options?: WorkingIndicatorOptions): void {
-			// Working indicator customization not supported in RPC mode - requires TUI loader access
+		setWorkingIndicator(options?: WorkingIndicatorOptions): void {
+			emitExtensionUIRequest(output, {
+				method: "setWorking",
+				frames: options?.frames,
+				intervalMs: options?.intervalMs,
+			});
 		},
 
 		setHiddenThinkingLabel(_label?: string): void {

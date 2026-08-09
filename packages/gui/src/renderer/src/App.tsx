@@ -82,6 +82,8 @@ export function App() {
 	const working = useSessionStore((s) => s.working);
 	const workingLabel = useSessionStore((s) => s.workingLabel);
 	const workingVisible = useSessionStore((s) => s.workingVisible);
+	const workingIndicatorFrames = useSessionStore((s) => s.workingIndicatorFrames);
+	const workingIndicatorIntervalMs = useSessionStore((s) => s.workingIndicatorIntervalMs);
 	const rawLines = useSessionStore((s) => s.rawLines);
 	const showRawLog = useSessionStore((s) => s.showRawLog);
 	const hideThinking = useSessionStore((s) => s.hideThinking);
@@ -526,6 +528,8 @@ export function App() {
 					statusSegments={statusSegments}
 					working={working}
 					workingLabel={workingLabel}
+					workingIndicatorFrames={workingIndicatorFrames}
+					workingIndicatorIntervalMs={workingIndicatorIntervalMs}
 				/>
 			)}
 

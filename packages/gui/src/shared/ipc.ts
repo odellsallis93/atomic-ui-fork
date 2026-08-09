@@ -171,7 +171,7 @@ export type ExtensionUiRequest =
 	| { id: string; method: "editor"; title: string; prefill?: string }
 	| { id: string; method: "notify"; message: string; notifyType?: "info" | "warning" | "error" }
 	| { id: string; method: "setStatus"; statusKey: string; statusText: string | undefined }
-	| { id: string; method: "setWorking"; message?: string; visible?: boolean }
+	| { id: string; method: "setWorking"; message?: string; visible?: boolean; frames?: string[]; intervalMs?: number }
 	| {
 			id: string;
 			method: "setWidget";
