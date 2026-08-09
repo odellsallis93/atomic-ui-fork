@@ -106,6 +106,7 @@ function jsonResult(value: object | boolean | null | number | string | undefined
 export class EngineCustomUiService {
 	private readonly widgetIds = new Map<string, string>();
 	private readonly chromeIds = new Map<RemoteChromeSlot, string>();
+	private editorFactory: EditorFactory | undefined;
 	private readonly active = new Map<string, ActiveComponent>();
 	private nextId = 0;
 	private readonly write: (line: string) => void;
@@ -200,6 +201,7 @@ export class EngineCustomUiService {
 	}
 
 	setEditor(factory: EditorFactory | undefined, onSubmit: (text: string) => void): void {
+		this.editorFactory = factory;
 		const previous = this.chromeIds.get("editor");
 		if (previous) this.disposeComponent(previous, false);
 		if (!factory) return;
@@ -224,6 +226,10 @@ export class EngineCustomUiService {
 			});
 			this.send({ type: "engine_custom_open", componentId, overlay: false, chromeSlot: "editor" });
 		});
+	}
+
+	getEditor(): EditorFactory | undefined {
+		return this.editorFactory;
 	}
 
 	setEditorText(text: string): boolean {

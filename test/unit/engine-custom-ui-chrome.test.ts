@@ -76,3 +76,19 @@ test("remote custom editors accept input, preserve text, and submit through the 
 	assert.equal(submitted, "draft!");
 	service.dispose();
 });
+
+test("remote custom editor factory is available for extension state restoration", () => {
+	const service = new EngineCustomUiService(() => {}, new KeybindingsManager());
+	const factory = () => ({
+		render: () => [],
+		invalidate: () => {},
+		getText: () => "",
+		setText: () => {},
+		handleInput: () => {},
+	});
+	service.setEditor(factory, () => {});
+	assert.equal(service.getEditor(), factory);
+	service.setEditor(undefined, () => {});
+	assert.equal(service.getEditor(), undefined);
+	service.dispose();
+});

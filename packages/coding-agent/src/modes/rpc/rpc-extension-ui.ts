@@ -316,8 +316,7 @@ export function createRpcExtensionUIContext({
 		},
 
 		getEditorComponent() {
-			// Custom editor components not supported in RPC mode
-			return undefined;
+			return customUi?.getEditor();
 		},
 
 		getFooterDataProvider() {
