@@ -724,6 +724,23 @@ input {
 	overflow-x: auto;
 }
 
+.chrome-frame {
+	margin: 0;
+	padding: 0.55rem 1rem;
+	overflow-x: auto;
+	border-top: 1px solid var(--surface0);
+	background: var(--mantle);
+	font-family: var(--font-mono);
+	font-size: 0.8rem;
+	line-height: 1.45;
+	white-space: pre;
+}
+
+.chrome-frame-header {
+	border-top: 0;
+	border-bottom: 1px solid var(--surface0);
+}
+
 .session-row {
 	display: flex;
 	gap: 0.5rem;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { ExtensionUiResponse } from "../../shared/ipc";
 import { AuthPanel } from "./components/AuthPanel";
+import { ChromeFrame } from "./components/ChromeFrame";
 import { Composer } from "./components/Composer";
 import { DialogModal } from "./components/DialogModal";
 import { Footer } from "./components/Footer";
@@ -96,6 +97,8 @@ export function App() {
 	const themes = useSessionStore((s) => s.themes);
 	const themeName = useSessionStore((s) => s.themeName);
 	const frames = useSessionStore((s) => s.frames);
+	const customHeader = frames.find((frame) => !frame.hidden && frame.chromeSlot === "header");
+	const customFooter = frames.find((frame) => !frame.hidden && frame.chromeSlot === "footer");
 	const authCatalog = useSessionStore((s) => s.authCatalog);
 	const authBusyProvider = useSessionStore((s) => s.authBusyProvider);
 	const trustStatus = useSessionStore((s) => s.trustStatus);
@@ -398,6 +401,7 @@ export function App() {
 
 	return (
 		<div className="app-shell">
+			{customHeader ? <ChromeFrame frame={customHeader} slot="header" /> : null}
 			<header className="topbar">
 				<div className="brand">
 					<span className="brand-mark">∀ Atomic</span>
@@ -487,23 +491,27 @@ export function App() {
 				onSearchCommandCompletions={searchCommandCompletions}
 			/>
 
-			<Footer
-				cwd={status.cwd ?? "."}
-				engineLabel={
-					status.protocolVersion
-						? `engine v${status.protocolVersion}`
-						: status.cliPath
-							? "engine unresolved"
-							: "engine idle"
-				}
-				modelLabel={status.modelLabel}
-				thinkingLevel={status.thinkingLevel}
-				sessionName={status.sessionName}
-				usageLabel={usageLabel}
-				statusSegments={statusSegments}
-				working={working}
-				workingLabel={workingLabel}
-			/>
+			{customFooter ? (
+				<ChromeFrame frame={customFooter} slot="footer" />
+			) : (
+				<Footer
+					cwd={status.cwd ?? "."}
+					engineLabel={
+						status.protocolVersion
+							? `engine v${status.protocolVersion}`
+							: status.cliPath
+								? "engine unresolved"
+								: "engine idle"
+					}
+					modelLabel={status.modelLabel}
+					thinkingLevel={status.thinkingLevel}
+					sessionName={status.sessionName}
+					usageLabel={usageLabel}
+					statusSegments={statusSegments}
+					working={working}
+					workingLabel={workingLabel}
+				/>
+			)}
 
 			<ToastStack toasts={toasts} onDismiss={dismissToast} />
 

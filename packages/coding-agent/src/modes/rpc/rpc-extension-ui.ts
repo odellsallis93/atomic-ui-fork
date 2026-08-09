@@ -229,12 +229,20 @@ export function createRpcExtensionUIContext({
 			warnUnsupported("component-factory widgets");
 		},
 
-		setFooter(): void {
-			warnUnsupported("ctx.ui.setFooter");
+		setFooter(factory): void {
+			if (!customUi || !footerDataProvider) {
+				warnUnsupported("ctx.ui.setFooter");
+				return;
+			}
+			customUi.setChrome("footer", factory ? (tui) => factory(tui, theme, footerDataProvider) : undefined);
 		},
 
-		setHeader(): void {
-			warnUnsupported("ctx.ui.setHeader");
+		setHeader(factory): void {
+			if (!customUi) {
+				warnUnsupported("ctx.ui.setHeader");
+				return;
+			}
+			customUi.setChrome("header", factory ? (tui) => factory(tui, theme) : undefined);
 		},
 
 		setTitle(title: string): void {

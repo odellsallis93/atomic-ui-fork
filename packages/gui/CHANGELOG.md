@@ -32,6 +32,8 @@
 - Host-native session picker for `engine_session_picker_*` (`ctx.ui.hostSessionPicker`).
 - Durable transcript hydration when opening, switching, or navigating a session; command
   argument completions and engine-reported extension shortcuts in the GUI host.
+- Remote custom header and footer components (`ctx.ui.setHeader` / `ctx.ui.setFooter`)
+  rendered through the interactive-engine frame protocol.
 
 ### Fixed
 

@@ -21,7 +21,7 @@ the engine child.
 | M2 Input system | Mostly done — CodeMirror composer, `/` command and command-argument + `@` autocomplete, history, `!`/`!!` bash, steer/follow-up/abort, queue chips |
 | M3 Sessions | Mostly done — resume picker (search/sort/all-projects), persisted transcript hydration on start/switch/tree navigation, rename/delete, clone, export HTML, compact, session tree navigator (`list_sessions` still host-local per plan §5.1) |
 | M4 Models / settings | Partial — model picker, cycle model/thinking, theme loader, provider login/logout + OAuth UI, project trust prompt (full onboarding still open) |
-| M5 Extension UI host | Partial — native dialogs/notify/status/widgets, extension shortcut dispatch, `engine_input_form_*`, `hostSessionPicker` (`engine_session_picker_*`), ANSI frame overlays with render loop + `overlayOptions` + control/invalidate + legacy key encoding + kitty key-release + mouse-scroll wheel + autowrap terminal mode (custom footer/header/editor swap still blocked under isolation) |
+| M5 Extension UI host | Partial — native dialogs/notify/status/widgets, extension shortcut dispatch, `engine_input_form_*`, `hostSessionPicker` (`engine_session_picker_*`), ANSI frame overlays with render loop + `overlayOptions` + control/invalidate + legacy key encoding + kitty key-release + mouse-scroll wheel + autowrap terminal mode; remote custom header/footer slots (custom editor swap still blocked under isolation) |
 | M6–M7 | Not started |
 
 The authoritative plan lives at
@@ -105,8 +105,10 @@ The host:
 `ctx.ui.hostSessionPicker` uses `engine_session_picker_*` messages; the GUI mounts a
 native searchable list and sends `engine_session_picker_select/cancel/delete`.
 
-Chrome swap (`setFooter` / `setHeader` / `setEditorComponent`) is still unsupported
-under interactive-engine isolation until protocol §5.3 lands.
+`ctx.ui.setFooter` and `ctx.ui.setHeader` render their components into remote ANSI
+chrome slots. `setEditorComponent` remains unsupported under interactive-engine isolation:
+it needs additional submit/focus plumbing so custom editors retain the native composer's
+session semantics.
 
 ## Security model
 

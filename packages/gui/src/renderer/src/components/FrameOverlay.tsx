@@ -12,7 +12,9 @@ export function FrameOverlay(props: {
 	onInput: (componentId: string, data: string) => void;
 	onRender: (componentId: string, requestId: number, width: number, rows: number) => void;
 }) {
-	const overlays = props.frames.filter((frame) => !frame.hidden && (frame.overlay || !frame.widgetKey));
+	const overlays = props.frames.filter(
+		(frame) => !frame.hidden && !frame.chromeSlot && (frame.overlay || !frame.widgetKey),
+	);
 	if (overlays.length === 0) return null;
 
 	return (

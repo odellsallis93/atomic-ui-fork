@@ -188,6 +188,16 @@ test("engine_custom_open/frame/close manage frame surfaces", () => {
 	assert.equal(useSessionStore.getState().frames.length, 0);
 });
 
+test("engine custom chrome frames retain their host slot", () => {
+	useSessionStore.getState().ingestEvent({
+		type: "engine_custom_open",
+		componentId: "header-1",
+		overlay: false,
+		chromeSlot: "header",
+	});
+	assert.equal(useSessionStore.getState().frames[0]?.chromeSlot, "header");
+});
+
 test("engine_custom_invalidate and control update frame host state", () => {
 	const { ingestEvent } = useSessionStore.getState();
 	ingestEvent({ type: "engine_custom_open", componentId: "c2", overlay: true });

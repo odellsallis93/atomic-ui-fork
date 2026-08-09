@@ -17,6 +17,7 @@ import {
 	isJsonValue,
 	type JsonValue,
 	parseInteractiveEngineCommand,
+	type RemoteChromeSlot,
 	type SerializableOverlayOptions,
 	serializeInteractiveEngineMessage,
 } from "./protocol.ts";
@@ -38,6 +39,7 @@ interface ActiveComponent {
 	terminal: RemoteTerminal;
 	tui: TUI;
 	widgetKey?: string;
+	chromeSlot?: RemoteChromeSlot;
 	/**
 	 * Overlay visibility as last driven through the remote OverlayHandle.
 	 * Hidden components are skipped by the extension-level `requestRender()`
@@ -101,6 +103,7 @@ function jsonResult(value: object | boolean | null | number | string | undefined
 
 export class EngineCustomUiService {
 	private readonly widgetIds = new Map<string, string>();
+	private readonly chromeIds = new Map<RemoteChromeSlot, string>();
 	private readonly active = new Map<string, ActiveComponent>();
 	private nextId = 0;
 	private readonly write: (line: string) => void;
@@ -151,6 +154,45 @@ export class EngineCustomUiService {
 					componentId,
 					requestId: 0,
 					lines: [`Widget ${key} failed: ${error.message}`],
+				});
+			});
+	}
+
+	/** Mount an extension component in a named host chrome slot. */
+	setChrome(slot: RemoteChromeSlot, factory: ((tui: TUI) => Component & { dispose?(): void }) | undefined): void {
+		const previous = this.chromeIds.get(slot);
+		if (previous) this.disposeComponent(previous, false);
+		if (!factory) return;
+
+		const componentId = `remote_chrome_${slot}_${++this.nextId}`;
+		this.chromeIds.set(slot, componentId);
+		const terminal = new RemoteTerminal(() => this.send({ type: "engine_custom_invalidate", componentId }));
+		const tui = new TUI(terminal, undefined, getAgentDir());
+		void runCallback({ kind: "renderer", name: `chrome:${slot}` }, () => factory(tui))
+			.then((component) => {
+				if (this.chromeIds.get(slot) !== componentId) {
+					component.dispose?.();
+					return;
+				}
+				tui.addChild(component);
+				this.active.set(componentId, {
+					component,
+					resolve: () => {},
+					overlay: false,
+					terminal,
+					tui,
+					chromeSlot: slot,
+				});
+				this.send({ type: "engine_custom_open", componentId, overlay: false, chromeSlot: slot });
+			})
+			.catch((error: Error) => {
+				if (this.chromeIds.get(slot) !== componentId) return;
+				this.chromeIds.delete(slot);
+				this.send({
+					type: "engine_custom_frame",
+					componentId,
+					requestId: 0,
+					lines: [`Custom ${slot} failed: ${error.message}`],
 				});
 			});
 	}
@@ -297,8 +339,10 @@ export class EngineCustomUiService {
 		record.tui.stop();
 		if (record.widgetKey) {
 			if (this.widgetIds.get(record.widgetKey) === componentId) this.widgetIds.delete(record.widgetKey);
-			this.send({ type: "engine_custom_close", componentId });
 		}
+		if (record.chromeSlot && this.chromeIds.get(record.chromeSlot) === componentId)
+			this.chromeIds.delete(record.chromeSlot);
+		if (record.widgetKey || record.chromeSlot) this.send({ type: "engine_custom_close", componentId });
 		this.notifyState();
 		if (resolve) record.resolve(undefined);
 	}
