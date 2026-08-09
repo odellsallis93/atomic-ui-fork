@@ -8,6 +8,9 @@ beforeEach(() => {
 		entries: [],
 		working: false,
 		workingLabel: "thinking",
+		workingVisible: true,
+		workingIndicatorFrames: undefined,
+		workingIndicatorIntervalMs: undefined,
 		rawLines: [],
 		showRawLog: false,
 		hideThinking: false,
@@ -111,6 +114,22 @@ test("engine keybinding updates expose extension shortcuts", () => {
 		},
 	});
 	assert.deepEqual(useSessionStore.getState().extensionShortcuts, [{ key: "f2", description: "Open workflow graph" }]);
+});
+
+test("extension working configuration updates label, visibility, and animation", () => {
+	useSessionStore.getState().ingestExtensionUi({
+		id: "work-1",
+		method: "setWorking",
+		message: "Indexing",
+		visible: false,
+		frames: ["·", "•"],
+		intervalMs: 120,
+	});
+	const state = useSessionStore.getState();
+	assert.equal(state.workingLabel, "Indexing");
+	assert.equal(state.workingVisible, false);
+	assert.deepEqual(state.workingIndicatorFrames, ["·", "•"]);
+	assert.equal(state.workingIndicatorIntervalMs, 120);
 });
 
 test("tool execution start/end creates expandable tool entry", () => {

@@ -74,3 +74,22 @@ test("setStatus invalidates isolated custom UI so mirrored status repaints", () 
 	assert.equal(renderRequests, 2, "status clear must invalidate custom UI components");
 	provider.dispose();
 });
+
+test("working indicator APIs emit host configuration", () => {
+	const requests: Array<Record<string, unknown>> = [];
+	const ui = createRpcExtensionUIContext({
+		output: (request) => requests.push(request as Record<string, unknown>),
+		pendingExtensionRequests: new Map(),
+	});
+	ui.setWorkingMessage("Indexing");
+	ui.setWorkingVisible(false);
+	ui.setWorkingIndicator({ frames: ["·", "•"], intervalMs: 120 });
+	assert.deepEqual(
+		requests.map(({ method, message, visible, frames, intervalMs }) => ({ method, message, visible, frames, intervalMs })),
+		[
+			{ method: "setWorking", message: "Indexing", visible: undefined, frames: undefined, intervalMs: undefined },
+			{ method: "setWorking", message: undefined, visible: false, frames: undefined, intervalMs: undefined },
+			{ method: "setWorking", message: undefined, visible: undefined, frames: ["·", "•"], intervalMs: 120 },
+		],
+	);
+});
