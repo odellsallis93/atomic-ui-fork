@@ -89,6 +89,17 @@ export class RpcSessionBinding {
 					sessionPicker: this.sessionPicker,
 					inputForm: this.inputForm,
 					footerDataProvider: this.footerDataProvider,
+					onEditorSubmit: (text) => {
+						if (!text.trim()) return;
+						void session.prompt(text, { source: "rpc" }).catch((error: Error) =>
+							this.output({
+								type: "extension_error",
+								extensionPath: "custom-editor",
+								event: "submit",
+								error: error.message,
+							}),
+						);
+					},
 				}),
 				mode: this.customUi ? "tui" : "rpc",
 				commandContextActions: {

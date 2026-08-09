@@ -1,5 +1,6 @@
 import {
 	type Component,
+	type EditorComponent,
 	isKeyRelease,
 	type OverlayHandle,
 	type OverlayOptions,
@@ -8,9 +9,10 @@ import {
 } from "@earendil-works/pi-tui";
 import { getAgentDir } from "../../config.ts";
 import { runCallback } from "../../core/callback-activity.ts";
+import type { EditorFactory } from "../../core/extensions/ui-types.ts";
 import type { KeybindingsManager } from "../../core/keybindings.ts";
 import type { Theme } from "../interactive/theme/theme.ts";
-import { theme } from "../interactive/theme/theme.ts";
+import { getEditorTheme, theme } from "../interactive/theme/theme.ts";
 import {
 	type EngineTerminalControl,
 	type InteractiveEngineMessage,
@@ -195,6 +197,48 @@ export class EngineCustomUiService {
 					lines: [`Custom ${slot} failed: ${error.message}`],
 				});
 			});
+	}
+
+	setEditor(factory: EditorFactory | undefined, onSubmit: (text: string) => void): void {
+		const previous = this.chromeIds.get("editor");
+		if (previous) this.disposeComponent(previous, false);
+		if (!factory) return;
+		const componentId = `remote_chrome_editor_${++this.nextId}`;
+		this.chromeIds.set("editor", componentId);
+		const terminal = new RemoteTerminal(() => this.send({ type: "engine_custom_invalidate", componentId }));
+		const tui = new TUI(terminal, undefined, getAgentDir());
+		void runCallback({ kind: "renderer", name: "chrome:editor" }, () =>
+			factory(tui, getEditorTheme(), this.keybindings),
+		).then((editor) => {
+			if (this.chromeIds.get("editor") !== componentId) return;
+			editor.onSubmit = onSubmit;
+			tui.addChild(editor);
+			tui.setFocus(editor);
+			this.active.set(componentId, {
+				component: editor,
+				resolve: () => {},
+				overlay: false,
+				terminal,
+				tui,
+				chromeSlot: "editor",
+			});
+			this.send({ type: "engine_custom_open", componentId, overlay: false, chromeSlot: "editor" });
+		});
+	}
+
+	setEditorText(text: string): boolean {
+		const componentId = this.chromeIds.get("editor");
+		const editor = componentId ? (this.active.get(componentId)?.component as EditorComponent | undefined) : undefined;
+		if (!editor || !componentId) return false;
+		editor.setText(text);
+		this.send({ type: "engine_custom_invalidate", componentId });
+		return true;
+	}
+
+	getEditorText(): string | undefined {
+		const componentId = this.chromeIds.get("editor");
+		const editor = componentId ? (this.active.get(componentId)?.component as EditorComponent | undefined) : undefined;
+		return editor?.getExpandedText?.() ?? editor?.getText();
 	}
 	constructor(write: (line: string) => void, keybindings: KeybindingsManager) {
 		this.write = write;

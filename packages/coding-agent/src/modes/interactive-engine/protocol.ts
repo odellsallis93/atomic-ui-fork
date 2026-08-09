@@ -46,7 +46,7 @@ export interface EngineExtensionShortcut {
 }
 
 /** A remote component replacing a host-owned chrome region. */
-export type RemoteChromeSlot = "header" | "footer";
+export type RemoteChromeSlot = "header" | "footer" | "editor";
 
 export type SerializableKeybindingsConfig = Record<string, KeyId | KeyId[]>;
 
@@ -359,7 +359,9 @@ export function parseInteractiveEngineMessage(line: string): InteractiveEngineMe
 									? "aboveEditor"
 									: undefined,
 						chromeSlot:
-							value.chromeSlot === "header" || value.chromeSlot === "footer" ? value.chromeSlot : undefined,
+							value.chromeSlot === "header" || value.chromeSlot === "footer" || value.chromeSlot === "editor"
+								? value.chromeSlot
+								: undefined,
 					}
 				: undefined;
 		case "engine_custom_close":

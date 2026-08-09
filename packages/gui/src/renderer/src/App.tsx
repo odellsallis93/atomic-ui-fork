@@ -99,6 +99,7 @@ export function App() {
 	const frames = useSessionStore((s) => s.frames);
 	const customHeader = frames.find((frame) => !frame.hidden && frame.chromeSlot === "header");
 	const customFooter = frames.find((frame) => !frame.hidden && frame.chromeSlot === "footer");
+	const customEditor = frames.find((frame) => !frame.hidden && frame.chromeSlot === "editor");
 	const authCatalog = useSessionStore((s) => s.authCatalog);
 	const authBusyProvider = useSessionStore((s) => s.authBusyProvider);
 	const trustStatus = useSessionStore((s) => s.trustStatus);
@@ -471,25 +472,39 @@ export function App() {
 
 			{showRawLog ? <pre className="raw-log">{rawLines.join("\n")}</pre> : null}
 
-			<Composer
-				value={composerText}
-				disabled={!ready}
-				working={working}
-				queue={queue}
-				commands={commands}
-				widgets={widgets}
-				onChange={setComposerText}
-				onSubmit={(behavior) => void submit(behavior)}
-				onAbort={() => void abort()}
-				onHistoryUp={() => {
-					historyUp();
-				}}
-				onHistoryDown={() => {
-					historyDown();
-				}}
-				onSearchFiles={searchFiles}
-				onSearchCommandCompletions={searchCommandCompletions}
-			/>
+			{customEditor ? (
+				<ChromeFrame
+					frame={customEditor}
+					slot="editor"
+					onInput={(data) =>
+						void window.atomicGui.sendEngineCommand({
+							type: "engine_custom_input",
+							componentId: customEditor.componentId,
+							data,
+						})
+					}
+				/>
+			) : (
+				<Composer
+					value={composerText}
+					disabled={!ready}
+					working={working}
+					queue={queue}
+					commands={commands}
+					widgets={widgets}
+					onChange={setComposerText}
+					onSubmit={(behavior) => void submit(behavior)}
+					onAbort={() => void abort()}
+					onHistoryUp={() => {
+						historyUp();
+					}}
+					onHistoryDown={() => {
+						historyDown();
+					}}
+					onSearchFiles={searchFiles}
+					onSearchCommandCompletions={searchCommandCompletions}
+				/>
+			)}
 
 			{customFooter ? (
 				<ChromeFrame frame={customFooter} slot="footer" />

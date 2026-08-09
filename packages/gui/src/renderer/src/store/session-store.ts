@@ -67,7 +67,7 @@ export type ModalKind =
 export interface CustomFrame {
 	componentId: string;
 	overlay: boolean;
-	chromeSlot?: "header" | "footer";
+	chromeSlot?: "header" | "footer" | "editor";
 	widgetKey?: string;
 	widgetPlacement?: "aboveEditor" | "belowEditor";
 	lines: string[];
@@ -583,7 +583,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			const frame: CustomFrame = {
 				componentId,
 				overlay: event.overlay === true,
-				chromeSlot: event.chromeSlot === "header" || event.chromeSlot === "footer" ? event.chromeSlot : undefined,
+				chromeSlot:
+					event.chromeSlot === "header" || event.chromeSlot === "footer" || event.chromeSlot === "editor"
+						? event.chromeSlot
+						: undefined,
 				widgetKey: typeof event.widgetKey === "string" ? event.widgetKey : undefined,
 				widgetPlacement: event.widgetPlacement === "aboveEditor" ? "aboveEditor" : "belowEditor",
 				lines: [],

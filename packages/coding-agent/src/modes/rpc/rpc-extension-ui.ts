@@ -30,6 +30,7 @@ interface CreateRpcExtensionUIContextOptions {
 	sessionPicker?: EngineSessionPickerService;
 	inputForm?: EngineInputFormService;
 	footerDataProvider?: FooterDataProvider;
+	onEditorSubmit?: (text: string) => void;
 }
 
 interface DialogPromiseOptions<T> extends CreateRpcExtensionUIContextOptions {
@@ -94,6 +95,7 @@ export function createRpcExtensionUIContext({
 	sessionPicker,
 	inputForm,
 	footerDataProvider,
+	onEditorSubmit,
 }: CreateRpcExtensionUIContextOptions): ExtensionUIContext {
 	const unsupportedWarnings = new Set<string>();
 	let toolsExpanded = false;
@@ -262,15 +264,18 @@ export function createRpcExtensionUIContext({
 		...(inputForm ? { hostInputForm: (request: HostInputFormRequest) => inputForm.open(request) } : {}),
 
 		pasteToEditor(text: string): void {
-			// Paste handling not supported in RPC mode - falls back to setEditorText
-			this.setEditorText(text);
+			if (customUi?.setEditorText(text)) return;
+			emitExtensionUIRequest(output, { method: "set_editor_text", text });
 		},
 
 		setEditorText(text: string): void {
+			if (customUi?.setEditorText(text)) return;
 			emitExtensionUIRequest(output, { method: "set_editor_text", text });
 		},
 
 		getEditorText(): string {
+			const text = customUi?.getEditorText();
+			if (text !== undefined) return text;
 			warnUnsupported("ctx.ui.getEditorText");
 			return "";
 		},
@@ -298,8 +303,12 @@ export function createRpcExtensionUIContext({
 			warnUnsupported("ctx.ui.addAutocompleteProvider");
 		},
 
-		setEditorComponent(): void {
-			warnUnsupported("ctx.ui.setEditorComponent");
+		setEditorComponent(factory): void {
+			if (!customUi || !onEditorSubmit) {
+				warnUnsupported("ctx.ui.setEditorComponent");
+				return;
+			}
+			customUi.setEditor(factory, onEditorSubmit);
 		},
 
 		getEditorComponent() {
