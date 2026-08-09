@@ -200,8 +200,8 @@ export function createRpcExtensionUIContext({
 			});
 		},
 
-		setHiddenThinkingLabel(_label?: string): void {
-			// Hidden thinking label not supported in RPC mode - requires TUI message rendering access
+		setHiddenThinkingLabel(label?: string): void {
+			emitExtensionUIRequest(output, { method: "setHiddenThinkingLabel", label });
 		},
 
 		setWidget(key: string, content: unknown, options?: ExtensionWidgetOptions): void {

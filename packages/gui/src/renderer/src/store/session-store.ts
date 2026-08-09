@@ -95,6 +95,7 @@ export interface SessionState {
 	rawLines: string[];
 	showRawLog: boolean;
 	hideThinking: boolean;
+	hiddenThinkingLabel: string;
 	queue: QueueChip[];
 	composerText: string;
 	promptHistory: string[];
@@ -303,6 +304,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	rawLines: [],
 	showRawLog: false,
 	hideThinking: false,
+	hiddenThinkingLabel: "Thinking...",
 	queue: [],
 	composerText: "",
 	promptHistory: [],
@@ -444,6 +446,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				workingIndicatorIntervalMs:
 					typeof request.intervalMs === "number" ? request.intervalMs : state.workingIndicatorIntervalMs,
 			}));
+			return;
+		}
+		if (request.method === "setHiddenThinkingLabel") {
+			set({ hiddenThinkingLabel: typeof request.label === "string" ? request.label : "Thinking..." });
 			return;
 		}
 		if (request.method === "setWidget") {

@@ -13,10 +13,12 @@ function MarkdownBody({ source }: { source: string }) {
 function EntryView({
 	entry,
 	hideThinking,
+	hiddenThinkingLabel,
 	onToggle,
 }: {
 	entry: TranscriptEntry;
 	hideThinking: boolean;
+	hiddenThinkingLabel: string;
 	onToggle: (id: string) => void;
 }) {
 	if (entry.kind === "compaction" || entry.kind === "branchSummary") {
@@ -55,6 +57,7 @@ function EntryView({
 				) : null}
 				{entry.error ? <span style={{ color: "var(--red)" }}>{entry.error}</span> : null}
 			</div>
+			{entry.thinking && hideThinking ? <div className="thinking-hidden">{hiddenThinkingLabel}</div> : null}
 			{entry.thinking && !hideThinking ? (
 				<details className="thinking" open={entry.streaming}>
 					<summary>thinking</summary>
@@ -77,10 +80,12 @@ function EntryView({
 export function Transcript({
 	entries,
 	hideThinking,
+	hiddenThinkingLabel,
 	onToggle,
 }: {
 	entries: TranscriptEntry[];
 	hideThinking: boolean;
+	hiddenThinkingLabel: string;
 	onToggle: (id: string) => void;
 }) {
 	const lastEntry = entries.at(-1);
@@ -100,7 +105,13 @@ export function Transcript({
 	return (
 		<section className="transcript" aria-label="Transcript">
 			{entries.map((entry) => (
-				<EntryView key={entry.id} entry={entry} hideThinking={hideThinking} onToggle={onToggle} />
+				<EntryView
+					key={entry.id}
+					entry={entry}
+					hideThinking={hideThinking}
+					hiddenThinkingLabel={hiddenThinkingLabel}
+					onToggle={onToggle}
+				/>
 			))}
 			<div
 				key={scrollKey}

@@ -172,6 +172,7 @@ export type ExtensionUiRequest =
 	| { id: string; method: "notify"; message: string; notifyType?: "info" | "warning" | "error" }
 	| { id: string; method: "setStatus"; statusKey: string; statusText: string | undefined }
 	| { id: string; method: "setWorking"; message?: string; visible?: boolean; frames?: string[]; intervalMs?: number }
+	| { id: string; method: "setHiddenThinkingLabel"; label?: string }
 	| {
 			id: string;
 			method: "setWidget";

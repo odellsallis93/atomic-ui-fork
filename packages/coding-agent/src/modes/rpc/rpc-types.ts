@@ -426,6 +426,7 @@ export type RpcExtensionUIRequest =
 			frames?: string[];
 			intervalMs?: number;
 	  }
+	| { type: "extension_ui_request"; id: string; method: "setHiddenThinkingLabel"; label?: string }
 	| {
 			type: "extension_ui_request";
 			id: string;

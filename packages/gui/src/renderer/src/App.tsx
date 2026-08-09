@@ -87,6 +87,7 @@ export function App() {
 	const rawLines = useSessionStore((s) => s.rawLines);
 	const showRawLog = useSessionStore((s) => s.showRawLog);
 	const hideThinking = useSessionStore((s) => s.hideThinking);
+	const hiddenThinkingLabel = useSessionStore((s) => s.hiddenThinkingLabel);
 	const queue = useSessionStore((s) => s.queue);
 	const composerText = useSessionStore((s) => s.composerText);
 	const errorBanner = useSessionStore((s) => s.errorBanner);
@@ -471,7 +472,12 @@ export function App() {
 				</div>
 			) : null}
 
-			<Transcript entries={entries} hideThinking={hideThinking} onToggle={toggleEntryExpanded} />
+			<Transcript
+				entries={entries}
+				hideThinking={hideThinking}
+				hiddenThinkingLabel={hiddenThinkingLabel}
+				onToggle={toggleEntryExpanded}
+			/>
 
 			{showRawLog ? <pre className="raw-log">{rawLines.join("\n")}</pre> : null}
 
