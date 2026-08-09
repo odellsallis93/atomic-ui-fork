@@ -77,7 +77,6 @@ export class EngineClient {
 		this.setStatus({ state: "starting", cwd: this.options.cwd ?? process.cwd() });
 		const cli = this.options.cli ?? resolveAtomicCli();
 		this.guardianFile = join(tmpdir(), `atomic-gui-engine-guardian-${process.pid}-${crypto.randomUUID()}`);
-		writeFileSync(this.guardianFile, "", { mode: 0o600 });
 		this.bootstrap = writeInteractiveEngineBootstrap({
 			hostPid: process.pid,
 			guardFile: this.guardianFile,
@@ -184,6 +183,7 @@ export class EngineClient {
 	async stop(): Promise<void> {
 		this.setStatus({ ...this.status, state: "stopped" });
 		const child = this.child;
+		const guardianFile = this.guardianFile;
 		this.child = null;
 		this.stopReading?.();
 		this.stopReading = null;
@@ -193,6 +193,18 @@ export class EngineClient {
 		this.pending.clear();
 		if (child && child.exitCode === null && child.signalCode === null) {
 			child.kill("SIGTERM");
+			if (await waitForChildExit(child, 250)) {
+				this.cleanupBootstrap();
+				return;
+			}
+			if (guardianFile) {
+				writeFileSync(guardianFile, "stop", { mode: 0o600 });
+				if (await waitForChildExit(child, 500)) {
+					this.cleanupBootstrap();
+					return;
+				}
+			}
+			killEngineProcessTree(child);
 		}
 		this.cleanupBootstrap();
 	}
@@ -504,6 +516,34 @@ export class EngineClient {
 			rmSync(this.guardianFile, { force: true });
 			this.guardianFile = undefined;
 		}
+	}
+}
+
+function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+	if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+	return new Promise((resolve) => {
+		const timer = setTimeout(() => resolve(false), timeoutMs);
+		child.once("exit", () => {
+			clearTimeout(timer);
+			resolve(true);
+		});
+	});
+}
+
+/** Mirrors packages/coding-agent terminateRpcClientProcess escalation on Unix. */
+function killEngineProcessTree(child: ChildProcess): void {
+	if (!child.pid) {
+		child.kill("SIGKILL");
+		return;
+	}
+	if (process.platform === "win32") {
+		child.kill("SIGKILL");
+		return;
+	}
+	try {
+		process.kill(-child.pid, "SIGKILL");
+	} catch {
+		child.kill("SIGKILL");
 	}
 }
 

@@ -58,6 +58,26 @@ export interface SessionListItem {
 	firstMessage: string;
 }
 
+/** Row shape for `ctx.ui.hostSessionPicker` over the engine protocol. */
+export interface HostSessionPickerRow {
+	path: string;
+	id: string;
+	cwd: string;
+	createdAt: number;
+	modifiedAt: number;
+	messageCount: number;
+	firstMessage: string;
+	name?: string;
+	messageColor?: "success" | "warning" | "accent" | "error";
+}
+
+export interface HostSessionPickerState {
+	componentId: string;
+	sessions: HostSessionPickerRow[];
+	showRenameHint: boolean;
+	errorMessage?: string;
+}
+
 export interface FileMentionItem {
 	path: string;
 	label: string;

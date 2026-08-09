@@ -7,6 +7,8 @@ import type {
 	InputFormRequest,
 	ModelInfo,
 	SessionListItem,
+	HostSessionPickerRow,
+	HostSessionPickerState,
 	SessionTreeNodeInfo,
 	SlashCommandInfo,
 	ThemeSummary,
@@ -49,7 +51,17 @@ export interface WidgetItem {
 	placement: "aboveEditor" | "belowEditor";
 }
 
-export type ModalKind = "none" | "sessions" | "models" | "dialog" | "tree" | "settings" | "auth" | "trust" | "inputForm";
+export type ModalKind =
+	| "none"
+	| "sessions"
+	| "models"
+	| "dialog"
+	| "tree"
+	| "settings"
+	| "auth"
+	| "trust"
+	| "inputForm"
+	| "hostSessionPicker";
 
 export interface CustomFrame {
 	componentId: string;
@@ -66,6 +78,8 @@ export interface CustomFrame {
 	hidden: boolean;
 	focused: boolean;
 	mouseScrollTracking: boolean;
+	/** When false, long ANSI lines clip like a TTY with autowrap disabled. */
+	terminalAutowrap: boolean;
 }
 
 export interface SessionState {
@@ -98,6 +112,7 @@ export interface SessionState {
 	trustStatus?: TrustStatus;
 	trustOptions: TrustOption[];
 	inputForm?: InputFormRequest;
+	hostSessionPicker?: HostSessionPickerState;
 	modal: ModalKind;
 	activeDialog?: ExtensionUiRequest;
 	setStatus: (status: EngineStatus) => void;
@@ -126,6 +141,7 @@ export interface SessionState {
 	setAuthBusyProvider: (provider: string | undefined) => void;
 	setTrust: (status: TrustStatus, options: TrustOption[]) => void;
 	clearInputForm: () => void;
+	clearHostSessionPicker: () => void;
 	setModal: (modal: ModalKind) => void;
 	setUsageLabel: (label: string) => void;
 }
@@ -166,6 +182,38 @@ function thinkingFromContent(content: unknown): string | undefined {
 		}
 	}
 	return parts.length > 0 ? parts.join("\n") : undefined;
+}
+
+function parseHostSessionPickerRows(value: unknown): HostSessionPickerRow[] {
+	if (!Array.isArray(value)) return [];
+	const rows: HostSessionPickerRow[] = [];
+	for (const item of value) {
+		if (typeof item !== "object" || item === null) continue;
+		const row = item as Record<string, unknown>;
+		if (typeof row.path !== "string" || typeof row.id !== "string" || typeof row.cwd !== "string") continue;
+		if (typeof row.createdAt !== "number" || typeof row.modifiedAt !== "number") continue;
+		if (typeof row.messageCount !== "number" || typeof row.firstMessage !== "string") continue;
+		const messageColor = row.messageColor;
+		const colorOk =
+			messageColor === undefined ||
+			messageColor === "success" ||
+			messageColor === "warning" ||
+			messageColor === "accent" ||
+			messageColor === "error";
+		if (!colorOk) continue;
+		rows.push({
+			path: row.path,
+			id: row.id,
+			cwd: row.cwd,
+			createdAt: row.createdAt,
+			modifiedAt: row.modifiedAt,
+			messageCount: row.messageCount,
+			firstMessage: row.firstMessage,
+			name: typeof row.name === "string" ? row.name : undefined,
+			messageColor: messageColor as HostSessionPickerRow["messageColor"],
+		});
+	}
+	return rows;
 }
 
 function formatUsage(
@@ -260,6 +308,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	setTrust: (status, options) => set({ trustStatus: status, trustOptions: options }),
 	clearInputForm: () =>
 		set({ inputForm: undefined, modal: get().modal === "inputForm" ? "none" : get().modal }),
+	clearHostSessionPicker: () =>
+		set({ hostSessionPicker: undefined, modal: get().modal === "hostSessionPicker" ? "none" : get().modal }),
 	setModal: (modal) => set({ modal }),
 	setUsageLabel: (label) => set({ usageLabel: label }),
 	dismissToast: (id) => set((state) => ({ toasts: state.toasts.filter((toast) => toast.id !== id) })),
@@ -389,6 +439,56 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			}
 			return;
 		}
+		if (type === "engine_session_picker_open") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			if (!componentId) return;
+			set({
+				hostSessionPicker: {
+					componentId,
+					sessions: parseHostSessionPickerRows(event.sessions),
+					showRenameHint: event.showRenameHint === true,
+				},
+				modal: "hostSessionPicker",
+			});
+			return;
+		}
+		if (type === "engine_session_picker_update") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			if (!componentId) return;
+			set((state) => {
+				if (state.hostSessionPicker?.componentId !== componentId) return state;
+				return {
+					hostSessionPicker: {
+						...state.hostSessionPicker,
+						sessions: parseHostSessionPickerRows(event.sessions),
+						errorMessage: undefined,
+					},
+				};
+			});
+			return;
+		}
+		if (type === "engine_session_picker_error") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			const message = typeof event.message === "string" ? event.message : "Session picker error";
+			if (!componentId) return;
+			set((state) => {
+				if (state.hostSessionPicker?.componentId !== componentId) return state;
+				return { hostSessionPicker: { ...state.hostSessionPicker, errorMessage: message } };
+			});
+			return;
+		}
+		if (type === "engine_session_picker_close") {
+			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
+			if (!componentId) return;
+			set((state) => {
+				if (state.hostSessionPicker?.componentId !== componentId) return state;
+				return {
+					hostSessionPicker: undefined,
+					modal: state.modal === "hostSessionPicker" ? "none" : state.modal,
+				};
+			});
+			return;
+		}
 		if (type === "engine_custom_open") {
 			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
 			if (!componentId) return;
@@ -405,6 +505,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				hidden: false,
 				focused: event.overlay === true,
 				mouseScrollTracking: false,
+				terminalAutowrap: true,
 			};
 			set((state) => {
 				const frames = [...state.frames.filter((item) => item.componentId !== componentId), frame];
@@ -443,6 +544,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					hidden: existing?.hidden ?? false,
 					focused: existing?.focused ?? true,
 					mouseScrollTracking: existing?.mouseScrollTracking ?? false,
+					terminalAutowrap: existing?.terminalAutowrap ?? true,
 				};
 				const frames = [...state.frames.filter((frame) => frame.componentId !== componentId), next];
 				let widgets = state.widgets;
@@ -497,12 +599,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			if (!componentId || typeof control !== "object" || control === null) return;
 			const kind = (control as { kind?: unknown }).kind;
 			const enabled = (control as { enabled?: unknown }).enabled === true;
-			if (kind !== "mouse-scroll-tracking") return;
-			set((state) => ({
-				frames: state.frames.map((frame) =>
-					frame.componentId === componentId ? { ...frame, mouseScrollTracking: enabled } : frame,
-				),
-			}));
+			if (kind === "mouse-scroll-tracking") {
+				set((state) => ({
+					frames: state.frames.map((frame) =>
+						frame.componentId === componentId ? { ...frame, mouseScrollTracking: enabled } : frame,
+					),
+				}));
+				return;
+			}
+			if (kind === "autowrap") {
+				set((state) => ({
+					frames: state.frames.map((frame) =>
+						frame.componentId === componentId ? { ...frame, terminalAutowrap: enabled } : frame,
+					),
+				}));
+			}
 			return;
 		}
 		if (type === "engine_custom_close" || type === "engine_custom_done") {

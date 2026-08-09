@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { ansiLinesToHtml } from "../helpers/ansi";
 import { nextFrameRenderRequestId } from "../helpers/frame-render-ids";
-import { encodeTerminalKey } from "../helpers/key-encode";
+import { encodeTerminalKey, encodeTerminalKeyRelease } from "../helpers/key-encode";
 import { encodeWheelDelta } from "../helpers/mouse-scroll";
 import { defaultRenderGrid, overlayOptionsToStyle } from "../helpers/overlay-geometry";
 import type { CustomFrame } from "../store/session-store";
@@ -45,6 +45,16 @@ function FrameSurface(props: {
 	onInputRef.current = onInput;
 	onRenderRef.current = onRender;
 
+	const pipelineRender = (): void => {
+		const el = bodyRef.current ?? surfaceRef.current;
+		const rect = el?.getBoundingClientRect();
+		const grid = defaultRenderGrid({
+			widthPx: rect?.width && rect.width > 0 ? rect.width : window.innerWidth * 0.8,
+			heightPx: rect?.height && rect.height > 0 ? rect.height : window.innerHeight * 0.6,
+		});
+		onRenderRef.current(nextFrameRenderRequestId(frame.componentId), grid.width, grid.rows);
+	};
+
 	useEffect(() => {
 		if (!frame.focused) return;
 		const onKeyDown = (event: KeyboardEvent): void => {
@@ -53,16 +63,22 @@ function FrameSurface(props: {
 			event.preventDefault();
 			event.stopPropagation();
 			onInputRef.current(encoded);
-			const el = bodyRef.current ?? surfaceRef.current;
-			const rect = el?.getBoundingClientRect();
-			const grid = defaultRenderGrid({
-				widthPx: rect?.width && rect.width > 0 ? rect.width : window.innerWidth * 0.8,
-				heightPx: rect?.height && rect.height > 0 ? rect.height : window.innerHeight * 0.6,
-			});
-			onRenderRef.current(nextFrameRenderRequestId(frame.componentId), grid.width, grid.rows);
+			pipelineRender();
+		};
+		const onKeyUp = (event: KeyboardEvent): void => {
+			const encoded = encodeTerminalKeyRelease(event);
+			if (encoded === undefined) return;
+			event.preventDefault();
+			event.stopPropagation();
+			onInputRef.current(encoded);
+			pipelineRender();
 		};
 		window.addEventListener("keydown", onKeyDown, true);
-		return () => window.removeEventListener("keydown", onKeyDown, true);
+		window.addEventListener("keyup", onKeyUp, true);
+		return () => {
+			window.removeEventListener("keydown", onKeyDown, true);
+			window.removeEventListener("keyup", onKeyUp, true);
+		};
 	}, [frame.componentId, frame.focused]);
 
 	useEffect(() => {
@@ -72,13 +88,7 @@ function FrameSurface(props: {
 			if (!encoded) return;
 			event.preventDefault();
 			onInputRef.current(encoded);
-			const el = bodyRef.current ?? surfaceRef.current;
-			const rect = el?.getBoundingClientRect();
-			const grid = defaultRenderGrid({
-				widthPx: rect?.width && rect.width > 0 ? rect.width : window.innerWidth * 0.8,
-				heightPx: rect?.height && rect.height > 0 ? rect.height : window.innerHeight * 0.6,
-			});
-			onRenderRef.current(nextFrameRenderRequestId(frame.componentId), grid.width, grid.rows);
+			pipelineRender();
 		};
 		window.addEventListener("wheel", onWheel, { passive: false, capture: true });
 		return () => window.removeEventListener("wheel", onWheel, true);
@@ -107,7 +117,11 @@ function FrameSurface(props: {
 				</button>
 			</div>
 			{/* biome-ignore lint/security/noDangerouslySetInnerHtml: ANSI→HTML from engine frames; escaped in ansi.ts */}
-			<pre ref={bodyRef} className="frame-body" dangerouslySetInnerHTML={{ __html: html }} />
+			<pre
+				ref={bodyRef}
+				className={`frame-body${frame.terminalAutowrap ? "" : " frame-body-no-wrap"}`}
+				dangerouslySetInnerHTML={{ __html: html }}
+			/>
 		</div>
 	);
 }

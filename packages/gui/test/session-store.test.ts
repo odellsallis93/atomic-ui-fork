@@ -33,6 +33,7 @@ beforeEach(() => {
 		trustStatus: undefined,
 		trustOptions: [],
 		inputForm: undefined,
+		hostSessionPicker: undefined,
 		modal: "none",
 		activeDialog: undefined,
 	});
@@ -170,6 +171,53 @@ test("engine_custom_invalidate and control update frame host state", () => {
 		lines: ["stale"],
 	});
 	assert.equal(useSessionStore.getState().frames[0]?.lines[0], "a");
+});
+
+test("engine_session_picker_open/update/error/close drive host picker modal", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({
+		type: "engine_session_picker_open",
+		componentId: "pick1",
+		sessions: [
+			{
+				path: "/tmp/s.jsonl",
+				id: "abc",
+				cwd: "/proj",
+				createdAt: 1,
+				modifiedAt: 2,
+				messageCount: 3,
+				firstMessage: "hi",
+				name: "demo",
+			},
+		],
+		showRenameHint: true,
+	});
+	let state = useSessionStore.getState();
+	assert.equal(state.modal, "hostSessionPicker");
+	assert.equal(state.hostSessionPicker?.sessions[0]?.name, "demo");
+	ingestEvent({
+		type: "engine_session_picker_update",
+		componentId: "pick1",
+		sessions: [],
+	});
+	assert.equal(useSessionStore.getState().hostSessionPicker?.sessions.length, 0);
+	ingestEvent({ type: "engine_session_picker_error", componentId: "pick1", message: "nope" });
+	assert.equal(useSessionStore.getState().hostSessionPicker?.errorMessage, "nope");
+	ingestEvent({ type: "engine_session_picker_close", componentId: "pick1" });
+	state = useSessionStore.getState();
+	assert.equal(state.modal, "none");
+	assert.equal(state.hostSessionPicker, undefined);
+});
+
+test("engine_custom_terminal autowrap toggles frame wrap mode", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({ type: "engine_custom_open", componentId: "c3", overlay: true });
+	ingestEvent({
+		type: "engine_custom_terminal",
+		componentId: "c3",
+		control: { kind: "autowrap", enabled: false },
+	});
+	assert.equal(useSessionStore.getState().frames[0]?.terminalAutowrap, false);
 });
 
 test("engine_input_form_open mounts the input form modal", () => {

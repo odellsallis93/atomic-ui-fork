@@ -28,7 +28,7 @@
 	"devDependencies": {
 		"@types/react": "19.2.18",
 		"@types/react-dom": "19.2.4",
-		"@vitejs/plugin-react": "5.2.0",
+		"@vitejs/plugin-react": "4.7.0",
 		"electron": "43.3.0",
 		"electron-builder": "26.15.3",
 		"electron-vite": "5.0.0",
@@ -45,15 +45,24 @@
 			"package.json"
 		],
 		"linux": {
-			"target": ["AppImage", "dir"],
+			"target": [
+				"AppImage",
+				"dir"
+			],
 			"category": "Development"
 		},
 		"mac": {
-			"target": ["dmg", "dir"],
+			"target": [
+				"dmg",
+				"dir"
+			],
 			"category": "public.app-category.developer-tools"
 		},
 		"win": {
-			"target": ["nsis", "dir"]
+			"target": [
+				"nsis",
+				"dir"
+			]
 		}
 	}
 }

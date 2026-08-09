@@ -719,6 +719,25 @@ input {
 	white-space: pre-wrap;
 }
 
+.frame-body-no-wrap {
+	white-space: pre;
+	overflow-x: auto;
+}
+
+.session-row {
+	display: flex;
+	gap: 0.5rem;
+	align-items: stretch;
+}
+
+.session-select {
+	flex: 1;
+	text-align: left;
+	display: flex;
+	flex-direction: column;
+	gap: 0.2rem;
+}
+
 .ansi-line {
 	min-height: 1.2em;
 }

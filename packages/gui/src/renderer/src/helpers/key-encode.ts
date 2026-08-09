@@ -58,6 +58,61 @@ export interface KeyEncodeInput {
 	shiftKey: boolean;
 }
 
+const ARROW_CODEPOINTS: Record<string, number> = {
+	ArrowUp: -1,
+	ArrowDown: -2,
+	ArrowRight: -3,
+	ArrowLeft: -4,
+};
+
+const FUNCTIONAL_CODEPOINTS: Record<string, number> = {
+	Insert: -11,
+	Delete: -10,
+	PageUp: -12,
+	PageDown: -13,
+	Home: -14,
+	End: -15,
+};
+
+function kittyModifierValue(event: KeyEncodeInput): number {
+	let bits = 0;
+	if (event.shiftKey) bits |= 1;
+	if (event.altKey) bits |= 2;
+	if (event.ctrlKey) bits |= 4;
+	if (event.metaKey) bits |= 8;
+	return bits + 1;
+}
+
+function codepointForKitty(event: KeyEncodeInput): number | undefined {
+	const { key, shiftKey } = event;
+	if (ARROW_CODEPOINTS[key] !== undefined) return ARROW_CODEPOINTS[key];
+	if (FUNCTIONAL_CODEPOINTS[key] !== undefined) return FUNCTIONAL_CODEPOINTS[key];
+	if (key === "Escape") return 27;
+	if (key === "Tab") return 9;
+	if (key === "Enter") return 13;
+	if (key === "Backspace") return 127;
+	if (key === " ") return 32;
+	if (key.length === 1) {
+		if (shiftKey && key >= "A" && key <= "Z") return key.charCodeAt(0);
+		return key.toLowerCase().charCodeAt(0);
+	}
+	return undefined;
+}
+
+/**
+ * Kitty keyboard protocol release event (flag 2: `:3` event type).
+ * The engine child filters these unless `component.wantsKeyRelease === true`.
+ */
+export function encodeTerminalKeyRelease(event: KeyEncodeInput): string | undefined {
+	if (event.key === "Control" || event.key === "Alt" || event.key === "Shift" || event.key === "Meta") {
+		return undefined;
+	}
+	const codepoint = codepointForKitty(event);
+	if (codepoint === undefined) return undefined;
+	const mod = kittyModifierValue(event);
+	return `\x1b[${codepoint};${mod}:3u`;
+}
+
 /**
  * Returns the terminal input bytes for a key event, or undefined when the event
  * should be ignored (e.g. bare modifier keys).

@@ -4,6 +4,7 @@ import { AuthPanel } from "./components/AuthPanel";
 import { Composer } from "./components/Composer";
 import { DialogModal } from "./components/DialogModal";
 import { Footer } from "./components/Footer";
+import { HostSessionPickerModal } from "./components/HostSessionPickerModal";
 import { FrameOverlay } from "./components/FrameOverlay";
 import { FrameRenderHost } from "./components/FrameRenderHost";
 import { InputFormModal } from "./components/InputFormModal";
@@ -52,6 +53,7 @@ export function App() {
 	const trustStatus = useSessionStore((s) => s.trustStatus);
 	const trustOptions = useSessionStore((s) => s.trustOptions);
 	const inputForm = useSessionStore((s) => s.inputForm);
+	const hostSessionPicker = useSessionStore((s) => s.hostSessionPicker);
 	const modal = useSessionStore((s) => s.modal);
 	const activeDialog = useSessionStore((s) => s.activeDialog);
 	const widgets = useSessionStore((s) => s.widgets);
@@ -79,6 +81,7 @@ export function App() {
 	const setAuthBusyProvider = useSessionStore((s) => s.setAuthBusyProvider);
 	const setTrust = useSessionStore((s) => s.setTrust);
 	const clearInputForm = useSessionStore((s) => s.clearInputForm);
+	const clearHostSessionPicker = useSessionStore((s) => s.clearHostSessionPicker);
 	const setModal = useSessionStore((s) => s.setModal);
 	const setUsageLabel = useSessionStore((s) => s.setUsageLabel);
 	const clearDialog = useSessionStore((s) => s.clearDialog);
@@ -647,6 +650,36 @@ export function App() {
 					onSubmit={(values) => {
 						void window.atomicGui.submitInputForm(inputForm.componentId, values);
 						clearInputForm();
+					}}
+				/>
+			) : null}
+
+			{modal === "hostSessionPicker" && hostSessionPicker ? (
+				<HostSessionPickerModal
+					sessions={hostSessionPicker.sessions}
+					showRenameHint={hostSessionPicker.showRenameHint}
+					errorMessage={hostSessionPicker.errorMessage}
+					onClose={() => {
+						void window.atomicGui.sendEngineCommand({
+							type: "engine_session_picker_cancel",
+							componentId: hostSessionPicker.componentId,
+						});
+						clearHostSessionPicker();
+					}}
+					onSelect={(path) => {
+						void window.atomicGui.sendEngineCommand({
+							type: "engine_session_picker_select",
+							componentId: hostSessionPicker.componentId,
+							path,
+						});
+						clearHostSessionPicker();
+					}}
+					onDelete={(path) => {
+						void window.atomicGui.sendEngineCommand({
+							type: "engine_session_picker_delete",
+							componentId: hostSessionPicker.componentId,
+							path,
+						});
 					}}
 				/>
 			) : null}

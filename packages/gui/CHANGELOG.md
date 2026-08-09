@@ -24,7 +24,16 @@
 - Project trust prompt backed by `~/.atomic/agent/trust.json` (including
   session-only decisions) before engine start.
 - Frame key encoding maps arrows, function keys, ctrl/alt chords, and shift-tab
-  to legacy terminal sequences that pi-tui `matchesKey` accepts.
+  to legacy terminal sequences that pi-tui `matchesKey` accepts, with kitty
+  `:3` release events on keyup for `wantsKeyRelease` components.
 - Frame host render loop: `engine_custom_render` on open/invalidate, pipelined
-  after input, `overlayOptions` geometry, hide/show/focus control, and
-  mouse-scroll-tracking wheel reports.
+  after input, `overlayOptions` geometry, hide/show/focus control, mouse-scroll
+  wheel reports, and autowrap terminal-mode styling.
+- Host-native session picker for `engine_session_picker_*` (`ctx.ui.hostSessionPicker`).
+
+### Fixed
+
+- Fixed the engine child being SIGKILL'd shortly after start because the host
+  pre-created the interactive-engine guardian stop file; the path is reserved at
+  launch and the file is written only when stopping the engine, matching the RPC
+  host in `@bastani/atomic`.
