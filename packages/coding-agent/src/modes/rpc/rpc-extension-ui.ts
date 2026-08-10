@@ -185,7 +185,7 @@ export function createRpcExtensionUIContext({
 		},
 
 		setWorkingMessage(message?: string): void {
-			emitExtensionUIRequest(output, { method: "setWorking", message });
+			emitExtensionUIRequest(output, { method: "setWorking", message, resetMessage: message === undefined });
 		},
 
 		setWorkingVisible(visible: boolean): void {
@@ -197,6 +197,7 @@ export function createRpcExtensionUIContext({
 				method: "setWorking",
 				frames: options?.frames,
 				intervalMs: options?.intervalMs,
+				resetIndicator: options === undefined,
 			});
 		},
 

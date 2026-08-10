@@ -131,6 +131,11 @@ test("extension working configuration updates label, visibility, and animation",
 	assert.equal(state.workingVisible, false);
 	assert.deepEqual(state.workingIndicatorFrames, ["·", "•"]);
 	assert.equal(state.workingIndicatorIntervalMs, 120);
+	useSessionStore
+		.getState()
+		.ingestExtensionUi({ id: "work-2", method: "setWorking", resetMessage: true, resetIndicator: true });
+	assert.equal(useSessionStore.getState().workingLabel, "thinking");
+	assert.equal(useSessionStore.getState().workingIndicatorFrames, undefined);
 });
 
 test("extension hidden-thinking label is applied and reset", () => {

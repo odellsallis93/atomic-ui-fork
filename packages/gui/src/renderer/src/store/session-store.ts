@@ -438,13 +438,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		}
 		if (request.method === "setWorking") {
 			set((state) => ({
-				workingLabel: typeof request.message === "string" ? request.message : state.workingLabel,
+				workingLabel:
+					request.resetMessage === true
+						? "thinking"
+						: typeof request.message === "string"
+							? request.message
+							: state.workingLabel,
 				workingVisible: typeof request.visible === "boolean" ? request.visible : state.workingVisible,
-				workingIndicatorFrames: Array.isArray(request.frames)
-					? request.frames.map(String)
-					: state.workingIndicatorFrames,
+				workingIndicatorFrames:
+					request.resetIndicator === true
+						? undefined
+						: Array.isArray(request.frames)
+							? request.frames.map(String)
+							: state.workingIndicatorFrames,
 				workingIndicatorIntervalMs:
-					typeof request.intervalMs === "number" ? request.intervalMs : state.workingIndicatorIntervalMs,
+					request.resetIndicator === true
+						? undefined
+						: typeof request.intervalMs === "number"
+							? request.intervalMs
+							: state.workingIndicatorIntervalMs,
 			}));
 			return;
 		}

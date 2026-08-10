@@ -85,7 +85,13 @@ test("working indicator APIs emit host configuration", () => {
 	ui.setWorkingVisible(false);
 	ui.setWorkingIndicator({ frames: ["·", "•"], intervalMs: 120 });
 	assert.deepEqual(
-		requests.map(({ method, message, visible, frames, intervalMs }) => ({ method, message, visible, frames, intervalMs })),
+		requests.map(({ method, message, visible, frames, intervalMs }) => ({
+			method,
+			message,
+			visible,
+			frames,
+			intervalMs,
+		})),
 		[
 			{ method: "setWorking", message: "Indexing", visible: undefined, frames: undefined, intervalMs: undefined },
 			{ method: "setWorking", message: undefined, visible: false, frames: undefined, intervalMs: undefined },
@@ -96,7 +102,10 @@ test("working indicator APIs emit host configuration", () => {
 
 test("hidden-thinking label emits host configuration", () => {
 	const requests: Array<Record<string, unknown>> = [];
-	const ui = createRpcExtensionUIContext({ output: (request) => requests.push(request as Record<string, unknown>), pendingExtensionRequests: new Map() });
+	const ui = createRpcExtensionUIContext({
+		output: (request) => requests.push(request as Record<string, unknown>),
+		pendingExtensionRequests: new Map(),
+	});
 	ui.setHiddenThinkingLabel("Reasoning privately");
 	assert.equal(requests[0]?.method, "setHiddenThinkingLabel");
 	assert.equal(requests[0]?.label, "Reasoning privately");
