@@ -28,6 +28,14 @@ export interface TranscriptEntry {
 	thinking?: string;
 	toolName?: string;
 	toolCallId?: string;
+	/** Engine-owned component identity for a rendered live tool card. */
+	remoteRenderId?: string;
+	/** Inputs forwarded to the engine's ToolExecutionComponent renderer. */
+	toolArgs?: unknown;
+	toolResult?: unknown;
+	remoteRenderLines?: string[];
+	remoteRenderGeneration?: number;
+	remoteRenderAppliedRequestId?: number;
 	streaming: boolean;
 	expanded: boolean;
 	excludeFromContext?: boolean;
@@ -652,6 +660,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			if (!componentId) return;
 			const requestId = typeof event.requestId === "number" ? event.requestId : undefined;
 			set((state) => {
+				const renderedTool = state.entries.find((entry) => entry.remoteRenderId === componentId);
+				if (renderedTool) {
+					if (requestId !== undefined && requestId < (renderedTool.remoteRenderAppliedRequestId ?? 0)) {
+						return state;
+					}
+					return {
+						entries: state.entries.map((entry) =>
+							entry.id === renderedTool.id
+								? {
+										...entry,
+										remoteRenderLines: lines,
+										remoteRenderAppliedRequestId: requestId ?? entry.remoteRenderAppliedRequestId ?? 0,
+									}
+								: entry,
+						),
+					};
+				}
 				const existing = state.frames.find((frame) => frame.componentId === componentId);
 				if (existing && requestId !== undefined && requestId < existing.appliedRequestId) {
 					return state;
@@ -692,11 +717,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		if (type === "engine_custom_invalidate") {
 			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
 			if (!componentId) return;
-			set((state) => ({
-				frames: state.frames.map((frame) =>
-					frame.componentId === componentId ? { ...frame, renderGeneration: frame.renderGeneration + 1 } : frame,
-				),
-			}));
+			set((state) => {
+				const renderedTool = state.entries.find((entry) => entry.remoteRenderId === componentId);
+				if (renderedTool) {
+					return {
+						entries: state.entries.map((entry) =>
+							entry.id === renderedTool.id
+								? { ...entry, remoteRenderGeneration: (entry.remoteRenderGeneration ?? 0) + 1 }
+								: entry,
+						),
+					};
+				}
+				return {
+					frames: state.frames.map((frame) =>
+						frame.componentId === componentId
+							? { ...frame, renderGeneration: frame.renderGeneration + 1 }
+							: frame,
+					),
+				};
+			});
 			return;
 		}
 		if (type === "engine_custom_control") {
@@ -893,22 +932,28 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		if (type === "tool_execution_start") {
 			const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : nextId("tool");
 			const toolName = typeof event.toolName === "string" ? event.toolName : "tool";
-			set((state) => ({
-				working: true,
-				workingLabel: toolName,
-				entries: [
-					...state.entries,
-					{
-						id: toolCallId,
-						kind: "tool",
-						toolName,
-						toolCallId,
-						text: typeof event.args === "object" ? JSON.stringify(event.args, null, 2) : String(event.args ?? ""),
-						streaming: true,
-						expanded: false,
-					},
-				],
-			}));
+			set((state) => {
+				const existing = state.entries.find((entry) => entry.id === toolCallId);
+				const nextEntry: TranscriptEntry = {
+					id: toolCallId,
+					kind: "tool",
+					toolName,
+					toolCallId,
+					remoteRenderId: `gui-tool-render:${toolCallId}`,
+					toolArgs: event.args,
+					text: typeof event.args === "object" ? JSON.stringify(event.args, null, 2) : String(event.args ?? ""),
+					streaming: true,
+					expanded: existing?.expanded ?? false,
+					remoteRenderGeneration: (existing?.remoteRenderGeneration ?? 0) + 1,
+					remoteRenderAppliedRequestId: existing?.remoteRenderAppliedRequestId,
+					remoteRenderLines: existing?.remoteRenderLines,
+				};
+				return {
+					working: true,
+					workingLabel: toolName,
+					entries: [...state.entries.filter((entry) => entry.id !== toolCallId), nextEntry],
+				};
+			});
 			return;
 		}
 		if (type === "tool_execution_end" || type === "tool_execution_update") {
@@ -920,11 +965,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					entry.id === toolCallId
 						? {
 								...entry,
+								toolArgs: event.args ?? entry.toolArgs,
+								toolResult: type === "tool_execution_update" ? event.partialResult : event.result,
 								text:
-									typeof event.result === "object"
-										? JSON.stringify(event.result, null, 2)
-										: String(event.result ?? entry.text),
+									typeof (type === "tool_execution_update" ? event.partialResult : event.result) === "object"
+										? JSON.stringify(
+												type === "tool_execution_update" ? event.partialResult : event.result,
+												null,
+												2,
+											)
+										: String(
+												(type === "tool_execution_update" ? event.partialResult : event.result) ??
+													entry.text,
+											),
 								streaming: type !== "tool_execution_end",
+								remoteRenderGeneration: (entry.remoteRenderGeneration ?? 0) + 1,
 								error: typeof event.isError === "boolean" && event.isError ? "Tool error" : undefined,
 							}
 						: entry,

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
+import { ansiLineToSegments } from "../helpers/ansi";
 import { renderMarkdown } from "../helpers/markdown";
 import type { TranscriptEntry } from "../store/session-store";
 
@@ -8,6 +9,38 @@ function MarkdownBody({ source }: { source: string }) {
 		if (ref.current) ref.current.innerHTML = renderMarkdown(source);
 	}, [source]);
 	return <div ref={ref} className="entry-body markdown" />;
+}
+
+function ToolBody({ entry }: { entry: TranscriptEntry }) {
+	if (entry.remoteRenderLines) {
+		return (
+			<pre className="tool-body">
+				{entry.remoteRenderLines.map((line) => (
+					<div key={`${entry.id}-${line}`} className="ansi-line">
+						{ansiLineToSegments(line).map((segment) => (
+							<span
+								key={`${entry.id}-${line}-${segment.text}-${segment.fg ?? ""}-${segment.bg ?? ""}`}
+								style={{
+									color: segment.fg,
+									background: segment.bg,
+									fontWeight: segment.bold ? 700 : undefined,
+									opacity: segment.dim ? 0.65 : undefined,
+									textDecoration: segment.underline ? "underline" : undefined,
+								}}
+							>
+								{segment.text}
+							</span>
+						))}
+					</div>
+				))}
+			</pre>
+		);
+	}
+	return (
+		<pre className={`tool-body${entry.kind === "bash" ? " bash-body" : ""}`}>
+			{entry.expanded ? entry.text : entry.text.slice(0, 400)}
+		</pre>
+	);
 }
 
 function EntryView({
@@ -67,9 +100,7 @@ function EntryView({
 			{entry.kind === "assistant" ? (
 				<MarkdownBody source={entry.text || (entry.streaming ? "…" : "")} />
 			) : entry.kind === "tool" || entry.kind === "bash" ? (
-				<pre className={`tool-body${entry.kind === "bash" ? " bash-body" : ""}`}>
-					{entry.expanded ? entry.text : entry.text.slice(0, 400)}
-				</pre>
+				<ToolBody entry={entry} />
 			) : (
 				<div className="entry-body">{entry.text}</div>
 			)}

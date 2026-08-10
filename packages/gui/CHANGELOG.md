@@ -36,6 +36,9 @@
   rendered through the interactive-engine frame protocol.
 - Remote custom editor components (`ctx.ui.setEditorComponent`) with terminal-key input,
   text get/set support, and prompt submission through the active engine session.
+- Engine-rendered live tool cards that reuse Atomic's `ToolExecutionComponent`, including
+  partial output, expansion state, ANSI styling, and safe renderer disposal when the
+  transcript changes.
 
 ### Fixed
 

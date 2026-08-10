@@ -13,6 +13,7 @@ import { ModelPicker } from "./components/ModelPicker";
 import { SessionPicker } from "./components/SessionPicker";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { ToastStack } from "./components/ToastStack";
+import { ToolRenderHost } from "./components/ToolRenderHost";
 import { Transcript } from "./components/Transcript";
 import { TreeNavigator } from "./components/TreeNavigator";
 import { TrustDialog } from "./components/TrustDialog";
@@ -551,6 +552,15 @@ export function App() {
 						width,
 						rows,
 					});
+				}}
+			/>
+			<ToolRenderHost
+				entries={entries}
+				onRender={(command) => {
+					void window.atomicGui.sendEngineCommand(command);
+				}}
+				onDispose={(componentId) => {
+					void window.atomicGui.sendEngineCommand({ type: "engine_render_dispose", componentId });
 				}}
 			/>
 			<FrameOverlay

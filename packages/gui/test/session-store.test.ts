@@ -146,7 +146,7 @@ test("extension hidden-thinking label is applied and reset", () => {
 	assert.equal(useSessionStore.getState().hiddenThinkingLabel, "Thinking...");
 });
 
-test("tool execution start/end creates expandable tool entry", () => {
+test("tool execution streams renderer state and keeps its ANSI frame out of extension overlays", () => {
 	const { ingestEvent } = useSessionStore.getState();
 	ingestEvent({
 		type: "tool_execution_start",
@@ -163,8 +163,38 @@ test("tool execution start/end creates expandable tool entry", () => {
 	const entry = useSessionStore.getState().entries[0];
 	assert.equal(entry?.kind, "tool");
 	assert.equal(entry?.toolName, "bash");
+	assert.equal(entry?.remoteRenderId, "gui-tool-render:t1");
+	assert.deepEqual(entry?.toolArgs, { command: "ls" });
+	assert.deepEqual(entry?.toolResult, { output: "ok" });
 	assert.equal(entry?.streaming, false);
 	assert.match(entry?.text ?? "", /output/);
+	const renderGeneration = entry?.remoteRenderGeneration ?? 0;
+	ingestEvent({ type: "engine_custom_invalidate", componentId: "gui-tool-render:t1" });
+	assert.equal(useSessionStore.getState().entries[0]?.remoteRenderGeneration, renderGeneration + 1);
+	ingestEvent({
+		type: "engine_custom_frame",
+		componentId: "gui-tool-render:t1",
+		requestId: 2,
+		lines: ["\x1b[32mbash complete\x1b[0m"],
+	});
+	assert.deepEqual(useSessionStore.getState().entries[0]?.remoteRenderLines, ["\x1b[32mbash complete\x1b[0m"]);
+	assert.equal(useSessionStore.getState().frames.length, 0);
+});
+
+test("tool execution updates preserve partial results for the remote renderer", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({ type: "tool_execution_start", toolCallId: "t1", toolName: "bash", args: { command: "pwd" } });
+	ingestEvent({
+		type: "tool_execution_update",
+		toolCallId: "t1",
+		toolName: "bash",
+		args: { command: "pwd" },
+		partialResult: { content: [{ type: "text", text: "/workspace" }] },
+	});
+	const entry = useSessionStore.getState().entries[0];
+	assert.deepEqual(entry?.toolResult, { content: [{ type: "text", text: "/workspace" }] });
+	assert.match(entry?.text ?? "", /workspace/);
+	assert.equal(entry?.streaming, true);
 });
 
 test("bash execution updates append streaming output", () => {

@@ -17,11 +17,11 @@ the engine child.
 | Milestone | Status |
 |---|---|
 | M0 Skeleton + engine bridge | Done |
-| M1 Core chat parity | Mostly done — user/assistant/tool/bash/compaction, thinking toggle, footer + usage meter, working indicator |
+| M1 Core chat parity | Mostly done — user/assistant/tool/bash/compaction, thinking toggle, footer + usage meter, working indicator, engine-rendered live tool cards |
 | M2 Input system | Mostly done — CodeMirror composer, `/` command and command-argument + `@` autocomplete, history, `!`/`!!` bash, steer/follow-up/abort, queue chips |
 | M3 Sessions | Mostly done — resume picker (search/sort/all-projects), persisted transcript hydration on start/switch/tree navigation, rename/delete, clone, export HTML, compact, session tree navigator (`list_sessions` still host-local per plan §5.1) |
 | M4 Models / settings | Partial — model picker, cycle model/thinking, theme loader, provider login/logout + OAuth UI, project trust prompt (full onboarding still open) |
-| M5 Extension UI host | Partial — native dialogs/notify/status/widgets, extension shortcut dispatch, `engine_input_form_*`, `hostSessionPicker` (`engine_session_picker_*`), ANSI frame overlays with render loop + `overlayOptions` + control/invalidate + legacy key encoding + kitty key-release + mouse-scroll wheel + autowrap terminal mode; remote custom header/footer/editor slots |
+| M5 Extension UI host | Partial — native dialogs/notify/status/widgets, extension shortcut dispatch, `engine_input_form_*`, `hostSessionPicker` (`engine_session_picker_*`), ANSI frame overlays with render loop + `overlayOptions` + control/invalidate + legacy key encoding + kitty key-release + mouse-scroll wheel + autowrap terminal mode; remote custom header/footer/editor slots and transcript-local engine tool renderer frames |
 | M6–M7 | Not started |
 
 The authoritative plan lives at
