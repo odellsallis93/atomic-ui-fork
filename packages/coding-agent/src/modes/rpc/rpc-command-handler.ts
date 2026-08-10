@@ -1,6 +1,7 @@
 import type { KeyId } from "@earendil-works/pi-tui";
 import type { AgentSession } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
+import { SessionManager } from "../../core/session-manager.ts";
 import { runCallback } from "../../core/callback-activity.ts";
 import { KeybindingsManager } from "../../core/keybindings.ts";
 import { RpcBashRequestOwners } from "./rpc-bash-request-owners.ts";
@@ -338,6 +339,33 @@ export function createRpcCommandHandler({
 
 			case "get_session_stats": {
 				return createRpcSuccessResponse(id, "get_session_stats", session.getSessionStats());
+			}
+
+			case "list_sessions": {
+				const offset = Math.max(0, Math.floor(command.offset ?? 0));
+				const limit = Math.min(500, Math.max(1, Math.floor(command.limit ?? 100)));
+				const includeInternal = command.includeInternal === true;
+				const sessions = command.all
+					? await SessionManager.listAll(undefined, undefined, { includeInternal })
+					: await SessionManager.list(command.cwd ?? session.sessionManager.getCwd(), undefined, undefined, {
+							includeInternal,
+						});
+				const page = sessions.slice(offset, offset + limit).map((item) => ({
+					path: item.path,
+					id: item.id,
+					cwd: item.cwd,
+					...(item.name ? { name: item.name } : {}),
+					modified: item.modified.getTime(),
+					created: item.created.getTime(),
+					messageCount: item.messageCount,
+					firstMessage: item.firstMessage,
+					...(item.internal ? { internal: true } : {}),
+				}));
+				return createRpcSuccessResponse(id, "list_sessions", {
+					sessions: page,
+					total: sessions.length,
+					nextOffset: offset + page.length < sessions.length ? offset + page.length : null,
+				});
 			}
 
 			case "export_html": {

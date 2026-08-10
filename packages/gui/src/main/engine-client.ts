@@ -471,6 +471,37 @@ export class EngineClient {
 		};
 	}
 
+	async listSessions(options: { cwd?: string; all?: boolean }): Promise<RpcResult<SessionListItem[]>> {
+		const result = await this.command<{ sessions?: unknown }>({ type: "list_sessions", ...options });
+		if (!result.ok) return { ok: false, error: result.error };
+		const sessions = Array.isArray(result.data?.sessions)
+			? result.data.sessions
+					.filter(
+						(item): item is SessionListItem =>
+							typeof item === "object" &&
+							item !== null &&
+							typeof (item as { path?: unknown }).path === "string" &&
+							typeof (item as { id?: unknown }).id === "string" &&
+							typeof (item as { cwd?: unknown }).cwd === "string" &&
+							typeof (item as { modified?: unknown }).modified === "number" &&
+							typeof (item as { created?: unknown }).created === "number" &&
+							typeof (item as { messageCount?: unknown }).messageCount === "number" &&
+							typeof (item as { firstMessage?: unknown }).firstMessage === "string",
+					)
+					.map((item) => ({
+						path: item.path,
+						id: item.id,
+						cwd: item.cwd,
+						...(typeof item.name === "string" ? { name: item.name } : {}),
+						modified: item.modified,
+						created: item.created,
+						messageCount: item.messageCount,
+						firstMessage: item.firstMessage,
+					}))
+			: [];
+		return { ok: true, data: sessions };
+	}
+
 	async refreshState(): Promise<RpcResult<EngineStatus>> {
 		const result = await this.command<{
 			sessionFile?: string;

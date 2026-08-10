@@ -31,6 +31,18 @@ export interface ModelInfo {
 	compat?: AtomicProviderCompat;
 }
 
+export interface RpcSessionListItem {
+	path: string;
+	id: string;
+	cwd: string;
+	name?: string;
+	modified: number;
+	created: number;
+	messageCount: number;
+	firstMessage: string;
+	internal?: boolean;
+}
+
 export abstract class RpcClientApi {
 	protected abstract request(command: RpcCommandBody): Promise<RpcResponse>;
 	protected abstract data<T>(response: RpcResponse): T;
@@ -130,6 +142,11 @@ export abstract class RpcClientApi {
 	}
 	async getSessionStats(): Promise<SessionStats> {
 		return this.data(await this.request({ type: "get_session_stats" }));
+	}
+	async listSessions(
+		options: { cwd?: string; all?: boolean; includeInternal?: boolean; offset?: number; limit?: number } = {},
+	): Promise<{ sessions: RpcSessionListItem[]; total: number; nextOffset: number | null }> {
+		return this.data(await this.request({ type: "list_sessions", ...options }));
 	}
 	async exportHtml(outputPath?: string): Promise<{ path: string }> {
 		return this.data(await this.request({ type: "export_html", outputPath }));

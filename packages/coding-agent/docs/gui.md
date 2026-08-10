@@ -19,7 +19,7 @@ the engine child.
 | M0 Skeleton + engine bridge | Done |
 | M1 Core chat parity | Mostly done — user/assistant/tool/bash/compaction, thinking toggle, footer + usage meter, working indicator, engine-rendered live tool cards |
 | M2 Input system | Mostly done — CodeMirror composer, `/` command and command-argument + `@` autocomplete, history, `!`/`!!` bash, steer/follow-up/abort, queue chips |
-| M3 Sessions | Mostly done — resume picker (search/sort/all-projects), persisted transcript hydration on start/switch/tree navigation, rename/delete, clone, export HTML, compact, session tree navigator (`list_sessions` still host-local per plan §5.1) |
+| M3 Sessions | Mostly done — resume picker (search/sort/all-projects), persisted transcript hydration on start/switch/tree navigation, rename/delete, clone, export HTML, compact, session tree navigator, and engine-backed paged session listing (with an offline host fallback) |
 | M4 Models / settings | Partial — model picker, cycle model/thinking, theme loader, provider login/logout + OAuth UI, project trust prompt (full onboarding still open) |
 | M5 Extension UI host | Partial — native dialogs/notify/status/widgets, extension shortcut dispatch, `engine_input_form_*`, `hostSessionPicker` (`engine_session_picker_*`), ANSI frame overlays with render loop + `overlayOptions` + control/invalidate + legacy key encoding + kitty key-release + mouse-scroll wheel + autowrap terminal mode; remote custom header/footer/editor slots and transcript-local engine tool renderer frames |
 | M6–M7 | Not started |
@@ -65,8 +65,9 @@ ATOMIC_GUI_CLI_ENTRY=packages/coding-agent/src/cli.ts ATOMIC_GUI_RUNTIME=bun \
 
 ## Sessions
 
-The Sessions modal lists JSONL sessions under `~/.atomic/agent/sessions/`
-(host-side until engine `list_sessions` lands). From there you can:
+The Sessions modal lists JSONL sessions under `~/.atomic/agent/sessions/` through the
+engine's `list_sessions` RPC while it is running, with a host-side fallback before the
+engine starts. From there you can:
 
 - Search, sort (modified/created/name/messages), and toggle all-projects
 - Resume / new session / rename / delete

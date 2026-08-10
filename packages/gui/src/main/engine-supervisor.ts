@@ -185,6 +185,10 @@ export class EngineSupervisor {
 	}
 
 	async listSessions(options?: { cwd?: string; all?: boolean }) {
+		if (this.client?.getStatus().state === "ready") {
+			const result = await this.client.listSessions(options);
+			if (result.ok && result.data) return result.data;
+		}
 		return await listSessions({ cwd: options?.cwd ?? this.cwd, all: options?.all });
 	}
 
