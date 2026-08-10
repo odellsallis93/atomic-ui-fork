@@ -1,9 +1,9 @@
 import type { KeyId } from "@earendil-works/pi-tui";
 import type { AgentSession } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
-import { SessionManager } from "../../core/session-manager.ts";
 import { runCallback } from "../../core/callback-activity.ts";
 import { KeybindingsManager } from "../../core/keybindings.ts";
+import { SessionManager } from "../../core/session-manager.ts";
 import { RpcBashRequestOwners } from "./rpc-bash-request-owners.ts";
 import type { RpcPendingExtensionRequests } from "./rpc-extension-ui.ts";
 import type { KeybindingsReloadCoordinator } from "./rpc-keybindings-reload.ts";

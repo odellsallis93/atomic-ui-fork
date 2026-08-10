@@ -56,6 +56,29 @@ rl.on("line", (line) => {
     }) + "\\n");
     return;
   }
+  if (msg.type === "list_sessions") {
+    process.stdout.write(JSON.stringify({
+      id: msg.id,
+      type: "response",
+      command: "list_sessions",
+      success: true,
+      data: {
+        sessions: [{
+          path: "/tmp/demo.jsonl",
+          id: "demo",
+          cwd: "/workspace",
+          name: "Demo",
+          modified: 42,
+          created: 21,
+          messageCount: 1,
+          firstMessage: "hello",
+        }],
+        total: 1,
+        nextOffset: null,
+      },
+    }) + "\\n");
+    return;
+  }
   if (msg.type === "get_shortcuts") {
     process.stdout.write(JSON.stringify({
       id: msg.id,
@@ -121,6 +144,21 @@ rl.on("line", (line) => {
 		assert.deepEqual(entries, {
 			ok: true,
 			data: { entries: [{ type: "message", message: { role: "user", content: "hello" } }], leafId: "leaf-1" },
+		});
+		assert.deepEqual(await client.listSessions({ all: true }), {
+			ok: true,
+			data: [
+				{
+					path: "/tmp/demo.jsonl",
+					id: "demo",
+					cwd: "/workspace",
+					name: "Demo",
+					modified: 42,
+					created: 21,
+					messageCount: 1,
+					firstMessage: "hello",
+				},
+			],
 		});
 		const shortcuts = await client.getShortcuts();
 		assert.deepEqual(shortcuts, {
