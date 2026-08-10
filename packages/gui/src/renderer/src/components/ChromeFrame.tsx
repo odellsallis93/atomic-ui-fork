@@ -1,5 +1,6 @@
+import { useEffect, useRef } from "react";
 import { ansiLineToSegments } from "../helpers/ansi";
-import { encodeTerminalKey } from "../helpers/key-encode";
+import { encodeTerminalKey, encodeTerminalKeyRelease } from "../helpers/key-encode";
 import type { CustomFrame } from "../store/session-store";
 
 /** Renders a remote extension component in a host chrome slot. */
@@ -8,13 +9,25 @@ export function ChromeFrame(props: {
 	slot: "header" | "footer" | "editor";
 	onInput?: (data: string) => void;
 }) {
+	const ref = useRef<HTMLElement | null>(null);
+	const componentId = props.frame.componentId;
+	useEffect(() => {
+		if (props.onInput && componentId) ref.current?.focus();
+	}, [componentId, props.onInput]);
 	return (
 		<section
+			ref={ref}
 			className={`chrome-frame chrome-frame-${props.slot}`}
 			aria-label={`Extension ${props.slot}`}
 			tabIndex={props.onInput ? 0 : undefined}
 			onKeyDown={(event) => {
 				const data = props.onInput ? encodeTerminalKey(event) : undefined;
+				if (!data) return;
+				event.preventDefault();
+				props.onInput(data);
+			}}
+			onKeyUp={(event) => {
+				const data = props.onInput ? encodeTerminalKeyRelease(event) : undefined;
 				if (!data) return;
 				event.preventDefault();
 				props.onInput(data);
