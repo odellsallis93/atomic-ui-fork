@@ -23,6 +23,13 @@ export type GuiRpcEvent = {
 export interface PromptRequest {
 	message: string;
 	streamingBehavior?: "steer" | "followUp";
+	images?: PromptImage[];
+}
+
+/** Serializable image payload accepted by Atomic's RPC prompt command. */
+export interface PromptImage {
+	data: string;
+	mimeType: string;
 }
 
 export interface RpcResult<T = unknown> {

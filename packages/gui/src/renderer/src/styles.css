@@ -239,6 +239,29 @@ input {
 	font-size: 0.86em;
 }
 
+.attachment-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.35rem;
+	padding: 0.4rem 0.45rem 0;
+}
+
+.attachment-chip {
+	border: 1px solid var(--surface2);
+	border-radius: 999px;
+	background: var(--mantle);
+	color: var(--subtext0);
+	cursor: pointer;
+	font: inherit;
+	font-size: 0.78rem;
+	padding: 0.15rem 0.45rem;
+}
+
+.attachment-chip:hover {
+	border-color: var(--accent);
+	color: var(--text);
+}
+
 .compaction {
 	color: var(--overlay1);
 	font-style: italic;

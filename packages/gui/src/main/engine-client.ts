@@ -216,6 +216,7 @@ export class EngineClient {
 			type: "prompt",
 			message: request.message,
 			...(request.streamingBehavior ? { streamingBehavior: request.streamingBehavior } : {}),
+			...(request.images ? { images: request.images } : {}),
 		});
 	}
 

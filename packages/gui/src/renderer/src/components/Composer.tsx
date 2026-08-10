@@ -3,7 +3,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FileMentionItem, SlashCommandInfo } from "../../../shared/ipc";
+import type { FileMentionItem, PromptImage, SlashCommandInfo } from "../../../shared/ipc";
 import type { QueueChip, WidgetItem } from "../store/session-store";
 import { Autocomplete, type AutocompleteItem } from "./Autocomplete";
 import { Widgets } from "./Widgets";
@@ -31,6 +31,7 @@ export function Composer(props: {
 	queue: QueueChip[];
 	commands: SlashCommandInfo[];
 	widgets: WidgetItem[];
+	images: PromptImage[];
 	onChange: (value: string) => void;
 	onSubmit: (behavior?: "steer" | "followUp") => void;
 	onAbort: () => void;
@@ -41,6 +42,8 @@ export function Composer(props: {
 		commandName: string,
 		argumentPrefix: string,
 	) => Promise<Array<{ value: string; label: string; description?: string }>>;
+	onPasteImages: (files: File[]) => void;
+	onRemoveImage: (index: number) => void;
 }) {
 	const hostRef = useRef<HTMLDivElement | null>(null);
 	const viewRef = useRef<EditorView | null>(null);
@@ -259,11 +262,34 @@ export function Composer(props: {
 			) : null}
 			<div className="composer">
 				<div className="composer-main">
+					{props.images.length > 0 ? (
+						<div className="attachment-row" aria-label="Attached images">
+							{props.images.map((image, index) => (
+								<button
+									key={`${image.mimeType}-${image.data.slice(0, 32)}`}
+									type="button"
+									className="attachment-chip"
+									onClick={() => props.onRemoveImage(index)}
+									title="Remove image"
+								>
+									image {index + 1} ×
+								</button>
+							))}
+						</div>
+					) : null}
 					<Autocomplete items={items} activeIndex={safeActiveIndex} onPick={applyCompletion} />
 					<div
 						ref={hostRef}
 						className={`composer-editor${bashMode ? " bash-mode" : ""}`}
 						aria-disabled={props.disabled}
+						onPaste={(event) => {
+							const files = Array.from(event.clipboardData.files).filter((file) =>
+								file.type.startsWith("image/"),
+							);
+							if (files.length === 0) return;
+							event.preventDefault();
+							props.onPasteImages(files);
+						}}
 					/>
 				</div>
 				<div className="composer-actions">

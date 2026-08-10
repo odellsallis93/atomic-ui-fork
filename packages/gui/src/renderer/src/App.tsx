@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef } from "react";
-import type { ExtensionUiResponse } from "../../shared/ipc";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ExtensionUiResponse, PromptImage } from "../../shared/ipc";
 import { AuthPanel } from "./components/AuthPanel";
 import { ChromeFrame } from "./components/ChromeFrame";
 import { Composer } from "./components/Composer";
@@ -148,6 +148,7 @@ export function App() {
 	const hydrateTranscript = useSessionStore((s) => s.hydrateTranscript);
 	const setExtensionShortcuts = useSessionStore((s) => s.setExtensionShortcuts);
 	const pendingSessionPath = useRef<string | undefined>(undefined);
+	const [attachedImages, setAttachedImages] = useState<PromptImage[]>([]);
 
 	const refreshMetadata = useCallback(async (): Promise<void> => {
 		if (!hasGuiApi()) return;
@@ -357,9 +358,11 @@ export function App() {
 
 	const submit = async (behavior?: "steer" | "followUp"): Promise<void> => {
 		const message = composerText.trim();
-		if (!message || !hasGuiApi()) return;
+		if ((!message && attachedImages.length === 0) || !hasGuiApi()) return;
 		pushPromptHistory(message);
 		setComposerText("");
+		const images = attachedImages;
+		setAttachedImages([]);
 
 		if (message.startsWith("!!")) {
 			const result = await window.atomicGui.bash(message.slice(2).trim(), true);
@@ -375,9 +378,26 @@ export function App() {
 		const result = await window.atomicGui.prompt({
 			message,
 			...(behavior ? { streamingBehavior: behavior } : {}),
+			...(images.length > 0 ? { images } : {}),
 		});
-		if (!result.ok) setErrorBanner(result.error ?? "Prompt failed");
+		if (!result.ok) {
+			setAttachedImages(images);
+			setErrorBanner(result.error ?? "Prompt failed");
+		}
 	};
+
+	const addPastedImages = useCallback((files: File[]): void => {
+		for (const file of files) {
+			const reader = new FileReader();
+			reader.onload = () => {
+				if (typeof reader.result !== "string") return;
+				const comma = reader.result.indexOf(",");
+				if (comma === -1) return;
+				setAttachedImages((images) => [...images, { data: reader.result.slice(comma + 1), mimeType: file.type }]);
+			};
+			reader.readAsDataURL(file);
+		}
+	}, []);
 
 	const abort = async (): Promise<void> => {
 		if (!hasGuiApi()) return;
@@ -502,6 +522,7 @@ export function App() {
 					queue={queue}
 					commands={commands}
 					widgets={widgets}
+					images={attachedImages}
 					onChange={setComposerText}
 					onSubmit={(behavior) => void submit(behavior)}
 					onAbort={() => void abort()}
@@ -513,6 +534,10 @@ export function App() {
 					}}
 					onSearchFiles={searchFiles}
 					onSearchCommandCompletions={searchCommandCompletions}
+					onPasteImages={addPastedImages}
+					onRemoveImage={(index) =>
+						setAttachedImages((images) => images.filter((_image, itemIndex) => itemIndex !== index))
+					}
 				/>
 			)}
 
