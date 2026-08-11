@@ -185,6 +185,30 @@ function registerIpc(): void {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.cycleThinking();
 	});
+	ipcMain.handle(IPC_CHANNELS.setThinkingLevel, async (_event, level: string) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.setThinkingLevel(level);
+	});
+	ipcMain.handle(IPC_CHANNELS.getAvailableThinkingLevels, async () => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.getAvailableThinkingLevels();
+	});
+	ipcMain.handle(IPC_CHANNELS.setSteeringMode, async (_event, mode: "all" | "one-at-a-time") => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.setSteeringMode(mode);
+	});
+	ipcMain.handle(IPC_CHANNELS.setFollowUpMode, async (_event, mode: "all" | "one-at-a-time") => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.setFollowUpMode(mode);
+	});
+	ipcMain.handle(IPC_CHANNELS.setAutoCompaction, async (_event, enabled: boolean) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.setAutoCompaction(enabled);
+	});
+	ipcMain.handle(IPC_CHANNELS.setAutoRetry, async (_event, enabled: boolean) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.setAutoRetry(enabled);
+	});
 	ipcMain.handle(IPC_CHANNELS.getSessionStats, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getSessionStats();

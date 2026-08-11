@@ -14,7 +14,7 @@ import { searchFiles } from "./file-search.ts";
 import { applyTrustDecision, getTrustOptions, getTrustStatus } from "./project-trust.ts";
 import { listSessions } from "./session-list.ts";
 import { deleteSessionFile, renameSessionFile } from "./session-ops.ts";
-import { readGuiSettings, writeThemeSetting } from "./settings-store.ts";
+import { readGuiSettings } from "./settings-store.ts";
 import { listThemes, loadThemeCss } from "./theme-loader.ts";
 
 /**
@@ -24,7 +24,7 @@ export class EngineSupervisor {
 	private client: EngineClient | null = null;
 	private readonly window: BrowserWindow;
 	private cwd = process.cwd();
-	private sessionTrustOverride: boolean | undefined;
+	private readonly sessionTrustOverrides = new Map<string, boolean>();
 
 	constructor(window: BrowserWindow) {
 		this.window = window;
@@ -40,6 +40,9 @@ export class EngineSupervisor {
 		this.client = new EngineClient({
 			cwd: this.cwd,
 			sessionPath: options?.sessionPath,
+			extraArgs: this.sessionTrustOverrides.has(this.cwd)
+				? [this.sessionTrustOverrides.get(this.cwd) ? "--approve" : "--no-approve"]
+				: undefined,
 			onStatus: (status) => this.send(IPC_CHANNELS.status, status),
 			onEvent: (event) => this.send(IPC_CHANNELS.event, event),
 			onRawLine: (line) => this.send(IPC_CHANNELS.rawLine, line),
@@ -198,6 +201,36 @@ export class EngineSupervisor {
 		return await this.client.cycleThinking();
 	}
 
+	async setThinkingLevel(level: string) {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.setThinkingLevel(level);
+	}
+
+	async getAvailableThinkingLevels() {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.getAvailableThinkingLevels();
+	}
+
+	async setSteeringMode(mode: "all" | "one-at-a-time") {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.setSteeringMode(mode);
+	}
+
+	async setFollowUpMode(mode: "all" | "one-at-a-time") {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.setFollowUpMode(mode);
+	}
+
+	async setAutoCompaction(enabled: boolean) {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.setAutoCompaction(enabled);
+	}
+
+	async setAutoRetry(enabled: boolean) {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.setAutoRetry(enabled);
+	}
+
 	async getSessionStats() {
 		if (!this.client) return { ok: false as const, error: "Engine is not started" };
 		return await this.client.getSessionStats();
@@ -244,25 +277,27 @@ export class EngineSupervisor {
 	}
 
 	getThemeCss(name?: string) {
-		const theme = name?.trim() || readGuiSettings().theme;
+		const theme = name?.trim() || readGuiSettings(process.env, this.cwd).theme;
 		return loadThemeCss(theme, process.env, this.cwd);
 	}
 
 	getSettings() {
-		return readGuiSettings();
+		return readGuiSettings(process.env, this.cwd);
 	}
 
 	setTheme(name: string) {
-		writeThemeSetting(name);
+		// Theme mutation remains engine-owned. Until protocol v2 exposes a set-theme
+		// RPC, the GUI only applies the selected theme live for this renderer session.
 		return loadThemeCss(name, process.env, this.cwd);
 	}
 
 	getTrustStatus(cwd?: string) {
 		const status = getTrustStatus(cwd ?? this.cwd);
-		if (this.sessionTrustOverride !== undefined) {
+		const sessionTrustOverride = this.sessionTrustOverrides.get(cwd ?? this.cwd);
+		if (sessionTrustOverride !== undefined) {
 			return {
 				...status,
-				decision: this.sessionTrustOverride,
+				decision: sessionTrustOverride,
 				needsTrustPrompt: false,
 			};
 		}
@@ -276,10 +311,10 @@ export class EngineSupervisor {
 	applyTrust(optionId: string, cwd?: string) {
 		const option = getTrustOptions(cwd ?? this.cwd).find((item) => item.id === optionId);
 		if (option && option.persistPath === null) {
-			this.sessionTrustOverride = option.trusted;
+			this.sessionTrustOverrides.set(cwd ?? this.cwd, option.trusted);
 			return this.getTrustStatus(cwd);
 		}
-		this.sessionTrustOverride = undefined;
+		this.sessionTrustOverrides.delete(cwd ?? this.cwd);
 		return applyTrustDecision(cwd ?? this.cwd, optionId);
 	}
 

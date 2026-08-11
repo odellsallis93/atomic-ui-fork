@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExtensionUiRequest, ExtensionUiResponse } from "../../../shared/ipc";
 
 function titleOf(request: ExtensionUiRequest): string {
@@ -13,49 +13,82 @@ export function DialogModal(props: {
 	onDismiss?: () => void;
 }) {
 	const { request } = props;
-	const [value, setValue] = useState(
-		request.method === "editor" && typeof request.prefill === "string" ? request.prefill : "",
+	const requestPrefill = request.method === "editor" && typeof request.prefill === "string" ? request.prefill : undefined;
+	const requestTimeout = "timeout" in request && typeof request.timeout === "number" ? request.timeout : undefined;
+	const [value, setValue] = useState(requestPrefill ?? "");
+	const valueRef = useRef(value);
+	valueRef.current = value;
+	const onRespondRef = useRef(props.onRespond);
+	const onDismissRef = useRef(props.onDismiss);
+	const respondedRef = useRef(false);
+	onRespondRef.current = props.onRespond;
+	onDismissRef.current = props.onDismiss;
+
+	const respondOnce = useCallback(
+		(response: ExtensionUiResponse): void => {
+			if (respondedRef.current || response.id !== request.id) return;
+			respondedRef.current = true;
+			onRespondRef.current(response);
+		},
+		[request.id],
 	);
+	const dismissOnce = useCallback((): void => {
+		if (respondedRef.current) return;
+		respondedRef.current = true;
+		onDismissRef.current?.();
+	}, []);
+
 
 	useEffect(() => {
 		const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 		const focus = window.setTimeout(() => {
-			(document.querySelector(".modal input, .modal textarea, .modal button") as HTMLElement | null)?.focus();
+			(document.querySelector(".modal-backdrop .modal input, .modal-backdrop .modal textarea, .modal-backdrop .modal button") as HTMLElement | null)?.focus();
 		}, 0);
-		const cancel = () => props.onRespond({ id: request.id, cancelled: true });
-		const onKeyDown = (event: KeyboardEvent) => {
+		const cancel = () => respondOnce({ id: request.id, cancelled: true });
+		const onKeyDown = (event: KeyboardEvent): void => {
 			if (event.key === "Escape") {
 				event.preventDefault();
+				event.stopPropagation();
 				cancel();
+				return;
+			}
+			if (
+				event.key === "Enter" &&
+				request.method !== "editor" &&
+				event.target instanceof HTMLInputElement
+			) {
+				event.preventDefault();
+				event.stopPropagation();
+				respondOnce({ id: request.id, value: valueRef.current });
 			}
 		};
-		document.addEventListener("keydown", onKeyDown);
-		const timeout = "timeout" in request && request.timeout && request.timeout > 0 ? window.setTimeout(cancel, request.timeout) : undefined;
+		window.addEventListener("keydown", onKeyDown, true);
+		const timeout = requestTimeout && requestTimeout > 0 ? window.setTimeout(cancel, requestTimeout) : undefined;
 		return () => {
 			window.clearTimeout(focus);
 			if (timeout !== undefined) window.clearTimeout(timeout);
-			document.removeEventListener("keydown", onKeyDown);
-			previous?.focus();
+			window.removeEventListener("keydown", onKeyDown, true);
+			if (previous?.isConnected) previous.focus();
 		};
-	}, [props.onRespond, request]);
+	}, [request.id, request.method, requestTimeout, respondOnce]);
 	if (request.method === "confirm") {
 		return (
 			<div className="modal-backdrop">
-				<div className="modal">
+				<div className="modal" role="dialog" aria-modal="true">
 					<h2>{titleOf(request)}</h2>
 					<p>{typeof request.message === "string" ? request.message : ""}</p>
 					<div className="modal-actions">
 						<button
 							type="button"
 							className="btn"
-							onClick={() => props.onRespond({ id: request.id, cancelled: true })}
+							onClick={() => respondOnce({ id: request.id, cancelled: true })}
 						>
 							Cancel
 						</button>
 						<button
 							type="button"
 							className="btn btn-primary"
-							onClick={() => props.onRespond({ id: request.id, confirmed: true })}
+							onClick={() => respondOnce({ id: request.id, confirmed: true })}
 						>
 							Confirm
 						</button>
@@ -69,7 +102,7 @@ export function DialogModal(props: {
 		const options = request.options.filter((option): option is string => typeof option === "string");
 		return (
 			<div className="modal-backdrop">
-				<div className="modal">
+				<div className="modal" role="dialog" aria-modal="true">
 					<h2>{titleOf(request)}</h2>
 					<ul className="modal-list">
 						{options.map((option) => (
@@ -77,7 +110,7 @@ export function DialogModal(props: {
 								<button
 									type="button"
 									className="btn"
-									onClick={() => props.onRespond({ id: request.id, value: option })}
+								onClick={() => respondOnce({ id: request.id, value: option })}
 								>
 									{option}
 								</button>
@@ -88,7 +121,7 @@ export function DialogModal(props: {
 						<button
 							type="button"
 							className="btn"
-							onClick={() => props.onRespond({ id: request.id, cancelled: true })}
+							onClick={() => respondOnce({ id: request.id, cancelled: true })}
 						>
 							Cancel
 						</button>
@@ -103,7 +136,7 @@ export function DialogModal(props: {
 		const options = Array.isArray(prompt.options) ? prompt.options : [];
 		return (
 			<div className="modal-backdrop">
-				<div className="modal">
+				<div className="modal" role="dialog" aria-modal="true">
 					<h2>{titleOf(request)}</h2>
 					<p>{prompt.message ?? "Select an option"}</p>
 					<ul className="modal-list">
@@ -112,7 +145,7 @@ export function DialogModal(props: {
 								<button
 									type="button"
 									className="btn"
-									onClick={() => props.onRespond({ id: request.id, value: option.id })}
+									onClick={() => respondOnce({ id: request.id, value: option.id })}
 								>
 									{option.label}
 								</button>
@@ -123,7 +156,7 @@ export function DialogModal(props: {
 						<button
 							type="button"
 							className="btn"
-							onClick={() => props.onRespond({ id: request.id, cancelled: true })}
+							onClick={() => respondOnce({ id: request.id, cancelled: true })}
 						>
 							Cancel
 						</button>
@@ -137,7 +170,7 @@ export function DialogModal(props: {
 		const message = request.info.instructions ?? "Continue authentication in your browser.";
 		return (
 			<div className="modal-backdrop">
-				<div className="modal">
+				<div className="modal" role="dialog" aria-modal="true">
 					<h2>{titleOf(request)}</h2>
 					<p>{message}</p>
 					<p className="settings-hint">
@@ -149,14 +182,14 @@ export function DialogModal(props: {
 						<button
 							type="button"
 							className="btn"
-							onClick={() => props.onRespond({ id: request.id, cancelled: true })}
+							onClick={() => respondOnce({ id: request.id, cancelled: true })}
 						>
 							Cancel
 						</button>
 						<button
 							type="button"
 							className="btn btn-primary"
-							onClick={() => props.onRespond({ id: request.id, confirmed: true })}
+							onClick={() => respondOnce({ id: request.id, confirmed: true })}
 						>
 							Continue
 						</button>
@@ -169,7 +202,7 @@ export function DialogModal(props: {
 	if (request.method === "oauth_device_code") {
 		return (
 			<div className="modal-backdrop">
-				<div className="modal">
+				<div className="modal" role="dialog" aria-modal="true">
 					<h2>{titleOf(request)}</h2>
 					<p>
 						Enter code <code>{request.info.userCode}</code> at the verification page.
@@ -183,14 +216,14 @@ export function DialogModal(props: {
 						<button
 							type="button"
 							className="btn"
-							onClick={() => props.onRespond({ id: request.id, cancelled: true })}
+							onClick={() => respondOnce({ id: request.id, cancelled: true })}
 						>
 							Cancel
 						</button>
 						<button
 							type="button"
 							className="btn btn-primary"
-							onClick={() => props.onRespond({ id: request.id, confirmed: true })}
+							onClick={() => respondOnce({ id: request.id, confirmed: true })}
 						>
 							Continue
 						</button>
@@ -203,7 +236,7 @@ export function DialogModal(props: {
 	if (request.method === "oauth_info") {
 		return (
 			<div className="modal-backdrop">
-				<div className="modal">
+				<div className="modal" role="dialog" aria-modal="true">
 					<h2>{titleOf(request)}</h2>
 					<p>{request.message}</p>
 					{request.links.length > 0 ? (
@@ -221,9 +254,7 @@ export function DialogModal(props: {
 						<button
 							type="button"
 							className="btn btn-primary"
-							onClick={() =>
-								props.onDismiss ? props.onDismiss() : props.onRespond({ id: request.id, value: "ok" })
-							}
+							onClick={() => (props.onDismiss ? dismissOnce() : respondOnce({ id: request.id, value: "ok" }))}
 						>
 							OK
 						</button>
@@ -236,16 +267,14 @@ export function DialogModal(props: {
 	if (request.method === "oauth_progress") {
 		return (
 			<div className="modal-backdrop">
-				<div className="modal">
+				<div className="modal" role="dialog" aria-modal="true">
 					<h2>{titleOf(request)}</h2>
 					<p>{request.message}</p>
 					<div className="modal-actions">
 						<button
 							type="button"
 							className="btn btn-primary"
-							onClick={() =>
-								props.onDismiss ? props.onDismiss() : props.onRespond({ id: request.id, value: "ok" })
-							}
+							onClick={() => (props.onDismiss ? dismissOnce() : respondOnce({ id: request.id, value: "ok" }))}
 						>
 							OK
 						</button>
@@ -283,7 +312,7 @@ export function DialogModal(props: {
 				: titleOf(request);
 		return (
 			<div className="modal-backdrop">
-				<div className="modal">
+				<div className="modal" role="dialog" aria-modal="true">
 					<h2>{heading}</h2>
 					{request.method === "editor" ? (
 						<textarea className="modal-input" rows={8} value={value} onChange={(e) => setValue(e.target.value)} />
@@ -299,14 +328,14 @@ export function DialogModal(props: {
 						<button
 							type="button"
 							className="btn"
-							onClick={() => props.onRespond({ id: request.id, cancelled: true })}
+							onClick={() => respondOnce({ id: request.id, cancelled: true })}
 						>
 							Cancel
 						</button>
 						<button
 							type="button"
 							className="btn btn-primary"
-							onClick={() => props.onRespond({ id: request.id, value })}
+							onClick={() => respondOnce({ id: request.id, value: valueRef.current })}
 						>
 							Submit
 						</button>

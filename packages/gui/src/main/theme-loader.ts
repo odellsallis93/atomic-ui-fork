@@ -14,6 +14,8 @@ export interface ResolvedThemeCss {
 	cssVariables: Record<string, string>;
 }
 
+type ColorValue = string | number;
+
 const THEME_TOKEN_KEYS = [
 	"accent",
 	"border",
@@ -68,13 +70,14 @@ const THEME_TOKEN_KEYS = [
 	"bashMode",
 ] as const;
 
-function agentDir(env: NodeJS.ProcessEnv = process.env): string {
+function agentDirs(env: NodeJS.ProcessEnv = process.env): string[] {
 	const override =
 		env.ATOMIC_CODING_AGENT_DIR?.trim() ||
 		env.PI_CODING_AGENT_DIR?.trim() ||
 		env.ATOMIC_AGENT_DIR?.trim() ||
 		env.PI_AGENT_DIR?.trim();
-	return override ? resolve(override) : join(homedir(), ".atomic", "agent");
+	if (override) return [resolve(override)];
+	return [join(homedir(), ".atomic", "agent"), join(homedir(), ".pi", "agent")];
 }
 
 function builtinThemesDir(): string {
@@ -87,38 +90,94 @@ function builtinThemesDir(): string {
 	return candidates.find((candidate) => existsSync(join(candidate, "dark.json"))) ?? candidates[0]!;
 }
 
-/** Engine resource loading searches project config directories. The GUI host only
- * reads the canonical project `.atomic/themes` directory; configured theme paths
- * stay engine-owned and are intentionally not guessed here. */
-function projectThemesDir(cwd: string): string {
-	return join(resolve(cwd), ".atomic", "themes");
+function projectThemeDirs(cwd: string): string[] {
+	const root = resolve(cwd);
+	return [join(root, ".atomic", "themes"), join(root, ".pi", "themes")];
+}
+
+function readThemeSummary(path: string, source: ThemeSummary["source"]): ThemeSummary | undefined {
+	try {
+		const raw = JSON.parse(readFileSync(path, "utf8")) as { name?: unknown; colors?: unknown };
+		if (typeof raw.name !== "string" || raw.name.trim() === "" || raw.name.includes("/")) return undefined;
+		if (typeof raw.colors !== "object" || raw.colors === null) return undefined;
+		return { name: raw.name.trim(), source, path };
+	} catch {
+		return undefined;
+	}
 }
 
 function listJsonThemesInDir(dir: string, source: ThemeSummary["source"]): ThemeSummary[] {
 	if (!existsSync(dir)) return [];
 	return readdirSync(dir)
 		.filter((name) => name.endsWith(".json") && name !== "theme-schema.json")
-		.map((file) => ({ name: file.replace(/\.json$/, ""), source, path: join(dir, file) }));
+		.map((file) => readThemeSummary(join(dir, file), source))
+		.filter((theme): theme is ThemeSummary => theme !== undefined);
 }
 
-/** Mirrors engine resource precedence for the directories the host can safely inspect:
- * builtins < user themes < project `.atomic/themes`. Later sources win by theme name. */
+/** Mirrors engine theme de-duping: themes are identified by JSON `name`, and the
+ * first match wins in builtin → user (.atomic then legacy .pi) → project order. */
 export function listThemes(env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): ThemeSummary[] {
 	const byName = new Map<string, ThemeSummary>();
-	for (const theme of listJsonThemesInDir(builtinThemesDir(), "builtin")) byName.set(theme.name, theme);
-	for (const theme of listJsonThemesInDir(join(agentDir(env), "themes"), "user")) byName.set(theme.name, theme);
-	for (const theme of listJsonThemesInDir(projectThemesDir(cwd), "project")) byName.set(theme.name, theme);
+	const add = (theme: ThemeSummary): void => {
+		if (!byName.has(theme.name)) byName.set(theme.name, theme);
+	};
+	for (const theme of listJsonThemesInDir(builtinThemesDir(), "builtin")) add(theme);
+	for (const dir of agentDirs(env).map((agentDir) => join(agentDir, "themes"))) {
+		for (const theme of listJsonThemesInDir(dir, "user")) add(theme);
+	}
+	for (const dir of projectThemeDirs(cwd)) {
+		for (const theme of listJsonThemesInDir(dir, "project")) add(theme);
+	}
 	return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function resolveColor(value: string, vars: Record<string, string>): string {
+function ansi256ToCss(index: number): string {
+	const clamped = Math.max(0, Math.min(255, Math.trunc(index)));
+	const base = [
+		[0, 0, 0],
+		[128, 0, 0],
+		[0, 128, 0],
+		[128, 128, 0],
+		[0, 0, 128],
+		[128, 0, 128],
+		[0, 128, 128],
+		[192, 192, 192],
+		[128, 128, 128],
+		[255, 0, 0],
+		[0, 255, 0],
+		[255, 255, 0],
+		[0, 0, 255],
+		[255, 0, 255],
+		[0, 255, 255],
+		[255, 255, 255],
+	] as const;
+	if (clamped < 16) {
+		const [r, g, b] = base[clamped]!;
+		return `rgb(${r}, ${g}, ${b})`;
+	}
+	if (clamped < 232) {
+		const value = clamped - 16;
+		const channel = (n: number) => (n === 0 ? 0 : 55 + n * 40);
+		const r = channel(Math.floor(value / 36));
+		const g = channel(Math.floor((value % 36) / 6));
+		const b = channel(value % 6);
+		return `rgb(${r}, ${g}, ${b})`;
+	}
+	const gray = 8 + (clamped - 232) * 10;
+	return `rgb(${gray}, ${gray}, ${gray})`;
+}
+
+function resolveColor(value: ColorValue, vars: Record<string, ColorValue>): string {
+	if (typeof value === "number") return ansi256ToCss(value);
 	if (!value) return "";
 	if (value.startsWith("#") || value.startsWith("rgb") || value.startsWith("hsl")) return value;
-	return vars[value] ?? value;
+	const resolved = vars[value];
+	if (resolved !== undefined) return resolveColor(resolved, vars);
+	return value;
 }
 
 /** Reads current theme contents on every call. This gives custom user/project themes
- * TUI-equivalent reload on the next supported host refresh without watching builtins. */
+ * reload on the next supported host refresh without inventing a watcher. */
 export function loadThemeCss(
 	name: string,
 	env: NodeJS.ProcessEnv = process.env,
@@ -128,16 +187,19 @@ export function loadThemeCss(
 	const match = themes.find((theme) => theme.name === name) ?? themes.find((theme) => theme.name === "dark");
 	if (!match || !existsSync(match.path)) return { name: "dark", cssVariables: {} };
 	const raw = JSON.parse(readFileSync(match.path, "utf8")) as {
-		name?: string;
-		vars?: Record<string, string>;
-		colors?: Record<string, string>;
+		name?: unknown;
+		vars?: Record<string, ColorValue>;
+		colors?: Record<string, ColorValue>;
 	};
-	const vars = raw.vars ?? {};
-	const colors = raw.colors ?? {};
+	if (typeof raw.name !== "string" || typeof raw.colors !== "object" || raw.colors === null) {
+		return { name: "dark", cssVariables: {} };
+	}
+	const vars = typeof raw.vars === "object" && raw.vars !== null ? raw.vars : {};
+	const colors = raw.colors;
 	const cssVariables: Record<string, string> = {};
 	for (const key of THEME_TOKEN_KEYS) {
 		const token = colors[key];
-		if (typeof token !== "string") continue;
+		if (typeof token !== "string" && typeof token !== "number") continue;
 		const resolved = resolveColor(token, vars);
 		if (resolved) cssVariables[`--atomic-${key}`] = resolved;
 	}
@@ -149,5 +211,5 @@ export function loadThemeCss(
 	if (cssVariables["--atomic-error"]) cssVariables["--red"] = cssVariables["--atomic-error"];
 	if (cssVariables["--atomic-success"]) cssVariables["--green"] = cssVariables["--atomic-success"];
 	if (cssVariables["--atomic-warning"]) cssVariables["--yellow"] = cssVariables["--atomic-warning"];
-	return { name: typeof raw.name === "string" ? raw.name : match.name, cssVariables };
+	return { name: raw.name, cssVariables };
 }

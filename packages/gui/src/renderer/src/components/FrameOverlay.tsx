@@ -8,6 +8,8 @@ import type { CustomFrame } from "../store/session-store";
 
 export function FrameOverlay(props: {
 	frames: CustomFrame[];
+	/** Native dialogs own keyboard input while true, even when a remote frame is focused. */
+	modalOpen?: boolean;
 	onDismiss: (componentId: string) => void;
 	onInput: (componentId: string, data: string) => void;
 	onRender: (componentId: string, requestId: number, width: number, rows: number) => void;
@@ -23,6 +25,7 @@ export function FrameOverlay(props: {
 				<FrameSurface
 					key={frame.componentId}
 					frame={frame}
+					modalOpen={props.modalOpen === true}
 					onDismiss={() => props.onDismiss(frame.componentId)}
 					onInput={(data) => props.onInput(frame.componentId, data)}
 					onRender={(requestId, width, rows) => props.onRender(frame.componentId, requestId, width, rows)}
@@ -34,13 +37,14 @@ export function FrameOverlay(props: {
 
 function FrameSurface(props: {
 	frame: CustomFrame;
+	modalOpen: boolean;
 	onDismiss: () => void;
 	onInput: (data: string) => void;
 	onRender: (requestId: number, width: number, rows: number) => void;
 }) {
+	const { onDismiss, onInput, onRender, frame, modalOpen } = props;
 	const surfaceRef = useRef<HTMLDivElement>(null);
 	const bodyRef = useRef<HTMLPreElement>(null);
-	const { onDismiss, onInput, onRender, frame } = props;
 	const onInputRef = useRef(onInput);
 	const onRenderRef = useRef(onRender);
 	onInputRef.current = onInput;
@@ -57,8 +61,11 @@ function FrameSurface(props: {
 	}, [frame.componentId]);
 
 	useEffect(() => {
-		if (!frame.focused) return;
+		if (!frame.focused || modalOpen) return;
+		const isUnhandledCtrlC = (event: KeyboardEvent): boolean =>
+			event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "c" && !frame.handlesCtrlC;
 		const onKeyDown = (event: KeyboardEvent): void => {
+			if (isUnhandledCtrlC(event)) return;
 			const encoded = encodeTerminalKey(event);
 			if (encoded === undefined) return;
 			event.preventDefault();
@@ -67,6 +74,7 @@ function FrameSurface(props: {
 			pipelineRender();
 		};
 		const onKeyUp = (event: KeyboardEvent): void => {
+			if (isUnhandledCtrlC(event)) return;
 			const encoded = encodeTerminalKeyRelease(event);
 			if (encoded === undefined) return;
 			event.preventDefault();
@@ -80,10 +88,10 @@ function FrameSurface(props: {
 			window.removeEventListener("keydown", onKeyDown, true);
 			window.removeEventListener("keyup", onKeyUp, true);
 		};
-	}, [frame.focused, pipelineRender]);
+	}, [frame.focused, frame.handlesCtrlC, modalOpen, pipelineRender]);
 
 	useEffect(() => {
-		if (!frame.mouseScrollTracking || !frame.focused) return;
+		if (modalOpen || !frame.mouseScrollTracking || !frame.focused) return;
 		const onWheel = (event: WheelEvent): void => {
 			const encoded = encodeWheelDelta(event.deltaY);
 			if (!encoded) return;
@@ -93,7 +101,7 @@ function FrameSurface(props: {
 		};
 		window.addEventListener("wheel", onWheel, { passive: false, capture: true });
 		return () => window.removeEventListener("wheel", onWheel, true);
-	}, [frame.focused, frame.mouseScrollTracking, pipelineRender]);
+	}, [frame.focused, frame.mouseScrollTracking, modalOpen, pipelineRender]);
 
 	const style = useMemo(() => overlayOptionsToStyle(frame.overlayOptions), [frame.overlayOptions]);
 

@@ -21,7 +21,7 @@ Fake-engine unit tests prove host structure only; parity claims require
 | M1 | Mostly done — core transcript kinds, footer/usage, working indicator |
 | M2 | Mostly done — composer, `/` + `@`, bash, queue/steer/abort (attachments, full keymap still open) |
 | M3 | Mostly done — resume picker, tree folds/labels/edit-resubmit, clone/fork/import/export/compact. Share and legacy `/import`/`/atomic` remain explicit exclusions: no permitted runtime inventory route. |
-| M4 | Partial — models, theme loader, auth, trust (full settings/scoped models/onboarding open) |
+| M4 | Partial — model picker parses scoped engine models, thinking/settings controls use existing RPCs, theme loading follows JSON-name first-match precedence, auth/trust/onboarding route through engine-owned flows. Persistent settings/theme/fast-mode mutation remains excluded until protocol v2 adds RPCs. |
 | M5 | Partial — dialogs, input forms, ANSI frames + render loop + overlay geometry + kitty key-release + terminal-mode allowlist (chrome swap blocked on §5.3) |
 | M6–M7 | Not started — bundled-extension walkthroughs, CI jobs, packaging |
 
@@ -55,6 +55,15 @@ npm run build --workspace=@bastani/atomic-gui
 
 `test/engine-client.test.ts` uses a **fake** engine child (RPC shape only).
 `test/real-engine-smoke.test.ts` spawns the real workspace CLI for lifecycle smoke.
+
+
+## Phase 3 settings/theme boundary
+
+- The GUI does **not** write generic `settings.json` or credentials. It reads the effective theme with engine global→project precedence and applies theme changes live for the renderer session only.
+- Settings controls available in the panel call existing engine RPCs: thinking level, steering/follow-up mode, auto compaction, and auto retry.
+- Codex fast mode is not exposed: engine settings accessors exist, but protocol v2 has no fast-mode RPC.
+- Themes resolve by JSON `name` with first-match builtin → user (`.atomic`, then legacy `.pi`) → project (`.atomic`, then `.pi`) order and support string plus numeric color tokens.
+- First-run onboarding links to project trust, provider auth, and model selection without displaying saved secrets.
 
 ## Notes
 

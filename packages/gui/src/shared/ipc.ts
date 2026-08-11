@@ -73,6 +73,14 @@ export interface ModelInfo {
 	id: string;
 	name?: string;
 	thinking?: boolean;
+	/** Present when this model came from the engine's session-scoped model catalog. */
+	scoped?: boolean;
+	scopedThinkingLevel?: string;
+}
+
+export interface ScopedModelInfo {
+	model: ModelInfo;
+	thinkingLevel?: string;
 }
 
 export interface SessionListItem {
@@ -146,6 +154,11 @@ export interface GuiSettingsSnapshot {
 	theme: string;
 	path: string;
 	exists: boolean;
+	globalPath: string;
+	projectPath: string;
+	globalExists: boolean;
+	projectExists: boolean;
+	projectOverridesTheme: boolean;
 }
 
 export interface OAuthProviderInfo {
@@ -157,6 +170,7 @@ export interface OAuthProviderInfo {
 
 export interface AuthCatalog {
 	models: ModelInfo[];
+	scopedModels: ScopedModelInfo[];
 	oauthProviders: OAuthProviderInfo[];
 	providers: string[];
 }
@@ -317,7 +331,13 @@ export interface GuiHostApi {
 	cancelLoginProvider(provider: string): Promise<PromptResult>;
 	setModel(provider: string, modelId: string): Promise<PromptResult>;
 	cycleModel(direction?: "forward" | "backward"): Promise<RpcResult<{ label: string } | null>>;
+	setThinkingLevel(level: string): Promise<PromptResult>;
 	cycleThinking(): Promise<RpcResult<{ level: string } | null>>;
+	getAvailableThinkingLevels(): Promise<RpcResult<string[]>>;
+	setSteeringMode(mode: "all" | "one-at-a-time"): Promise<PromptResult>;
+	setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<PromptResult>;
+	setAutoCompaction(enabled: boolean): Promise<PromptResult>;
+	setAutoRetry(enabled: boolean): Promise<PromptResult>;
 	getSessionStats(): Promise<RpcResult<SessionStatsSummary>>;
 	refreshState(): Promise<RpcResult<EngineStatus>>;
 	listSessions(options?: { cwd?: string; all?: boolean }): Promise<SessionListItem[]>;
@@ -375,6 +395,12 @@ export const IPC_CHANNELS = {
 	setModel: "gui:set-model",
 	cycleModel: "gui:cycle-model",
 	cycleThinking: "gui:cycle-thinking",
+	setThinkingLevel: "gui:set-thinking-level",
+	getAvailableThinkingLevels: "gui:get-available-thinking-levels",
+	setSteeringMode: "gui:set-steering-mode",
+	setFollowUpMode: "gui:set-follow-up-mode",
+	setAutoCompaction: "gui:set-auto-compaction",
+	setAutoRetry: "gui:set-auto-retry",
 	getSessionStats: "gui:get-session-stats",
 	refreshState: "gui:refresh-state",
 	listSessions: "gui:list-sessions",

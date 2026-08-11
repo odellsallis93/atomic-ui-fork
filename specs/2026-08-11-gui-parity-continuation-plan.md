@@ -267,6 +267,8 @@ npm run dev --workspace=@bastani/atomic-gui
 
 ### Phase 3 — Settings, auth, models, extension host (M4–M5 completion)
 
+**Exit update (2026-08-11):** Phase 3 review findings are fixed with unit/RPC coverage and a renderer-host Electron fixture for dialog/frame focus. This is not a live-provider or third-party-extension claim; exact protocol-v2 boundaries remain in `packages/gui/docs/capability-ledger.md`.
+
 | Step | Targets | User outcome | Compatibility | Validation | Done when |
 |---|---|---|---|---|---|
 | 3.1 Full settings surface | `SettingsPanel`, settings store | Edit supported settings with correct precedence | Ask before changing merge authority | Precedence tests | Global/project settings match docs |

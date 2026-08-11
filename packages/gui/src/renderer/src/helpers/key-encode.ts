@@ -58,20 +58,18 @@ export interface KeyEncodeInput {
 	shiftKey: boolean;
 }
 
-const ARROW_CODEPOINTS: Record<string, number> = {
-	ArrowUp: -1,
-	ArrowDown: -2,
-	ArrowRight: -3,
-	ArrowLeft: -4,
-};
-
-const FUNCTIONAL_CODEPOINTS: Record<string, number> = {
-	Insert: -11,
-	Delete: -10,
-	PageUp: -12,
-	PageDown: -13,
-	Home: -14,
-	End: -15,
+/** Positive Kitty functional-key codepoints. pi-tui normalizes these to its internal negative IDs. */
+const KITTY_FUNCTIONAL_CODEPOINTS: Record<string, number> = {
+	ArrowUp: 57419,
+	ArrowDown: 57420,
+	ArrowRight: 57418,
+	ArrowLeft: 57417,
+	Insert: 57425,
+	Delete: 57426,
+	PageUp: 57421,
+	PageDown: 57422,
+	Home: 57423,
+	End: 57424,
 };
 
 function kittyModifierValue(event: KeyEncodeInput): number {
@@ -85,8 +83,7 @@ function kittyModifierValue(event: KeyEncodeInput): number {
 
 function codepointForKitty(event: KeyEncodeInput): number | undefined {
 	const { key, shiftKey } = event;
-	if (ARROW_CODEPOINTS[key] !== undefined) return ARROW_CODEPOINTS[key];
-	if (FUNCTIONAL_CODEPOINTS[key] !== undefined) return FUNCTIONAL_CODEPOINTS[key];
+	if (KITTY_FUNCTIONAL_CODEPOINTS[key] !== undefined) return KITTY_FUNCTIONAL_CODEPOINTS[key];
 	if (key === "Escape") return 27;
 	if (key === "Tab") return 9;
 	if (key === "Enter") return 13;

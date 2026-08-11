@@ -124,6 +124,28 @@ rl.on("line", (line) => {
     process.stdout.write(JSON.stringify({ id: msg.id, type: "response", command: msg.type, success: true, data }) + "\\n");
     return;
   }
+  if (msg.type === "get_available_models") {
+    process.stdout.write(JSON.stringify({
+      id: msg.id,
+      type: "response",
+      command: "get_available_models",
+      success: true,
+      data: {
+        models: [{ provider: "test", id: "tiny", name: "Tiny" }, { provider: "test", id: "large" }],
+        scopedModels: [{ model: { provider: "test", id: "tiny", name: "Tiny" }, thinkingLevel: "low" }],
+        oauthProviders: [{ id: "test", name: "Test Provider", loginLabel: "Sign in" }],
+      },
+    }) + "\\n");
+    return;
+  }
+  if (msg.type === "get_available_thinking_levels") {
+    process.stdout.write(JSON.stringify({ id: msg.id, type: "response", command: msg.type, success: true, data: { levels: ["off", "low", "high"] } }) + "\\n");
+    return;
+  }
+  if (["set_thinking_level", "set_steering_mode", "set_follow_up_mode", "set_auto_compaction", "set_auto_retry"].includes(msg.type)) {
+    process.stdout.write(JSON.stringify({ id: msg.id, type: "response", command: msg.type, success: true }) + "\\n");
+    return;
+  }
   if (msg.type === "prompt") {
 		if (Array.isArray(msg.images) && msg.images.length > 0) {
 			process.stdout.write(JSON.stringify({ type: "prompt_image_received", image: msg.images[0] }) + "\\n");
@@ -211,6 +233,32 @@ rl.on("line", (line) => {
 			data: { cancelled: false, editorText: "edit me" },
 		});
 		assert.deepEqual(await client.setTreeLabel("u1", "kept"), { ok: true, data: undefined });
+
+		assert.deepEqual(await client.getAuthCatalog(), {
+			ok: true,
+			data: {
+				models: [
+					{ provider: "test", id: "tiny", name: "Tiny", scoped: true, scopedThinkingLevel: "low" },
+					{ provider: "test", id: "large" },
+				],
+				scopedModels: [
+					{
+						model: { provider: "test", id: "tiny", name: "Tiny", scoped: true, scopedThinkingLevel: "low" },
+						thinkingLevel: "low",
+					},
+				],
+				oauthProviders: [
+					{ id: "test", name: "Test Provider", loginLabel: "Sign in", usesCallbackServer: undefined },
+				],
+				providers: ["test"],
+			},
+		});
+		assert.deepEqual(await client.getAvailableThinkingLevels(), { ok: true, data: ["off", "low", "high"] });
+		assert.deepEqual(await client.setThinkingLevel("low"), { ok: true, data: undefined });
+		assert.deepEqual(await client.setSteeringMode("one-at-a-time"), { ok: true, data: undefined });
+		assert.deepEqual(await client.setFollowUpMode("all"), { ok: true, data: undefined });
+		assert.deepEqual(await client.setAutoCompaction(true), { ok: true, data: undefined });
+		assert.deepEqual(await client.setAutoRetry(false), { ok: true, data: undefined });
 
 		const result = await client.prompt({
 			message: "ping",

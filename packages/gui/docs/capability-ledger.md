@@ -19,7 +19,7 @@ Parity tracker for `@bastani/atomic-gui`. **Do not claim parity from fake-engine
 | `test/engine-client.test.ts` | fake | JSONL handshake, RPC response shape, image payload echo | Real CLI bootstrap, provider delivery, session JSONL durability |
 | Most `test/*.test.ts` store/helpers | unit | Renderer/store pure behavior | Engine semantics, IPC round-trip, Electron chrome |
 | `test/real-engine-smoke.test.ts` | real-engine | Start/stream/abort/restart, version-mismatch clarity, session leaf alignment after switch | Full LLM prompt quality, Electron UI, OAuth, packaging |
-| `test/electron-phase2.e2e.test.ts` | fixture E2E | Electron renderer-host queue, session disposition, tree, focus, label, and compaction flows | Atomic CLI/provider semantics; see `docs/e2e-harness.md` |
+| `test/electron-phase2.e2e.test.ts` | fixture E2E | Electron renderer-host queue/session/tree plus Phase 3 focused-frame/dialog keyboard routing and focus recovery | Atomic CLI/provider semantics; this fixture is not a real-engine extension claim |
 
 ## Interactive capabilities
 
@@ -37,19 +37,32 @@ Parity tracker for `@bastani/atomic-gui`. **Do not claim parity from fake-engine
 | Queue / steer / follow-up chips | Composer queue UI | `composer-parity.test.ts`; renderer-host fixture pause/resume/dequeue in `electron-phase2.e2e.test.ts` | unit + fixture E2E | partial — Electron UI and protocol-v2 payload rendering are proven; real-engine Electron proof remains open |
 | Image paste / DnD attachments | Composer + `App.addPastedImages` | `attachments.test.ts`; fake image echo in `engine-client.test.ts` | unit + fake | partial — Phase 0 wire shape proven; real-engine image provider path still open (G3) |
 | Sessions list/resume/rename/delete/clone/export/compact/tree | Session picker / tree modal; engine `fork`, `import_session`, `set_label`, `get_commands` | unit tests plus stateful renderer-host fork/import/active-leaf/label/tree-resubmit/compaction in `electron-phase2.e2e.test.ts` | unit + fixture E2E | partial — renderer-host disposition and durable refresh behavior are proven. Share stays excluded; Atomic CLI/provider Electron proof remains open. |
-| Models / thinking | Model picker; cycle RPCs | `engine-client.test.ts`, protocol `get_available_models` / `set_model` / `set_thinking_level` | unit + RPC | partial — model and thinking are session-owned; protocol v2 has no scoped-selection or fast-mode command, so the GUI cannot safely persist either without an engine addition. |
-| Settings precedence | Settings panel | `settings-store.test.ts`; engine `settings-manager` source | unit | partial — GUI may only display/apply the theme setting. The full TUI settings tree and global/project merge stay engine-owned; protocol v2 exposes no settings snapshot or mutation RPC. |
-| Themes | Settings panel | `theme-loader.test.ts` (builtin < user < project, next-read reload) | unit | partial — canonical `.atomic/themes` project files load with the engine order. Configured theme paths and engine resource reload require a resource/settings RPC, which v2 does not expose. |
-| Auth / trust / first run | Auth + trust dialogs | `project-trust.test.ts`; Electron fixture host boundary | unit | partial — renderer receives provider names and challenge text only. Credentials stay in engine auth flows; no GUI reads, logs, or returns them. First-run model choice has no persistent v2 route. |
+| Models / thinking | Model picker; cycle/set RPCs | `engine-client.test.ts`; `phase3-settings-ui.test.tsx`; protocol `get_available_models` / `set_model` / `set_thinking_level` | unit + fake RPC | partial — GUI now parses engine `scopedModels`, displays scoped entries first, and routes model/thinking mutations through v2 RPC. Persistence/scope remain engine/session-owned; fixture tests are not provider proof. |
+| Settings precedence | Settings panel | `settings-store.test.ts`; engine `settings-manager-core.ts` global→project merge source | unit | partial — GUI reads effective theme with global→project precedence but no longer writes generic settings JSON. Steering, follow-up, thinking, auto-compaction, and auto-retry controls call existing engine RPCs. Full settings snapshot/mutation and Codex fast mode remain excluded because protocol v2 exposes no RPC. |
+| Themes | Settings panel | `theme-loader.test.ts` (JSON names, first-match builtin→user→project, `.pi` project dir, string+numeric colors, next-read reload) | unit | partial — host can inspect builtin/user/project theme JSON that matches engine directory order and de-dupe. Persistent theme mutation and configured theme paths require an engine settings/resource RPC, which v2 does not expose. |
+| Auth / trust / first run | Onboarding, auth + trust dialogs | `project-trust.test.ts`; `phase3-settings-ui.test.tsx`; Electron fixture host boundary | unit | partial — first-run panel routes users to trust, provider auth, and model selection without displaying saved credentials. Credentials stay in engine auth flows; no GUI reads, logs, writes, or returns them. |
 | Extension UI host (dialogs/forms/frames) | Generic modals + `ChromeFrame` | `session-store.test.ts`, `ansi` / overlay / key tests, fixture E2E | unit + fixture E2E | partial — select/confirm/input/editor, host forms/picker, working/status/widgets, chrome and frames route generically. `onTerminalInput`, `getEditorText`, autocomplete provider, and RPC theme APIs are engine-declared synchronous/protocol exclusions. |
 | Bundled extensions (workflows/subagents/intercom/MCP/web) | Generic frames only | — | — | open (Phase 4 / M6) |
 | CLI machine interfaces (`--print`, `--mode json/rpc`, pipes) | **Excluded** (§3.3) | plan exclusions | docs | excluded |
 | Package admin / credential print / multi-window tabs | **Excluded** or deferred (G11) | plan exclusions | docs | excluded |
 ## Phase 3 exit review (2026-08-11)
 
-Phase 3 cannot exit under protocol v2 alone. The host now resolves canonical project themes with builtin < user < project precedence and re-reads custom files on the next supported refresh. Dialogs cancel on Escape or a supplied timeout and restore prior focus. The required GUI gates passed after building the documented local native prerequisite.
+Phase 3 settings/theme/model/onboarding review fixes preserve protocol v2 and engine authority. The GUI now uses read-only global→project theme precedence, no longer writes generic settings JSON, resolves themes by JSON `name` with first-match builtin→user→project order, includes legacy `.pi` project themes, and supports string plus numeric color tokens. Scoped models are parsed from `get_available_models` and displayed in the model picker. Existing settings controls route through engine RPCs (`set_thinking_level`, steering/follow-up modes, auto compaction/retry).
 
-The remaining requested settings tree, scoped model persistence, fast mode, configured project-theme paths, and first-run persistent model selection have no v2 RPC. Implementing renderer-owned copies would violate the engine-authority contract; adding new engine RPCs or changing protocol identity exceeds this Phase 3 v2 boundary. Fixture Electron E2E remains renderer-host proof only, not real-engine or provider proof.
+Remaining exact boundaries: protocol v2 has no generic settings snapshot/mutation RPC, no persistent set-theme RPC, no configured theme-path/resource RPC, and no Codex fast-mode RPC despite engine-side settings accessors. The first-run panel is renderer-host guidance into existing trust/auth/model routes; it does not prove real-provider login or model availability.
+
+## `ctx.ui.*` protocol-v2 corpus
+
+| Corpus item | Generic route | Boundary / evidence |
+|---|---|---|
+| select, confirm, input, editor | `DialogModal` → `extension_ui_response` | `dialog-modal.test.tsx`; fixture dialog E2E. Editor has no v2 timeout. |
+| notify, status, working, widgets, title, editor text | session store + generic chrome/widget host | `session-store.test.ts`; no extension-specific renderer. |
+| custom, header/footer/editor slots, terminal input | `engine_custom_*` → `FrameOverlay`/`ChromeFrame`/`FrameRenderHost` | Store ordering, keyboard, scroll-mode tests; fixture focus E2E. |
+| hostSessionPicker, hostInputForm | generic native modals | `session-store.test.ts`; renderer-host only. |
+| onTerminalInput, getEditorText, autocomplete provider | no v2 host route | Engine explicitly warns these synchronous APIs are unavailable in RPC mode. |
+| RPC theme APIs and configured resource paths | no v2 host route | Engine returns no host value; GUI does not invent a parallel authority. |
+
+The corpus inventory is source-backed by `packages/coding-agent/src/core/extensions/ui-types.ts` and `modes/rpc/rpc-extension-ui.ts`. Fixture proof ends at renderer-host IPC; it does not prove a third-party extension or live engine path.
 
 
 ## Open gates (do not silently close)

@@ -37,10 +37,14 @@ test("encodeTerminalKey ignores bare modifiers", () => {
 	);
 });
 
-test("encodeTerminalKeyRelease emits kitty flag-2 release sequences", () => {
+test("encodeTerminalKeyRelease emits valid positive kitty flag-2 sequences", () => {
 	assert.equal(
 		encodeTerminalKeyRelease({ key: "ArrowLeft", ctrlKey: false, altKey: false, metaKey: false, shiftKey: false }),
-		"\x1b[-4;1:3u",
+		"\x1b[57417;1:3u",
+	);
+	assert.equal(
+		encodeTerminalKeyRelease({ key: "Delete", ctrlKey: false, altKey: false, metaKey: false, shiftKey: false }),
+		"\x1b[57426;1:3u",
 	);
 	assert.equal(
 		encodeTerminalKeyRelease({ key: "a", ctrlKey: false, altKey: false, metaKey: false, shiftKey: false }),

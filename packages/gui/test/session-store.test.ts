@@ -34,6 +34,7 @@ beforeEach(() => {
 		themes: [],
 		themeName: "dark",
 		frames: [],
+		pendingTerminalControls: {},
 		authCatalog: null,
 		authBusyProvider: undefined,
 		trustStatus: undefined,
@@ -572,6 +573,50 @@ test("engine_custom_terminal autowrap toggles frame wrap mode", () => {
 		control: { kind: "autowrap", enabled: false },
 	});
 	assert.equal(useSessionStore.getState().frames[0]?.terminalAutowrap, false);
+});
+
+test("buffers terminal controls until open and honors deferred inline focus", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({
+		type: "engine_custom_terminal",
+		componentId: "ordered",
+		control: { kind: "mouse-scroll-tracking", enabled: true },
+	});
+	ingestEvent({
+		type: "engine_custom_terminal",
+		componentId: "ordered",
+		control: { kind: "autowrap", enabled: false },
+	});
+	assert.equal(useSessionStore.getState().frames.length, 0);
+	ingestEvent({
+		type: "engine_custom_open",
+		componentId: "ordered",
+		overlay: false,
+		deferInlineCustomUiFocus: true,
+		handlesCtrlC: false,
+	});
+	const frame = useSessionStore.getState().frames[0];
+	assert.equal(frame?.mouseScrollTracking, true);
+	assert.equal(frame?.terminalAutowrap, false);
+	assert.equal(frame?.focused, false);
+	assert.equal(frame?.handlesCtrlC, false);
+	assert.deepEqual(useSessionStore.getState().pendingTerminalControls, {});
+});
+
+test("ignores custom frames that arrive before their open message", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({ type: "engine_custom_frame", componentId: "not-open", requestId: 1, lines: ["stale"] });
+	assert.equal(useSessionStore.getState().frames.length, 0);
+});
+
+test("clearDialog only clears the request that responded", () => {
+	const { ingestExtensionUi, clearDialog } = useSessionStore.getState();
+	ingestExtensionUi({ id: "dialog-a", method: "input", title: "A" });
+	ingestExtensionUi({ id: "dialog-b", method: "input", title: "B" });
+	clearDialog("dialog-a");
+	assert.equal(useSessionStore.getState().activeDialog?.id, "dialog-b");
+	clearDialog("dialog-b");
+	assert.equal(useSessionStore.getState().activeDialog, undefined);
 });
 
 test("engine_input_form_open mounts the input form modal", () => {

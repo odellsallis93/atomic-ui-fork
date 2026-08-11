@@ -63,6 +63,14 @@ process.stdin.on("data", (chunk) => {
     const line = input.slice(0, at); input = input.slice(at + 1);
     if (!line) continue;
     const request = JSON.parse(line);
+    if (request.type === "engine_custom_input") {
+      send({ type: "engine_custom_frame", componentId: request.componentId, requestId: 99, lines: ["input: " + request.data] });
+      continue;
+    }
+    if (request.type === "extension_ui_response") {
+      send({ type: "engine_custom_frame", componentId: "focus-frame", requestId: 100, lines: ["dialog response"] });
+      continue;
+    }
     if (!request.id || typeof request.type !== "string") continue;
     accept(request);
     if (request.type === "get_state") response(request, true, { sessionFile: current().file, sessionName: current().name, model: { provider: "fixture", id: "model" } });
@@ -79,13 +87,23 @@ process.stdin.on("data", (chunk) => {
     else if (request.type === "clear_queue") { const drained = queues; queues = { steering: [], followUp: [] }; response(request, true, drained); queueUpdate(); }
     else if (request.type === "abort") { send({ type: "agent_end" }); response(request, true); }
     else if (request.type === "prompt") {
-      send({ type: "agent_start" });
-      appendPrompt(request.message);
-      send({ type: "message_start", message: { id: current().leaf, role: "assistant", content: [] } });
-      send({ type: "message_end", message: { id: current().leaf, role: "assistant", content: [{ type: "text", text: "reply: " + request.message }] } });
-      if (request.message === "queue seed") { queues = { steering: ["steer first"], followUp: ["follow first"] }; queueUpdate(); }
-      else send({ type: "agent_end" });
-      response(request, true);
+      if (request.message === "open focused frame") {
+        send({ type: "engine_custom_open", componentId: "focus-frame", overlay: true, handlesCtrlC: true });
+        send({ type: "engine_custom_frame", componentId: "focus-frame", requestId: 1, lines: ["focused frame"] });
+        send({ type: "extension_ui_request", id: "fixture-dialog", method: "input", title: "Fixture input", placeholder: "Type here", timeout: 1000 });
+        response(request, true);
+      } else if (request.message === "open input dialog") {
+        send({ type: "extension_ui_request", id: "fixture-dialog", method: "input", title: "Fixture input", placeholder: "Type here", timeout: 1000 });
+        response(request, true);
+      } else {
+        send({ type: "agent_start" });
+        appendPrompt(request.message);
+        send({ type: "message_start", message: { id: current().leaf, role: "assistant", content: [] } });
+        send({ type: "message_end", message: { id: current().leaf, role: "assistant", content: [{ type: "text", text: "reply: " + request.message }] } });
+        if (request.message === "queue seed") { queues = { steering: ["steer first"], followUp: ["follow first"] }; queueUpdate(); }
+        else send({ type: "agent_end" });
+        response(request, true);
+      }
     }
     else if (request.type === "fork") { active = "fork"; response(request, true, { text: "fork edit", cancelled: false }); }
     else if (request.type === "import_session") { active = "imported"; response(request, true, { cancelled: false }); }
@@ -209,6 +227,7 @@ test("Electron fixture E2E: tree navigation restores focus for edit-resubmit and
 	await page.getByRole("button", { name: "Tree" }).click();
 	await page.locator(".tree-select").filter({ hasText: "user: edit target" }).click();
 	await page.getByRole("dialog", { name: "Session tree" }).waitFor({ state: "detached" });
+	await page.waitForFunction(() => Boolean(document.activeElement?.closest(".composer-editor")));
 	assert.equal(await page.evaluate(() => Boolean(document.activeElement?.closest(".composer-editor"))), true);
 	await page.keyboard.press("ControlOrMeta+A");
 	await page.keyboard.type("tree resubmitted");
@@ -219,4 +238,19 @@ test("Electron fixture E2E: tree navigation restores focus for edit-resubmit and
 	await page.locator(".context-compaction").getByText("fixture boundary").waitFor();
 	await page.getByRole("button", { name: "Tree" }).click();
 	await page.locator(".tree-row.session-row-active").getByText("Compaction: fixture boundary").waitFor();
+}, 30_000);
+
+test("Electron fixture E2E: native dialog owns focused-frame keys and restores focus", async () => {
+	const page = await launchFixture();
+	await editor(page).click();
+	await page.keyboard.type("open focused frame");
+	await page.getByRole("button", { name: "Send" }).click();
+	await page.getByText("focused frame").waitFor();
+	const dialog = page.getByRole("dialog").filter({ hasText: "Fixture input" });
+	await dialog.waitFor();
+	const input = dialog.locator("input");
+	await input.fill("keyboard only");
+	await page.keyboard.press("Escape");
+	await dialog.waitFor({ state: "detached" });
+	await page.getByText("dialog response").waitFor();
 }, 30_000);

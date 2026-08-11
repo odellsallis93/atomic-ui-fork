@@ -829,3 +829,36 @@ input {
 	flex-wrap: wrap;
 	justify-content: flex-end;
 }
+
+.settings-section {
+	border-top: 1px solid var(--surface1);
+	padding: 1rem 0;
+}
+
+.settings-section h3 {
+	margin: 0 0 0.75rem;
+}
+
+.settings-grid,
+.onboarding-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin-top: 0.75rem;
+}
+
+.onboarding-panel {
+	display: flex;
+	justify-content: space-between;
+	gap: 1rem;
+	align-items: center;
+	margin: 0 1rem 1rem;
+	padding: 1rem;
+	border: 1px solid var(--surface1);
+	border-radius: 12px;
+	background: var(--surface0);
+}
+
+.onboarding-panel h2 {
+	margin: 0 0 0.25rem;
+}

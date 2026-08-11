@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ExtensionUiResponse, ForkMessageInfo, PromptImage } from "../../shared/ipc";
+import type { ExtensionUiResponse, ForkMessageInfo, GuiSettingsSnapshot, PromptImage } from "../../shared/ipc";
 import { AuthPanel } from "./components/AuthPanel";
 import { ChromeFrame } from "./components/ChromeFrame";
 import { Composer } from "./components/Composer";
@@ -10,6 +10,7 @@ import { FrameRenderHost } from "./components/FrameRenderHost";
 import { HostSessionPickerModal } from "./components/HostSessionPickerModal";
 import { InputFormModal } from "./components/InputFormModal";
 import { ModelPicker } from "./components/ModelPicker";
+import { OnboardingPanel } from "./components/OnboardingPanel";
 import { SessionPicker } from "./components/SessionPicker";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { ToastStack } from "./components/ToastStack";
@@ -137,6 +138,8 @@ export function App() {
 	const setTree = useSessionStore((s) => s.setTree);
 	const setThemes = useSessionStore((s) => s.setThemes);
 	const setThemeName = useSessionStore((s) => s.setThemeName);
+	const [guiSettings, setGuiSettings] = useState<GuiSettingsSnapshot | undefined>(undefined);
+	const [thinkingLevels, setThinkingLevels] = useState<string[]>([]);
 	const setAuthCatalog = useSessionStore((s) => s.setAuthCatalog);
 	const setAuthBusyProvider = useSessionStore((s) => s.setAuthBusyProvider);
 	const setTrust = useSessionStore((s) => s.setTrust);
@@ -277,9 +280,14 @@ export function App() {
 		if (!hasGuiApi()) return;
 		setThemes(await window.atomicGui.listThemes());
 		const settings = await window.atomicGui.getSettings();
+		setGuiSettings(settings);
 		setThemeName(settings.theme);
+		if (status.state === "ready") {
+			const levels = await window.atomicGui.getAvailableThinkingLevels();
+			if (levels.ok && levels.data) setThinkingLevels(levels.data);
+		}
 		setModal("settings");
-	}, [setModal, setThemeName, setThemes]);
+	}, [setModal, setThemeName, setThemes, status.state]);
 
 	const openAuth = useCallback(async (): Promise<void> => {
 		if (!hasGuiApi()) return;
@@ -539,8 +547,9 @@ export function App() {
 	const respondDialog = async (response: ExtensionUiResponse): Promise<void> => {
 		if (!hasGuiApi()) return;
 		await window.atomicGui.respondExtensionUi(response);
-		clearDialog();
+		clearDialog(response.id);
 	};
+
 
 	const searchFiles = useCallback(
 		async (query: string) => {
@@ -558,7 +567,8 @@ export function App() {
 
 	return (
 		<div className="app-shell">
-			{customHeader ? <ChromeFrame frame={customHeader} slot="header" /> : null}
+			{customHeader ? <ChromeFrame frame={customHeader} slot="header" modalOpen={modal !== "none"} /> : null}
+
 			<header className="topbar">
 				<div className="brand">
 					<span className="brand-mark">∀ Atomic</span>
@@ -624,6 +634,16 @@ export function App() {
 				</div>
 			</header>
 
+
+			{!ready ? (
+				<OnboardingPanel
+					ready={ready}
+					onStart={() => void startEngine()}
+					onTrust={() => void maybePromptTrust()}
+					onAuth={() => void openAuth()}
+					onModels={() => void openModels()}
+				/>
+			) : null}
 			{errorBanner ? (
 				<div className="error-banner" role="alert">
 					{errorBanner}
@@ -644,6 +664,7 @@ export function App() {
 				<ChromeFrame
 					frame={customEditor}
 					slot="editor"
+					modalOpen={modal !== "none"}
 					onInput={(data) =>
 						void window.atomicGui.sendEngineCommand({
 							type: "engine_custom_input",
@@ -703,7 +724,7 @@ export function App() {
 			)}
 
 			{customFooter ? (
-				<ChromeFrame frame={customFooter} slot="footer" />
+				<ChromeFrame frame={customFooter} slot="footer" modalOpen={modal !== "none"} />
 			) : (
 				<Footer
 					cwd={status.cwd ?? "."}
@@ -751,6 +772,7 @@ export function App() {
 			/>
 			<FrameOverlay
 				frames={frames}
+				modalOpen={modal !== "none"}
 				onDismiss={(componentId) => {
 					dismissFrame(componentId);
 					void window.atomicGui.sendEngineCommand({ type: "engine_custom_dispose", componentId });
@@ -929,13 +951,41 @@ export function App() {
 				<SettingsPanel
 					themes={themes}
 					currentTheme={themeName}
+					settings={guiSettings}
+					thinkingLevels={thinkingLevels}
+					currentThinkingLevel={status.thinkingLevel}
 					onClose={() => setModal("none")}
 					onOpenAuth={() => void openAuth()}
 					onSelectTheme={(name) => {
 						void window.atomicGui.setTheme(name).then((theme) => {
 							applyThemeCss(theme.cssVariables);
 							setThemeName(theme.name);
-							setModal("none");
+						});
+					}}
+					onSetThinkingLevel={(level) => {
+						void window.atomicGui.setThinkingLevel(level).then((result) => {
+							if (!result.ok) setErrorBanner(result.error);
+							else void refreshMetadata();
+						});
+					}}
+					onSetSteeringMode={(mode) => {
+						void window.atomicGui.setSteeringMode(mode).then((result) => {
+							if (!result.ok) setErrorBanner(result.error);
+						});
+					}}
+					onSetFollowUpMode={(mode) => {
+						void window.atomicGui.setFollowUpMode(mode).then((result) => {
+							if (!result.ok) setErrorBanner(result.error);
+						});
+					}}
+					onSetAutoCompaction={(enabled) => {
+						void window.atomicGui.setAutoCompaction(enabled).then((result) => {
+							if (!result.ok) setErrorBanner(result.error);
+						});
+					}}
+					onSetAutoRetry={(enabled) => {
+						void window.atomicGui.setAutoRetry(enabled).then((result) => {
+							if (!result.ok) setErrorBanner(result.error);
 						});
 					}}
 				/>
@@ -1046,9 +1096,10 @@ export function App() {
 
 			{modal === "dialog" && activeDialog ? (
 				<DialogModal
+					key={activeDialog.id}
 					request={activeDialog}
 					onRespond={(response) => void respondDialog(response)}
-					onDismiss={() => clearDialog()}
+					onDismiss={() => clearDialog(activeDialog.id)}
 				/>
 			) : null}
 		</div>

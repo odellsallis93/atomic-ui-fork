@@ -8,13 +8,20 @@ export function ModelPicker(props: {
 	onSelect: (model: ModelInfo) => void;
 }) {
 	const [query, setQuery] = useState("");
+	const ordered = useMemo(
+		() => [...props.models].sort((a, b) => Number(b.scoped === true) - Number(a.scoped === true)),
+		[props.models],
+	);
 	const filtered = useMemo(() => {
 		const needle = query.trim().toLowerCase();
-		if (!needle) return props.models;
-		return props.models.filter((model) =>
-			`${model.provider}/${model.id} ${model.name ?? ""}`.toLowerCase().includes(needle),
+		if (!needle) return ordered;
+		return ordered.filter((model) =>
+			`${model.provider}/${model.id} ${model.name ?? ""} ${model.scoped ? "scoped" : ""}`
+				.toLowerCase()
+				.includes(needle),
 		);
-	}, [props.models, query]);
+	}, [ordered, query]);
+	const hasScoped = props.models.some((model) => model.scoped === true);
 
 	return (
 		<div className="modal-backdrop">
@@ -26,20 +33,21 @@ export function ModelPicker(props: {
 					</button>
 				</div>
 				{props.currentLabel ? <p className="modal-subtitle">Current: {props.currentLabel}</p> : null}
-				<input
-					className="modal-input"
-					placeholder="Search models…"
-					value={query}
-					onChange={(e) => setQuery(e.target.value)}
-				/>
+				{hasScoped ? <p className="settings-hint">Scoped models are supplied by the engine and shown first.</p> : null}
+				<input className="modal-input" placeholder="Search models…" value={query} onChange={(e) => setQuery(e.target.value)} />
 				<ul className="modal-list">
 					{filtered.map((model) => (
 						<li key={`${model.provider}/${model.id}`}>
 							<button type="button" className="session-row" onClick={() => props.onSelect(model)}>
 								<span className="session-name">
-									{model.provider}/{model.id}
+									{model.provider}/{model.id} {model.scoped ? "· scoped" : ""}
 								</span>
-								{model.name ? <span className="session-preview">{model.name}</span> : null}
+								{model.name || model.scopedThinkingLevel ? (
+									<span className="session-preview">
+										{model.name ?? ""}
+										{model.scopedThinkingLevel ? ` · thinking ${model.scopedThinkingLevel}` : ""}
+									</span>
+								) : null}
 							</button>
 						</li>
 					))}

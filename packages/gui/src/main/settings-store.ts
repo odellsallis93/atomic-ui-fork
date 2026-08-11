@@ -1,11 +1,17 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 export interface GuiSettingsSnapshot {
 	theme: string;
 	path: string;
 	exists: boolean;
+	globalPath: string;
+	projectPath: string;
+	globalExists: boolean;
+	projectExists: boolean;
+	/** True when project settings override the global theme, matching engine global→project precedence. */
+	projectOverridesTheme: boolean;
 }
 
 function agentDir(env: NodeJS.ProcessEnv = process.env): string {
@@ -22,36 +28,39 @@ export function settingsPath(env: NodeJS.ProcessEnv = process.env): string {
 	return join(agentDir(env), "settings.json");
 }
 
-export function readGuiSettings(env: NodeJS.ProcessEnv = process.env): GuiSettingsSnapshot {
-	const path = settingsPath(env);
-	if (!existsSync(path)) {
-		return { theme: "dark", path, exists: false };
-	}
+export function projectSettingsPath(cwd = process.cwd()): string {
+	return join(resolve(cwd), ".atomic", "settings.json");
+}
+
+function readTheme(path: string): string | undefined {
+	if (!existsSync(path)) return undefined;
 	try {
-		const raw = JSON.parse(readFileSync(path, "utf8")) as { theme?: string };
-		const theme = typeof raw.theme === "string" && raw.theme.trim() ? raw.theme.trim() : "dark";
-		return { theme: theme.includes("/") ? "dark" : theme, path, exists: true };
+		const raw = JSON.parse(readFileSync(path, "utf8")) as { theme?: unknown };
+		const theme = typeof raw.theme === "string" && raw.theme.trim() ? raw.theme.trim() : undefined;
+		return theme && !theme.includes("/") ? theme : undefined;
 	} catch {
-		return { theme: "dark", path, exists: false };
+		return undefined;
 	}
 }
 
-export function writeThemeSetting(theme: string, env: NodeJS.ProcessEnv = process.env): GuiSettingsSnapshot {
-	const trimmed = theme.trim();
-	if (!trimmed || trimmed.includes("/")) {
-		throw new Error('Theme name must be a non-empty string without "/"');
-	}
-	const path = settingsPath(env);
-	mkdirSync(dirname(path), { recursive: true });
-	let existing: Record<string, unknown> = {};
-	if (existsSync(path)) {
-		try {
-			existing = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-		} catch {
-			existing = {};
-		}
-	}
-	existing.theme = trimmed;
-	writeFileSync(path, `${JSON.stringify(existing, null, "\t")}\n`, "utf8");
-	return { theme: trimmed, path, exists: true };
+/**
+ * Read-only host snapshot of the effective GUI-visible settings. The engine remains
+ * the mutation authority; this mirrors its global→project file precedence only for
+ * the currently supported GUI theme selector.
+ */
+export function readGuiSettings(env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): GuiSettingsSnapshot {
+	const globalPath = settingsPath(env);
+	const projectPath = projectSettingsPath(cwd);
+	const globalTheme = readTheme(globalPath);
+	const projectTheme = readTheme(projectPath);
+	return {
+		theme: projectTheme ?? globalTheme ?? "dark",
+		path: projectTheme ? projectPath : globalPath,
+		exists: existsSync(projectPath) || existsSync(globalPath),
+		globalPath,
+		projectPath,
+		globalExists: existsSync(globalPath),
+		projectExists: existsSync(projectPath),
+		projectOverridesTheme: projectTheme !== undefined,
+	};
 }

@@ -449,6 +449,10 @@ export class EngineClient {
 	async getAuthCatalog(): Promise<RpcResult<AuthCatalog>> {
 		const result = await this.command<{
 			models?: Array<{ provider?: string; id?: string; name?: string; thinking?: boolean }>;
+			scopedModels?: Array<{
+				model?: { provider?: string; id?: string; name?: string; thinking?: boolean };
+				thinkingLevel?: string;
+			}>;
 			oauthProviders?: Array<{
 				id?: string;
 				name?: string;
@@ -457,14 +461,36 @@ export class EngineClient {
 			}>;
 		}>({ type: "get_available_models" });
 		if (!result.ok) return { ok: false, error: result.error };
+		const mapModel = (model: { provider?: string; id?: string; name?: string; thinking?: boolean }): ModelInfo => ({
+			provider: model.provider as string,
+			id: model.id as string,
+			...(typeof model.name === "string" ? { name: model.name } : {}),
+			...(typeof model.thinking === "boolean" ? { thinking: model.thinking } : {}),
+		});
 		const models = (result.data?.models ?? [])
 			.filter((model) => typeof model.provider === "string" && typeof model.id === "string")
-			.map((model) => ({
-				provider: model.provider as string,
-				id: model.id as string,
-				name: typeof model.name === "string" ? model.name : undefined,
-				thinking: typeof model.thinking === "boolean" ? model.thinking : undefined,
+			.map(mapModel);
+		const scopedModels = (result.data?.scopedModels ?? [])
+			.filter(
+				(
+					scoped,
+				): scoped is {
+					model: { provider: string; id: string; name?: string; thinking?: boolean };
+					thinkingLevel?: string;
+				} => typeof scoped.model?.provider === "string" && typeof scoped.model?.id === "string",
+			)
+			.map((scoped) => ({
+				model: { ...mapModel(scoped.model), scoped: true, scopedThinkingLevel: scoped.thinkingLevel },
+				thinkingLevel: typeof scoped.thinkingLevel === "string" ? scoped.thinkingLevel : undefined,
 			}));
+		const scopedIds = new Map(scopedModels.map((scoped) => [`${scoped.model.provider}/${scoped.model.id}`, scoped]));
+		const displayModels =
+			scopedModels.length > 0
+				? models.map((model) => {
+						const scoped = scopedIds.get(`${model.provider}/${model.id}`);
+						return scoped ? { ...model, scoped: true, scopedThinkingLevel: scoped.thinkingLevel } : model;
+					})
+				: models;
 		const oauthProviders: OAuthProviderInfo[] = (result.data?.oauthProviders ?? [])
 			.filter((provider) => typeof provider.id === "string" && typeof provider.name === "string")
 			.map((provider) => ({
@@ -475,9 +501,9 @@ export class EngineClient {
 					typeof provider.usesCallbackServer === "boolean" ? provider.usesCallbackServer : undefined,
 			}));
 		const providers = [
-			...new Set([...models.map((model) => model.provider), ...oauthProviders.map((p) => p.id)]),
+			...new Set([...displayModels.map((model) => model.provider), ...oauthProviders.map((p) => p.id)]),
 		].sort();
-		return { ok: true, data: { models, oauthProviders, providers } };
+		return { ok: true, data: { models: displayModels, scopedModels, oauthProviders, providers } };
 	}
 
 	async loginProvider(provider: string, authType: "api_key" | "oauth" = "api_key"): Promise<RpcResult> {
@@ -511,12 +537,45 @@ export class EngineClient {
 		return { ok: true, data: { label } };
 	}
 
+	async setThinkingLevel(level: string): Promise<RpcResult> {
+		const result = await this.command({ type: "set_thinking_level", level });
+		await this.refreshState().catch(() => undefined);
+		return result;
+	}
+
 	async cycleThinking(): Promise<RpcResult<{ level: string } | null>> {
 		const result = await this.command<{ level?: string } | null>({ type: "cycle_thinking_level" });
 		await this.refreshState().catch(() => undefined);
 		if (!result.ok) return { ok: false, error: result.error };
 		if (!result.data || typeof result.data.level !== "string") return { ok: true, data: null };
 		return { ok: true, data: { level: result.data.level } };
+	}
+
+	async getAvailableThinkingLevels(): Promise<RpcResult<string[]>> {
+		const result = await this.command<{ levels?: unknown }>({ type: "get_available_thinking_levels" });
+		if (!result.ok) return { ok: false, error: result.error };
+		return {
+			ok: true,
+			data: Array.isArray(result.data?.levels)
+				? result.data.levels.filter((level): level is string => typeof level === "string")
+				: [],
+		};
+	}
+
+	async setSteeringMode(mode: "all" | "one-at-a-time"): Promise<RpcResult> {
+		return await this.command({ type: "set_steering_mode", mode });
+	}
+
+	async setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<RpcResult> {
+		return await this.command({ type: "set_follow_up_mode", mode });
+	}
+
+	async setAutoCompaction(enabled: boolean): Promise<RpcResult> {
+		return await this.command({ type: "set_auto_compaction", enabled });
+	}
+
+	async setAutoRetry(enabled: boolean): Promise<RpcResult> {
+		return await this.command({ type: "set_auto_retry", enabled });
 	}
 
 	async getSessionStats(): Promise<RpcResult<SessionStatsSummary>> {

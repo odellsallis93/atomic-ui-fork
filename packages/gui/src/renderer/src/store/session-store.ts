@@ -145,6 +145,8 @@ export interface SessionState {
 	themes: ThemeSummary[];
 	themeName: string;
 	frames: CustomFrame[];
+	/** Terminal controls can arrive before engine_custom_open on the JSONL stream. */
+	pendingTerminalControls: Record<string, { mouseScrollTracking?: boolean; terminalAutowrap?: boolean }>;
 	authCatalog: AuthCatalog | null;
 	authBusyProvider?: string;
 	trustStatus?: TrustStatus;
@@ -163,7 +165,7 @@ export interface SessionState {
 	appendRawLine: (line: string) => void;
 	ingestEvent: (event: GuiRpcEvent) => void;
 	ingestExtensionUi: (request: ExtensionUiRequest) => void;
-	clearDialog: () => void;
+	clearDialog: (requestId?: string) => void;
 	dismissToast: (id: string) => void;
 	dismissFrame: (componentId: string) => void;
 	resetTranscript: () => void;
@@ -547,6 +549,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	themes: [],
 	themeName: "dark",
 	frames: [],
+	pendingTerminalControls: {},
 	authCatalog: null,
 	trustOptions: [],
 	modal: "none",
@@ -587,6 +590,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			queue: [],
 			working: false,
 			frames: [],
+			pendingTerminalControls: {},
 			transcriptLeafId: null,
 			treeLeafId: null,
 			treeNodes: [],
@@ -627,7 +631,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	dismissToast: (id) => set((state) => ({ toasts: state.toasts.filter((toast) => toast.id !== id) })),
 	dismissFrame: (componentId) =>
 		set((state) => ({ frames: state.frames.filter((frame) => frame.componentId !== componentId) })),
-	clearDialog: () => set({ activeDialog: undefined, modal: get().modal === "dialog" ? "none" : get().modal }),
+	clearDialog: (requestId) =>
+		set((state) => {
+			if (requestId && state.activeDialog?.id !== requestId) return state;
+			return { activeDialog: undefined, modal: state.modal === "dialog" ? "none" : state.modal };
+		}),
 	ingestExtensionUi: (request) => {
 		if (request.method === "oauth_manual_code_cancel") {
 			set({ activeDialog: undefined, modal: get().modal === "dialog" ? "none" : get().modal });
@@ -864,6 +872,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		if (type === "engine_custom_open") {
 			const componentId = typeof event.componentId === "string" ? event.componentId : undefined;
 			if (!componentId) return;
+			const pendingTerminalControl = get().pendingTerminalControls[componentId];
 			const frame: CustomFrame = {
 				componentId,
 				overlay: event.overlay === true,
@@ -879,12 +888,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				overlayOptions: parseOverlayOptions(event.overlayOptions),
 				handlesCtrlC: event.handlesCtrlC === true,
 				hidden: false,
-				focused: event.overlay === true,
-				mouseScrollTracking: false,
-				terminalAutowrap: true,
+				focused: event.overlay === true || event.deferInlineCustomUiFocus !== true,
+				mouseScrollTracking: pendingTerminalControl?.mouseScrollTracking ?? false,
+				terminalAutowrap: pendingTerminalControl?.terminalAutowrap ?? true,
 			};
 			set((state) => {
 				const frames = [...state.frames.filter((item) => item.componentId !== componentId), frame];
+				const pendingTerminalControls = { ...state.pendingTerminalControls };
+				delete pendingTerminalControls[componentId];
 				let widgets = state.widgets;
 				if (frame.widgetKey) {
 					widgets = [
@@ -892,7 +903,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 						{ key: frame.widgetKey, lines: [], placement: frame.widgetPlacement ?? "belowEditor" },
 					];
 				}
-				return { frames, widgets };
+				return { frames, widgets, pendingTerminalControls };
 			});
 			return;
 		}
@@ -920,36 +931,31 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					};
 				}
 				const existing = state.frames.find((frame) => frame.componentId === componentId);
-				if (existing && requestId !== undefined && requestId < existing.appliedRequestId) {
-					return state;
-				}
+				if (!existing) return state;
+				if (requestId !== undefined && requestId < existing.appliedRequestId) return state;
 				const next: CustomFrame = {
 					componentId,
-					overlay: existing?.overlay ?? true,
-					chromeSlot: existing?.chromeSlot,
-					widgetKey: existing?.widgetKey,
-					widgetPlacement: existing?.widgetPlacement,
+					overlay: existing.overlay,
+					chromeSlot: existing.chromeSlot,
+					widgetKey: existing.widgetKey,
+					widgetPlacement: existing.widgetPlacement,
 					lines,
 					requestId,
-					appliedRequestId: requestId ?? existing?.appliedRequestId ?? 0,
-					renderGeneration: existing?.renderGeneration ?? 0,
-					overlayOptions: existing?.overlayOptions,
-					handlesCtrlC: existing?.handlesCtrlC ?? false,
-					hidden: existing?.hidden ?? false,
-					focused: existing?.focused ?? true,
-					mouseScrollTracking: existing?.mouseScrollTracking ?? false,
-					terminalAutowrap: existing?.terminalAutowrap ?? true,
+					appliedRequestId: requestId ?? existing.appliedRequestId,
+					renderGeneration: existing.renderGeneration,
+					overlayOptions: existing.overlayOptions,
+					handlesCtrlC: existing.handlesCtrlC,
+					hidden: existing.hidden,
+					focused: existing.focused,
+					mouseScrollTracking: existing.mouseScrollTracking,
+					terminalAutowrap: existing.terminalAutowrap,
 				};
 				const frames = [...state.frames.filter((frame) => frame.componentId !== componentId), next];
 				let widgets = state.widgets;
 				if (next.widgetKey) {
 					widgets = [
 						...state.widgets.filter((widget) => widget.key !== next.widgetKey),
-						{
-							key: next.widgetKey,
-							lines,
-							placement: next.widgetPlacement ?? "belowEditor",
-						},
+						{ key: next.widgetKey, lines, placement: next.widgetPlacement ?? "belowEditor" },
 					];
 				}
 				return { frames, widgets };
@@ -1005,21 +1011,33 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			if (!componentId || typeof control !== "object" || control === null) return;
 			const kind = (control as { kind?: unknown }).kind;
 			const enabled = (control as { enabled?: unknown }).enabled === true;
-			if (kind === "mouse-scroll-tracking") {
-				set((state) => ({
+			if (kind !== "mouse-scroll-tracking" && kind !== "autowrap") return;
+			set((state) => {
+				const existing = state.frames.find((frame) => frame.componentId === componentId);
+				if (!existing) {
+					const pending = state.pendingTerminalControls[componentId] ?? {};
+					return {
+						pendingTerminalControls: {
+							...state.pendingTerminalControls,
+							[componentId]: {
+								...pending,
+								...(kind === "mouse-scroll-tracking"
+									? { mouseScrollTracking: enabled }
+									: { terminalAutowrap: enabled }),
+							},
+						},
+					};
+				}
+				return {
 					frames: state.frames.map((frame) =>
-						frame.componentId === componentId ? { ...frame, mouseScrollTracking: enabled } : frame,
+						frame.componentId === componentId
+							? kind === "mouse-scroll-tracking"
+								? { ...frame, mouseScrollTracking: enabled }
+								: { ...frame, terminalAutowrap: enabled }
+							: frame,
 					),
-				}));
-				return;
-			}
-			if (kind === "autowrap") {
-				set((state) => ({
-					frames: state.frames.map((frame) =>
-						frame.componentId === componentId ? { ...frame, terminalAutowrap: enabled } : frame,
-					),
-				}));
-			}
+				};
+			});
 			return;
 		}
 		if (type === "engine_custom_close" || type === "engine_custom_done") {
@@ -1027,8 +1045,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			if (!componentId) return;
 			set((state) => {
 				const closing = state.frames.find((frame) => frame.componentId === componentId);
+				const pendingTerminalControls = { ...state.pendingTerminalControls };
+				delete pendingTerminalControls[componentId];
 				return {
 					frames: state.frames.filter((frame) => frame.componentId !== componentId),
+					pendingTerminalControls,
 					widgets: closing?.widgetKey
 						? state.widgets.filter((widget) => widget.key !== closing.widgetKey)
 						: state.widgets,
