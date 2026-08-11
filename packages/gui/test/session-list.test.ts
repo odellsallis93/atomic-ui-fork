@@ -10,6 +10,15 @@ test("defaultSessionDirForCwd encodes cwd under the agent sessions root", () => 
 	assert.equal(dir, "/tmp/agent-home/sessions/--tmp-demo project--");
 });
 
+test("coding-agent directory overrides legacy agent directory", () => {
+	const dir = defaultSessionDirForCwd("/tmp/demo", {
+		ATOMIC_CODING_AGENT_DIR: "/tmp/coding-agent-home",
+		ATOMIC_AGENT_DIR: "/tmp/legacy-agent-home",
+		PI_CODING_AGENT_DIR: "/tmp/pi-agent-home",
+	});
+	assert.equal(dir, "/tmp/coding-agent-home/sessions/--tmp-demo--");
+});
+
 test("listSessions skips internal workflow sessions and sorts by modified", async () => {
 	const root = mkdtempSync(join(tmpdir(), "atomic-gui-sessions-"));
 	const sessionDir = join(root, "sessions", "--workspace--");

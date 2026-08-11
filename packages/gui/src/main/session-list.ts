@@ -5,7 +5,11 @@ import { join, resolve } from "node:path";
 import type { SessionListItem } from "../shared/ipc.ts";
 
 function agentDir(env: NodeJS.ProcessEnv = process.env): string {
-	const override = env.ATOMIC_AGENT_DIR?.trim() || env.PI_AGENT_DIR?.trim();
+	const override =
+		env.ATOMIC_CODING_AGENT_DIR?.trim() ||
+		env.PI_CODING_AGENT_DIR?.trim() ||
+		env.ATOMIC_AGENT_DIR?.trim() ||
+		env.PI_AGENT_DIR?.trim();
 	if (override) return resolve(override);
 	return join(homedir(), ".atomic", "agent");
 }

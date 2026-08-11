@@ -154,6 +154,7 @@ export function App() {
 	const [attachedImages, setAttachedImages] = useState<PromptImage[]>([]);
 	const [forkMessages, setForkMessages] = useState<ForkMessageInfo[]>([]);
 	const [compacting, setCompacting] = useState(false);
+	const [composerFocusRequest, setComposerFocusRequest] = useState(0);
 	const attachedImagesRef = useRef<PromptImage[]>(attachedImages);
 	const pendingImageReads = useRef<Set<Promise<void>>>(new Set());
 	const submitGate = useRef(createSubmitGate());
@@ -267,6 +268,10 @@ export function App() {
 		await refreshTree();
 		setModal("tree");
 	}, [refreshTree, setModal]);
+
+	const focusComposer = useCallback((): void => {
+		window.requestAnimationFrame(() => setComposerFocusRequest((request) => request + 1));
+	}, []);
 
 	const openSettings = useCallback(async (): Promise<void> => {
 		if (!hasGuiApi()) return;
@@ -657,6 +662,7 @@ export function App() {
 					widgets={widgets}
 					images={attachedImages}
 					keybindings={keybindings}
+					focusRequest={composerFocusRequest}
 					onChange={setComposerText}
 					onSubmit={(behavior, message) => void submit(behavior, message)}
 					onAbort={(restoreQueue) => void abort(restoreQueue)}
@@ -905,6 +911,7 @@ export function App() {
 								resetTranscript();
 								await refreshSessionView();
 								setModal("none");
+								focusComposer();
 								void refreshMetadata();
 							}
 						})();

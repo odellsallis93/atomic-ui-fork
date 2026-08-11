@@ -41,6 +41,7 @@ export function Composer(props: {
 	widgets: WidgetItem[];
 	images: PromptImage[];
 	keybindings: KeybindingConfig;
+	focusRequest?: number;
 	onChange: (value: string) => void;
 	onSubmit: (behavior?: "steer" | "followUp", message?: string) => void;
 	onAbort: (restoreQueue: boolean) => void;
@@ -171,6 +172,9 @@ export function Composer(props: {
 		if (view && view.state.doc.toString() !== props.value)
 			view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: props.value } });
 	}, [props.value]);
+	useEffect(() => {
+		if (props.focusRequest) viewRef.current?.focus();
+	}, [props.focusRequest]);
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
 			if (!(event.target as HTMLElement | null)?.closest(".composer-editor")) return;

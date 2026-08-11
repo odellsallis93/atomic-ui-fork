@@ -1,19 +1,15 @@
 # Electron E2E harness
 
-`test/electron-phase2.e2e.test.ts` builds then launches `out/main/index.js` with Playwright's Electron launcher. It asserts renderer-visible ready state and CodeMirror focus in the sandboxed Electron host.
+`test/electron-phase2.e2e.test.ts` builds and launches `out/main/index.js` with Playwright Electron. Each run uses a fresh `--user-data-dir`, `ATOMIC_CODING_AGENT_DIR`, cwd, and stateful protocol-v2 fixture; it removes them after the test. Launch has a 15-second bound and checks that the built main exists.
 
-The test uses a temporary protocol-v2 fixture. It is **not** real-engine evidence and does not prove queue, fork/import, tree, or compaction semantics.
+## Renderer-host fixture coverage
 
-## Blocked real-engine Phase 2 proof
+The fixture rejects unknown commands and sends protocol-v2 shapes: `engine_request_accepted`, `queue_update` with `steering`/`followUp`, `get_tree.data.tree` nested `entry`/`children`, and `set_label`.
 
-The attempted real-engine suite used the workspace CLI with a local OpenAI-compatible test peer. Electron launched and reached `ready`, but the engine then reported:
+It proves renderer-visible Electron flows for:
 
-```text
-Error: Failed to load extension ".../packages/subagents/src/extension/index.ts":
-Failed to load extension: Cannot find native binding.
-npm has a bug related to optional dependencies
-```
+- queue chips, pause via Abort, ordinary-submit resume, and dequeue restoration;
+- fork and import, nonempty durable transcript refresh, active-leaf refresh, and durable tree labels;
+- tree navigation restoring CodeMirror focus, keyboard edit/resubmit, and a durable compaction boundary.
 
-The required GUI test command then failed in existing `real-engine-smoke.test.ts`: engine children exited after startup (`TypeError: Cannot read properties of null (reading 'stdin')` in `src/main/engine-client.ts:625`). The real prompt queue could not remain alive long enough to prove dequeue/pause/resume; the same fault blocks durable fork/import, tree navigation/edit-resubmit, and a compaction boundary in the launched renderer.
-
-Do not mark those Phase 2 capabilities as E2E until a runnable real CLI environment exists. The fixture harness remains useful for Electron launch and renderer focus regression coverage.
+This is Electron renderer-host fixture evidence, not real-engine evidence. It does not prove an Atomic CLI/provider running those operations in an Electron window. `real-engine-smoke.test.ts` remains the separate engine-process proof; real-engine Electron E2E remains open. No repo-wide real-engine blocker is claimed here.

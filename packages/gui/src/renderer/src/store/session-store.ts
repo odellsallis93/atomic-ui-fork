@@ -1301,14 +1301,24 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			return;
 		}
 		if (type === "queue_update") {
-			const items = Array.isArray(event.queue) ? event.queue : [];
-			const queue: QueueChip[] = items
-				.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
-				.map((item, index) => ({
-					id: typeof item.id === "string" ? item.id : `queue-${index}`,
-					text: typeof item.message === "string" ? item.message : String(item.text ?? ""),
-					behavior: item.streamingBehavior === "followUp" ? "followUp" : "steer",
-				}));
+			const steering = Array.isArray(event.steering) ? event.steering : [];
+			const followUp = Array.isArray(event.followUp) ? event.followUp : [];
+			const queue: QueueChip[] = [
+				...steering
+					.filter((item): item is string => typeof item === "string")
+					.map((text, index) => ({
+						id: `steer-${index}`,
+						text,
+						behavior: "steer" as const,
+					})),
+				...followUp
+					.filter((item): item is string => typeof item === "string")
+					.map((text, index) => ({
+						id: `follow-up-${index}`,
+						text,
+						behavior: "followUp" as const,
+					})),
+			];
 			set({ queue });
 			return;
 		}

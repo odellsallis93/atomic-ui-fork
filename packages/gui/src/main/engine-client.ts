@@ -115,12 +115,16 @@ export class EngineClient {
 		}
 
 		const child = this.child;
+		let failReady: ((error: Error) => void) | undefined;
 		child.stderr?.on("data", (chunk: Buffer) => {
 			process.stderr.write(chunk);
 		});
 		child.once("exit", (code, signal) => {
+			const error = new Error(`Engine exited (code=${code}, signal=${signal})`);
+			failReady?.(error);
+			failReady = undefined;
 			for (const [, pending] of this.pending) {
-				pending.reject(new Error(`Engine exited (code=${code}, signal=${signal})`));
+				pending.reject(error);
 			}
 			this.pending.clear();
 			this.cleanupBootstrap();
@@ -130,7 +134,7 @@ export class EngineClient {
 			if (this.status.state !== "stopped") {
 				this.setStatus({
 					state: "error",
-					error: `Engine exited (code=${code}, signal=${signal})`,
+					error: error.message,
 					cliPath: cli.cliPath || cli.runtimeExecutable,
 				});
 			}
@@ -138,14 +142,20 @@ export class EngineClient {
 
 		const ready = new Promise<EngineStatus>((resolve, reject) => {
 			const timeout = setTimeout(() => {
+				failReady = undefined;
 				reject(new Error("Timed out waiting for engine_ready"));
 			}, 60_000);
+			failReady = (error) => {
+				clearTimeout(timeout);
+				reject(error);
+			};
 			this.stopReading = attachJsonlLineReader(child.stdout!, (line) => {
 				this.options.onRawLine?.(line);
 				const readyMsg = parseEngineReady(line);
 				if (readyMsg) {
 					if (readyMsg.protocolVersion !== INTERACTIVE_ENGINE_PROTOCOL_VERSION) {
 						clearTimeout(timeout);
+						failReady = undefined;
 						reject(
 							new Error(
 								`Engine protocol ${readyMsg.protocolVersion} incompatible with host ${INTERACTIVE_ENGINE_PROTOCOL_VERSION}`,
@@ -163,21 +173,21 @@ export class EngineClient {
 					};
 					this.setStatus(next);
 					clearTimeout(timeout);
+					failReady = undefined;
 					resolve(next);
 					return;
 				}
 				this.handleLine(line);
 			});
-			child.once("error", (error) => {
-				clearTimeout(timeout);
-				reject(error);
-			});
+			child.once("error", (error) => failReady?.(error));
 		});
 
 		try {
-			const status = await ready;
+			await ready;
 			await this.refreshState().catch(() => undefined);
-			return this.getStatus().state === "ready" ? this.getStatus() : status;
+			const current = this.getStatus();
+			if (current.state === "ready") return current;
+			throw new Error(current.error ?? "Engine stopped before startup completed");
 		} catch (error) {
 			await this.stop();
 			const message = error instanceof Error ? error.message : String(error);
@@ -233,6 +243,7 @@ export class EngineClient {
 		excludeFromContext = false,
 		requestId = `gui-${++this.requestId}`,
 	): Promise<RpcResult<GuiBashResult>> {
+		if (!this.child?.stdin || this.status.state !== "ready") return { ok: false, error: "Engine is not ready" };
 		const result = await this.request({ type: "bash", command, excludeFromContext, id: requestId });
 		const data =
 			typeof result.data === "object" && result.data !== null
@@ -606,6 +617,8 @@ export class EngineClient {
 		command: { id: string; type: string; [key: string]: unknown },
 		timeoutMs = 15_000,
 	): Promise<RpcResult> {
+		const stdin = this.child?.stdin;
+		if (!stdin) return Promise.reject(new Error("Engine is not ready"));
 		return new Promise<RpcResult>((resolve, reject) => {
 			const timer = setTimeout(() => {
 				this.pending.delete(command.id);
@@ -622,7 +635,7 @@ export class EngineClient {
 				},
 			});
 			try {
-				this.child!.stdin!.write(serializeJsonLine(command));
+				stdin.write(serializeJsonLine(command));
 			} catch (error) {
 				clearTimeout(timer);
 				this.pending.delete(command.id);
