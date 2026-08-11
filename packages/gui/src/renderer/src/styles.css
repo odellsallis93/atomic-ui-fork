@@ -25,6 +25,18 @@
 	box-sizing: border-box;
 }
 
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
 html,
 body,
 #root {
@@ -244,6 +256,9 @@ input {
 	flex-wrap: wrap;
 	gap: 0.35rem;
 	padding: 0.4rem 0.45rem 0;
+	margin: 0;
+	border: 0;
+	min-inline-size: 0;
 }
 
 .attachment-chip {

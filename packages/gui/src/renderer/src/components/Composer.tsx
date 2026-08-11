@@ -263,6 +263,8 @@ export function Composer(props: {
 				</div>
 			) : null}
 			<div className="composer">
+				{/* Drop target is a non-focusable region; keyboard attach uses paste on the editor. */}
+				{/* biome-ignore lint/a11y/noStaticElementInteractions: file drag-and-drop hit target around the editor */}
 				<div
 					className={`composer-main${draggingImages ? " composer-drop-target" : ""}`}
 					onDragEnter={(event) => {
@@ -280,7 +282,8 @@ export function Composer(props: {
 					}}
 				>
 					{props.images.length > 0 ? (
-						<div className="attachment-row" aria-label="Attached images">
+						<fieldset className="attachment-row">
+							<legend className="sr-only">Attached images</legend>
 							{props.images.map((image, index) => (
 								<button
 									key={`${image.mimeType}-${image.data.slice(0, 32)}`}
@@ -292,7 +295,7 @@ export function Composer(props: {
 									image {index + 1} ×
 								</button>
 							))}
-						</div>
+						</fieldset>
 					) : null}
 					<Autocomplete items={items} activeIndex={safeActiveIndex} onPick={applyCompletion} />
 					<div
