@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ExtensionUiResponse, PromptImage } from "../../shared/ipc";
+import type { ExtensionUiResponse, ForkMessageInfo, PromptImage } from "../../shared/ipc";
 import { AuthPanel } from "./components/AuthPanel";
 import { ChromeFrame } from "./components/ChromeFrame";
 import { Composer } from "./components/Composer";
@@ -152,6 +152,8 @@ export function App() {
 	const setExtensionShortcuts = useSessionStore((s) => s.setExtensionShortcuts);
 	const pendingSessionPath = useRef<string | undefined>(undefined);
 	const [attachedImages, setAttachedImages] = useState<PromptImage[]>([]);
+	const [forkMessages, setForkMessages] = useState<ForkMessageInfo[]>([]);
+	const [compacting, setCompacting] = useState(false);
 	const attachedImagesRef = useRef<PromptImage[]>(attachedImages);
 	const pendingImageReads = useRef<Set<Promise<void>>>(new Set());
 	const submitGate = useRef(createSubmitGate());
@@ -189,6 +191,20 @@ export function App() {
 		}
 		hydrateTranscript(result.data.entries, result.data.leafId);
 	}, [hydrateTranscript, setErrorBanner]);
+
+	const refreshTree = useCallback(async (): Promise<void> => {
+		if (!hasGuiApi()) return;
+		const result = await window.atomicGui.getTree();
+		if (!result.ok || !result.data) {
+			setErrorBanner(result.error ?? "Failed to load session tree");
+			return;
+		}
+		setTree(result.data.nodes, result.data.leafId);
+	}, [setErrorBanner, setTree]);
+
+	const refreshSessionView = useCallback(async (): Promise<void> => {
+		await Promise.all([refreshTranscript(), refreshTree()]);
+	}, [refreshTranscript, refreshTree]);
 
 	useEffect(() => {
 		if (!hasGuiApi()) return;
@@ -238,21 +254,19 @@ export function App() {
 
 	const openSessions = useCallback(async (): Promise<void> => {
 		if (!hasGuiApi()) return;
-		const listed = await window.atomicGui.listSessions({ cwd: status.cwd });
+		const [listed, forkResult] = await Promise.all([
+			window.atomicGui.listSessions({ cwd: status.cwd }),
+			window.atomicGui.getForkMessages(),
+		]);
 		setSessions(listed);
+		setForkMessages(forkResult.ok && forkResult.data ? forkResult.data : []);
 		setModal("sessions");
 	}, [setModal, setSessions, status.cwd]);
 
 	const openTree = useCallback(async (): Promise<void> => {
-		if (!hasGuiApi()) return;
-		const result = await window.atomicGui.getTree();
-		if (!result.ok || !result.data) {
-			setErrorBanner(result.error ?? "Failed to load session tree");
-			return;
-		}
-		setTree(result.data.nodes, result.data.leafId);
+		await refreshTree();
 		setModal("tree");
-	}, [setErrorBanner, setModal, setTree]);
+	}, [refreshTree, setModal]);
 
 	const openSettings = useCallback(async (): Promise<void> => {
 		if (!hasGuiApi()) return;
@@ -283,7 +297,7 @@ export function App() {
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent): void => {
-			if (!hasGuiApi() || status.state !== "ready") return;
+			if (!hasGuiApi() || status.state !== "ready" || modal !== "none") return;
 			if ((event.target as HTMLElement | null)?.closest(".composer-editor")) return;
 			const configuredAction = actionForKey(keybindings, keyboardShortcut(event) ?? "", "transcript");
 			if (configuredAction === "app.model.select") {
@@ -351,6 +365,7 @@ export function App() {
 		openModels,
 		openSettings,
 		refreshMetadata,
+		modal,
 		setErrorBanner,
 		status.state,
 		toggleEntryExpanded,
@@ -481,16 +496,27 @@ export function App() {
 		setComposerText(restoreFailedDraft(queued.join("\n\n"), useSessionStore.getState().composerText));
 	};
 
-	const abort = async (restoreQueue: boolean): Promise<void> => {
-		if (!hasGuiApi()) return;
+	const abort = async (restoreQueue = false): Promise<boolean> => {
+		if (!hasGuiApi()) return false;
 		const paused = await window.atomicGui.runEngineCommand({ type: "pause_queued_messages" });
 		if (!paused.ok) {
 			setErrorBanner(paused.error ?? "Could not pause queued messages");
-			return;
+			return false;
 		}
 		if (restoreQueue) await dequeue();
 		const result = await window.atomicGui.abort();
-		if (!result.ok) setErrorBanner(result.error ?? "Abort failed");
+		if (!result.ok) {
+			setErrorBanner(result.error ?? "Abort failed");
+			return false;
+		}
+		for (let attempt = 0; attempt < 100 && useSessionStore.getState().working; attempt += 1) {
+			await new Promise((resolve) => window.setTimeout(resolve, 50));
+		}
+		if (useSessionStore.getState().working) {
+			setErrorBanner("The current response has not settled yet.");
+			return false;
+		}
+		return true;
 	};
 
 	const clear = (): void => {
@@ -551,15 +577,21 @@ export function App() {
 					<button
 						type="button"
 						className="btn"
-						disabled={!ready}
+						disabled={!ready || working || compacting}
 						onClick={() => {
-							void window.atomicGui.compact().then((result) => {
-								if (!result.ok) setErrorBanner(result.error);
-								else void refreshMetadata();
-							});
+							void (async () => {
+								setCompacting(true);
+								try {
+									const result = await window.atomicGui.compact();
+									if (!result.ok) setErrorBanner(result.error);
+									else await refreshSessionView();
+								} finally {
+									setCompacting(false);
+								}
+							})();
 						}}
 					>
-						Compact
+						{compacting ? "Compacting…" : "Compact"}
 					</button>
 					<button type="button" className="btn" disabled={!ready} onClick={() => void openAuth()}>
 						Auth
@@ -734,6 +766,7 @@ export function App() {
 			{modal === "sessions" ? (
 				<SessionPicker
 					sessions={sessions}
+					forkMessages={forkMessages}
 					currentPath={status.sessionFile}
 					onClose={() => setModal("none")}
 					onRefresh={(options) => {
@@ -745,6 +778,30 @@ export function App() {
 							else {
 								resetTranscript();
 								void refreshTranscript();
+								setModal("none");
+								void refreshMetadata();
+							}
+						});
+					}}
+					onFork={(entryId) => {
+						void window.atomicGui.forkSession(entryId).then((result) => {
+							if (!result.ok) setErrorBanner(result.error);
+							else if (!result.data?.cancelled) {
+								if (result.data?.text) setComposerText(result.data.text);
+								resetTranscript();
+								void refreshTranscript();
+								setModal("none");
+								void refreshMetadata();
+							}
+						});
+					}}
+					onImport={(inputPath) => {
+						if (!window.confirm(`Import and replace the active session with ${inputPath}?`)) return;
+						void window.atomicGui.importSession(inputPath).then((result) => {
+							if (!result.ok) setErrorBanner(result.error);
+							else if (!result.data?.cancelled) {
+								resetTranscript();
+								void refreshSessionView();
 								setModal("none");
 								void refreshMetadata();
 							}
@@ -837,15 +894,25 @@ export function App() {
 					leafId={treeLeafId}
 					onClose={() => setModal("none")}
 					onNavigate={(entryId) => {
-						void window.atomicGui.navigateTree(entryId).then((result) => {
+						void (async () => {
+							if (useSessionStore.getState().working && !(await abort())) return;
+							const result = await window.atomicGui.navigateTree(entryId);
 							if (!result.ok) setErrorBanner(result.error);
-							else {
-								if (result.data?.editorText) setComposerText(result.data.editorText);
+							else if (!result.data?.cancelled) {
+								const editorText = result.data?.editorText;
+								if (editorText !== undefined && !useSessionStore.getState().composerText.trim())
+									setComposerText(editorText);
 								resetTranscript();
-								void refreshTranscript();
+								await refreshSessionView();
 								setModal("none");
 								void refreshMetadata();
 							}
+						})();
+					}}
+					onLabel={(entryId, label) => {
+						void window.atomicGui.setTreeLabel(entryId, label).then(async (result) => {
+							if (!result.ok) setErrorBanner(result.error);
+							else await refreshSessionView();
 						});
 					}}
 				/>

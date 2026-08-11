@@ -94,6 +94,18 @@ function registerIpc(): void {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.cloneSession();
 	});
+	ipcMain.handle(IPC_CHANNELS.forkSession, async (_event, entryId: string) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.forkSession(entryId);
+	});
+	ipcMain.handle(IPC_CHANNELS.getForkMessages, async () => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.getForkMessages();
+	});
+	ipcMain.handle(IPC_CHANNELS.importSession, async (_event, inputPath: string, cwdOverride?: string) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.importSession(inputPath, cwdOverride);
+	});
 	ipcMain.handle(IPC_CHANNELS.exportHtml, async (_event, outputPath?: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.exportHtml(outputPath);
@@ -106,9 +118,20 @@ function registerIpc(): void {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getTree();
 	});
-	ipcMain.handle(IPC_CHANNELS.navigateTree, async (_event, targetId: string) => {
+	ipcMain.handle(
+		IPC_CHANNELS.navigateTree,
+		async (
+			_event,
+			targetId: string,
+			options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
+		) => {
+			if (!supervisor) return { ok: false, error: "No window" };
+			return await supervisor.navigateTree(targetId, options);
+		},
+	);
+	ipcMain.handle(IPC_CHANNELS.setTreeLabel, async (_event, entryId: string, label?: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
-		return await supervisor.navigateTree(targetId);
+		return await supervisor.setTreeLabel(entryId, label);
 	});
 	ipcMain.handle(IPC_CHANNELS.getCommands, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };

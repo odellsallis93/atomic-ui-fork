@@ -53,7 +53,7 @@ export interface GuiBashResult {
 export interface SlashCommandInfo {
 	name: string;
 	description?: string;
-	source: "extension" | "prompt" | "skill" | "builtin";
+	source: "extension" | "prompt" | "skill";
 	hasArgumentCompletions?: boolean;
 }
 
@@ -117,6 +117,18 @@ export interface SessionTreeNodeInfo {
 	summary: string;
 	label?: string;
 	children: SessionTreeNodeInfo[];
+}
+
+export interface TreeNavigationOptions {
+	summarize?: boolean;
+	customInstructions?: string;
+	replaceInstructions?: boolean;
+	label?: string;
+}
+
+export interface ForkMessageInfo {
+	entryId: string;
+	text: string;
 }
 
 export interface ThemeSummary {
@@ -279,10 +291,17 @@ export interface GuiHostApi {
 	switchSession(sessionPath: string): Promise<PromptResult>;
 	setSessionName(name: string): Promise<PromptResult>;
 	cloneSession(): Promise<PromptResult>;
+	forkSession(entryId: string): Promise<RpcResult<{ text?: string; cancelled: boolean }>>;
+	getForkMessages(): Promise<RpcResult<ForkMessageInfo[]>>;
+	importSession(inputPath: string, cwdOverride?: string): Promise<RpcResult<{ cancelled: boolean }>>;
 	exportHtml(outputPath?: string): Promise<RpcResult<{ path: string }>>;
 	compact(): Promise<PromptResult>;
 	getTree(): Promise<RpcResult<{ nodes: SessionTreeNodeInfo[]; leafId: string | null }>>;
-	navigateTree(targetId: string): Promise<RpcResult<{ cancelled: boolean; editorText?: string }>>;
+	navigateTree(
+		targetId: string,
+		options?: TreeNavigationOptions,
+	): Promise<RpcResult<{ cancelled: boolean; editorText?: string }>>;
+	setTreeLabel(entryId: string, label?: string): Promise<PromptResult>;
 	getCommands(): Promise<RpcResult<SlashCommandInfo[]>>;
 	getCommandCompletions(
 		commandName: string,
@@ -335,10 +354,14 @@ export const IPC_CHANNELS = {
 	switchSession: "gui:switch-session",
 	setSessionName: "gui:set-session-name",
 	cloneSession: "gui:clone-session",
+	forkSession: "gui:fork-session",
+	getForkMessages: "gui:get-fork-messages",
+	importSession: "gui:import-session",
 	exportHtml: "gui:export-html",
 	compact: "gui:compact",
 	getTree: "gui:get-tree",
 	navigateTree: "gui:navigate-tree",
+	setTreeLabel: "gui:set-tree-label",
 	getCommands: "gui:get-commands",
 	getCommandCompletions: "gui:get-command-completions",
 	getEntries: "gui:get-entries",

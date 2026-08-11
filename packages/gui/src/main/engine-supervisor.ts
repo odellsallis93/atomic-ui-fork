@@ -90,6 +90,21 @@ export class EngineSupervisor {
 		return await this.client.cloneSession();
 	}
 
+	async forkSession(entryId: string) {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.forkSession(entryId);
+	}
+
+	async getForkMessages() {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.getForkMessages();
+	}
+
+	async importSession(inputPath: string, cwdOverride?: string) {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.importSession(inputPath, cwdOverride);
+	}
+
 	async exportHtml(outputPath?: string) {
 		if (!this.client) return { ok: false as const, error: "Engine is not started" };
 		return await this.client.exportHtml(outputPath);
@@ -105,9 +120,17 @@ export class EngineSupervisor {
 		return await this.client.getTree();
 	}
 
-	async navigateTree(targetId: string) {
+	async navigateTree(
+		targetId: string,
+		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
+	) {
 		if (!this.client) return { ok: false as const, error: "Engine is not started" };
-		return await this.client.navigateTree(targetId);
+		return await this.client.navigateTree(targetId, options);
+	}
+
+	async setTreeLabel(entryId: string, label?: string): Promise<RpcResult> {
+		if (!this.client) return { ok: false, error: "Engine is not started" };
+		return await this.client.setTreeLabel(entryId, label);
 	}
 
 	async getCommands() {

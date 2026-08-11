@@ -20,7 +20,7 @@ Fake-engine unit tests prove host structure only; parity claims require
 | M0 | Done — engine bridge, IPC, event log |
 | M1 | Mostly done — core transcript kinds, footer/usage, working indicator |
 | M2 | Mostly done — composer, `/` + `@`, bash, queue/steer/abort (attachments, full keymap still open) |
-| M3 | Mostly done — resume picker, tree, clone/export/compact (fork/share still open) |
+| M3 | Mostly done — resume picker, tree folds/labels/edit-resubmit, clone/fork/import/export/compact. Share and legacy `/import`/`/atomic` remain explicit exclusions: no permitted runtime inventory route. |
 | M4 | Partial — models, theme loader, auth, trust (full settings/scoped models/onboarding open) |
 | M5 | Partial — dialogs, input forms, ANSI frames + render loop + overlay geometry + kitty key-release + terminal-mode allowlist (chrome swap blocked on §5.3) |
 | M6–M7 | Not started — bundled-extension walkthroughs, CI jobs, packaging |
