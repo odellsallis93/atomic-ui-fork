@@ -3,6 +3,7 @@ import { test } from "vitest";
 import {
 	BASH_IMAGE_WARNING,
 	canSubmit,
+	createSubmitGate,
 	dataUrlToPromptImage,
 	filterImageFiles,
 	isFileDrag,
@@ -149,4 +150,73 @@ test("planSubmit passes attachments through on a normal prompt", () => {
 	const plan = planSubmit("  hello  ", images);
 	assert.deepEqual(plan, { kind: "prompt", message: "hello", images: [pixel] });
 	assert.equal(plan.kind === "prompt" && plan.images, images);
+});
+
+test("createSubmitGate collapses submits that re-enter during an in-flight read", async () => {
+	const gate = createSubmitGate();
+	const sent: string[] = [];
+	let releaseRead: (() => void) | undefined;
+	const pendingRead = new Promise<void>((resolve) => {
+		releaseRead = resolve;
+	});
+	const guardedSubmit = async (message: string): Promise<void> => {
+		if (!gate.begin()) return;
+		try {
+			await pendingRead;
+			sent.push(message);
+		} finally {
+			gate.end();
+		}
+	};
+
+	const runs = [guardedSubmit("first"), guardedSubmit("second"), guardedSubmit("third")];
+	assert.ok(releaseRead);
+	releaseRead();
+	await Promise.all(runs);
+	assert.deepEqual(sent, ["first"]);
+
+	await guardedSubmit("later");
+	assert.deepEqual(sent, ["first", "later"]);
+});
+
+test("createSubmitGate holds the claim until it is released", () => {
+	const gate = createSubmitGate();
+	assert.equal(gate.begin(), true);
+	assert.equal(gate.begin(), false);
+	assert.equal(gate.begin(), false);
+	gate.end();
+	assert.equal(gate.begin(), true);
+});
+
+test("createSubmitGate is released on an early return and on a throw", async () => {
+	const gate = createSubmitGate();
+
+	const earlyReturn = async (): Promise<void> => {
+		if (!gate.begin()) return;
+		try {
+			return;
+		} finally {
+			gate.end();
+		}
+	};
+	await earlyReturn();
+	assert.equal(gate.begin(), true, "gate must be free after an early return");
+	gate.end();
+
+	const throwing = async (): Promise<void> => {
+		if (!gate.begin()) return;
+		try {
+			throw new Error("ipc failed");
+		} finally {
+			gate.end();
+		}
+	};
+	await assert.rejects(throwing(), /ipc failed/);
+	assert.equal(gate.begin(), true, "gate must be free after a throw");
+});
+
+test("createSubmitGate tolerates end() without a matching begin()", () => {
+	const gate = createSubmitGate();
+	gate.end();
+	assert.equal(gate.begin(), true);
 });

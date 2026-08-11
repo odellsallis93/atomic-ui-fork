@@ -110,3 +110,30 @@ export function planSubmit(text: string, images: PromptImage[]): SubmitPlan {
 	}
 	return { kind: "prompt", message, images };
 }
+
+/** One-at-a-time gate for an async handler that can be re-entered before it settles. */
+export interface SubmitGate {
+	/** Claims the gate. Returns false when a submit is already in flight. */
+	begin(): boolean;
+	/** Releases the gate. Safe to call when the gate is not held. */
+	end(): void;
+}
+
+/**
+ * Guards `submit` against re-entry. `submit` awaits in-flight image reads before it clears the
+ * composer, so without this a second Enter during that wait would send the same text twice.
+ * Check-and-set is synchronous, so a handler dispatched in the same tick still sees the claim.
+ */
+export function createSubmitGate(): SubmitGate {
+	let active = false;
+	return {
+		begin: () => {
+			if (active) return false;
+			active = true;
+			return true;
+		},
+		end: () => {
+			active = false;
+		},
+	};
+}
