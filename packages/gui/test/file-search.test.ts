@@ -8,8 +8,10 @@ import { searchFiles } from "../src/main/file-search.ts";
 test("searchFiles finds nested matches and ignores node_modules", async () => {
 	const root = mkdtempSync(join(tmpdir(), "atomic-gui-files-"));
 	mkdirSync(join(root, "src"), { recursive: true });
+	mkdirSync(join(root, "packages", "gui"), { recursive: true });
 	mkdirSync(join(root, "node_modules", "pkg"), { recursive: true });
 	writeFileSync(join(root, "src", "alpha.ts"), "export {};\n");
+	writeFileSync(join(root, "packages", "gui", "index.ts"), "export {};\n");
 	writeFileSync(join(root, "readme.md"), "# hi\n");
 	writeFileSync(join(root, "node_modules", "pkg", "secret.ts"), "export {};\n");
 
@@ -19,4 +21,12 @@ test("searchFiles finds nested matches and ignores node_modules", async () => {
 	const all = await searchFiles(root, "");
 	assert.ok(all.some((item) => item.path === "readme.md"));
 	assert.ok(!all.some((item) => item.path.includes("node_modules")));
+	assert.ok(all.some((item) => item.path === "packages/"));
+});
+
+test("searchFiles completes generic relative path prefixes and directories", async () => {
+	const root = mkdtempSync(join(tmpdir(), "atomic-gui-paths-"));
+	mkdirSync(join(root, "packages", "gui"), { recursive: true });
+	const hits = await searchFiles(root, "./packages/");
+	assert.ok(hits.some((item) => item.path === "./packages/gui/"));
 });

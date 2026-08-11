@@ -52,6 +52,8 @@ export function actionForKey(bindings: KeybindingConfig, key: string, zone: Focu
 					"app.thinking.cycle",
 					"app.thinking.toggle",
 					"app.tools.expand",
+					"tui.input.submit",
+					"tui.input.tab",
 				]
 			: zone === "transcript"
 				? [
@@ -89,4 +91,29 @@ export function isPasteMarker(text: string): boolean {
 
 export function restoreQueuedDraft(queued: readonly string[], current: string): string {
 	return [...queued, ...(current.length > 0 ? [current] : [])].join("\n\n");
+}
+
+/** Keep an unsent expanded draft ahead of text typed while its request was pending. */
+export function restoreFailedDraft(draft: string, current: string): string {
+	if (draft.length === 0) return current;
+	return current.length === 0 ? draft : `${draft}\n\n${current}`;
+}
+
+/** Browser keys use names that differ from the engine keybinding vocabulary. */
+export function keyboardShortcut(
+	event: Pick<KeyboardEvent, "key" | "ctrlKey" | "shiftKey" | "altKey" | "metaKey">,
+): string | undefined {
+	if (["Control", "Alt", "Shift", "Meta"].includes(event.key)) return undefined;
+	const special: Record<string, string> = {
+		ArrowDown: "down",
+		ArrowUp: "up",
+		Enter: "enter",
+		Escape: "escape",
+		Tab: "tab",
+		" ": "space",
+	};
+	const base = special[event.key] ?? event.key.toLowerCase();
+	return [event.ctrlKey && "ctrl", event.shiftKey && "shift", event.altKey && "alt", event.metaKey && "super", base]
+		.filter(Boolean)
+		.join("+");
 }

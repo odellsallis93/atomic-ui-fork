@@ -302,6 +302,10 @@ export class EngineClient {
 		};
 	}
 
+	async runEngineCommand<T = unknown>(command: { type: string; [key: string]: unknown }): Promise<RpcResult<T>> {
+		return await this.command<T>(command);
+	}
+
 	sendEngineCommand(command: { type: string; [key: string]: unknown }): void {
 		if (!this.child?.stdin || this.status.state !== "ready") {
 			throw new Error("Engine is not ready");

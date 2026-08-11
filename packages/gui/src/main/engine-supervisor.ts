@@ -9,6 +9,7 @@ import type {
 } from "../shared/ipc.ts";
 import { IPC_CHANNELS } from "../shared/ipc.ts";
 import { EngineClient } from "./engine-client.ts";
+import { editExternally } from "./external-editor.ts";
 import { searchFiles } from "./file-search.ts";
 import { applyTrustDecision, getTrustOptions, getTrustStatus } from "./project-trust.ts";
 import { listSessions } from "./session-list.ts";
@@ -265,6 +266,15 @@ export class EngineSupervisor {
 
 	cancelInputForm(componentId: string): void {
 		this.client?.sendEngineCommand({ type: "engine_input_form_cancel", componentId });
+	}
+
+	async runEngineCommand<T = unknown>(command: { type: string; [key: string]: unknown }): Promise<RpcResult<T>> {
+		if (!this.client) return { ok: false, error: "Engine is not started" };
+		return await this.client.runEngineCommand<T>(command);
+	}
+
+	async editExternally(text: string) {
+		return await editExternally(text);
 	}
 
 	sendEngineCommand(command: { type: string; [key: string]: unknown }): void {
