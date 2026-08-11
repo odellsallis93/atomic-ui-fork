@@ -96,6 +96,7 @@ export function App() {
 	const usageLabel = useSessionStore((s) => s.usageLabel);
 	const commands = useSessionStore((s) => s.commands);
 	const extensionShortcuts = useSessionStore((s) => s.extensionShortcuts);
+	const keybindings = useSessionStore((s) => s.keybindings);
 	const models = useSessionStore((s) => s.models);
 	const sessions = useSessionStore((s) => s.sessions);
 	const treeNodes = useSessionStore((s) => s.treeNodes);
@@ -366,7 +367,7 @@ export function App() {
 		await window.atomicGui.stopEngine();
 	};
 
-	const submit = async (behavior?: "steer" | "followUp"): Promise<void> => {
+	const submit = async (behavior?: "steer" | "followUp", submittedMessage = composerText): Promise<void> => {
 		if (!hasGuiApi()) return;
 		// One submit at a time: the read-wait below yields, so a second Enter would otherwise
 		// re-enter with the same composer text and send it twice.
@@ -376,7 +377,7 @@ export function App() {
 			while (pendingImageReads.current.size > 0) {
 				await Promise.all([...pendingImageReads.current]);
 			}
-			const plan = planSubmit(composerText, attachedImagesRef.current);
+			const plan = planSubmit(submittedMessage, attachedImagesRef.current);
 			if (plan.kind === "none") return;
 			// Drop any banner from the previous submit so a stale advisory cannot outlive it.
 			setErrorBanner(undefined);
@@ -407,6 +408,7 @@ export function App() {
 				return;
 			}
 
+			if (!behavior) await window.atomicGui.sendEngineCommand({ type: "resume_queued_messages" });
 			setAttached([]);
 			const result = await window.atomicGui.prompt({
 				message: plan.message,
@@ -441,8 +443,17 @@ export function App() {
 		[setAttached, setErrorBanner],
 	);
 
-	const abort = async (): Promise<void> => {
+	const dequeue = (): void => {
+		const queued = useSessionStore.getState().queue.map((chip) => chip.text);
+		if (queued.length === 0) return;
+		setComposerText([...queued, composerText].filter((text) => text.length > 0).join("\n\n"));
+		void window.atomicGui.sendEngineCommand({ type: "clear_queue" });
+	};
+
+	const abort = async (restoreQueue: boolean): Promise<void> => {
 		if (!hasGuiApi()) return;
+		await window.atomicGui.sendEngineCommand({ type: "pause_queued_messages" });
+		if (restoreQueue) dequeue();
 		const result = await window.atomicGui.abort();
 		if (!result.ok) setErrorBanner(result.error ?? "Abort failed");
 	};
@@ -565,9 +576,12 @@ export function App() {
 					commands={commands}
 					widgets={widgets}
 					images={attachedImages}
+					keybindings={keybindings}
 					onChange={setComposerText}
-					onSubmit={(behavior) => void submit(behavior)}
-					onAbort={() => void abort()}
+					onSubmit={(behavior, message) => void submit(behavior, message)}
+					onAbort={(restoreQueue) => void abort(restoreQueue)}
+					onDequeue={dequeue}
+					onExternalEditor={() => setErrorBanner("External editor is unavailable in the GUI host.")}
 					onHistoryUp={() => {
 						historyUp();
 					}}

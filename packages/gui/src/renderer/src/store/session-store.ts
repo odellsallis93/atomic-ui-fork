@@ -134,6 +134,7 @@ export interface SessionState {
 	toasts: ToastItem[];
 	commands: SlashCommandInfo[];
 	extensionShortcuts: ExtensionShortcutInfo[];
+	keybindings: Record<string, string | string[]>;
 	models: ModelInfo[];
 	sessions: SessionListItem[];
 	treeNodes: SessionTreeNodeInfo[];
@@ -171,6 +172,7 @@ export interface SessionState {
 	toggleEntryExpanded: (id: string) => void;
 	setCommands: (commands: SlashCommandInfo[]) => void;
 	setExtensionShortcuts: (shortcuts: ExtensionShortcutInfo[]) => void;
+	setKeybindings: (keybindings: Record<string, string | string[]>) => void;
 	setModels: (models: ModelInfo[]) => void;
 	setSessions: (sessions: SessionListItem[]) => void;
 	setTree: (nodes: SessionTreeNodeInfo[], leafId: string | null) => void;
@@ -511,6 +513,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	toasts: [],
 	commands: [],
 	extensionShortcuts: [],
+	keybindings: {},
 	models: [],
 	sessions: [],
 	treeNodes: [],
@@ -582,6 +585,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		})),
 	setCommands: (commands) => set({ commands }),
 	setExtensionShortcuts: (extensionShortcuts) => set({ extensionShortcuts }),
+	setKeybindings: (keybindings) => set({ keybindings }),
 	setModels: (models) => set({ models }),
 	setSessions: (sessions) => set({ sessions }),
 	setTree: (nodes, leafId) => set({ treeNodes: nodes, treeLeafId: leafId }),
@@ -721,6 +725,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			) {
 				return;
 			}
+			const effective = (state as { effectiveBindings?: unknown }).effectiveBindings;
+			const keybindings: Record<string, string | string[]> = {};
+			if (typeof effective === "object" && effective !== null) {
+				for (const [action, keys] of Object.entries(effective)) {
+					if (typeof keys === "string" || (Array.isArray(keys) && keys.every((key) => typeof key === "string"))) {
+						keybindings[action] = keys as string | string[];
+					}
+				}
+			}
 			const extensionShortcuts = (state as { shortcuts: unknown[] }).shortcuts
 				.filter(
 					(shortcut): shortcut is { key: string; description?: string } =>
@@ -732,7 +745,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					key: shortcut.key,
 					description: typeof shortcut.description === "string" ? shortcut.description : undefined,
 				}));
-			set({ extensionShortcuts });
+			set({ extensionShortcuts, keybindings });
+			return;
 			return;
 		}
 		if (type === "engine_input_form_open") {
