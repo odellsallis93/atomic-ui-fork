@@ -381,6 +381,20 @@ test("session switch hydration replaces prior transcript and clears session-scop
 	assert.equal(state.widgets.length, 0, "hydration must not retain a prior session widget");
 });
 
+test("opening a focused overlay unfocuses the previously focused overlay", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({ type: "engine_custom_open", componentId: "first", overlay: true });
+	ingestEvent({ type: "engine_custom_open", componentId: "second", overlay: true });
+
+	assert.deepEqual(
+		useSessionStore.getState().frames.map((frame) => ({ componentId: frame.componentId, focused: frame.focused })),
+		[
+			{ componentId: "first", focused: false },
+			{ componentId: "second", focused: true },
+		],
+	);
+});
+
 test("same-session hydration retains a live custom widget frame", () => {
 	const { hydrateTranscript, ingestEvent } = useSessionStore.getState();
 	ingestEvent({

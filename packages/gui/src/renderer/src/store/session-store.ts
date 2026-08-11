@@ -894,7 +894,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				terminalAutowrap: pendingTerminalControl?.terminalAutowrap ?? true,
 			};
 			set((state) => {
-				const frames = [...state.frames.filter((item) => item.componentId !== componentId), frame];
+				const frames = [
+					...state.frames
+						.filter((item) => item.componentId !== componentId)
+						.map((item) => (frame.focused ? { ...item, focused: false } : item)),
+					frame,
+				];
 				const pendingTerminalControls = { ...state.pendingTerminalControls };
 				delete pendingTerminalControls[componentId];
 				let widgets = state.widgets;

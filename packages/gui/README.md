@@ -69,12 +69,12 @@ it needs and uses no secrets.
 
 ## Phase 5 evidence (2026-08-11)
 
-After a clean `npm ci --ignore-scripts` on this branch, the native binding
-build, `npm run test:gui` (24 files, 125 tests), GUI typecheck, and GUI build
-all passed locally. The suite includes six real-engine lifecycle/session smoke
-tests and 13 deterministic Electron renderer-host tests; it does not claim
-live provider, packaging, or cross-platform parity. The remote Linux workflow
-is the CI gate; no macOS or Windows result is claimed by this slice.
+After the Phase 5 checks on 2026-08-11, the native binding build,
+`npm run test:gui` (25 files, 127 tests), GUI typecheck, and GUI build all
+passed locally. The suite includes six real-engine lifecycle/session smoke tests
+and 13 deterministic Electron renderer-host tests; it does not claim live
+provider, packaging, or cross-platform parity. The remote Linux workflow is the
+CI gate; no macOS or Windows result is claimed by this slice.
 
 ## Recovery
 

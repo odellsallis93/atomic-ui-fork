@@ -65,7 +65,7 @@ export class EngineClient {
 	private requestId = 0;
 	private readonly pending = new Map<
 		string,
-		{ resolve: (value: RpcResult) => void; reject: (error: Error) => void }
+		{ resolve: (value: RpcResult) => void; reject: (error: Error) => void; accepted: boolean }
 	>();
 	private readonly options: EngineClientOptions;
 
@@ -342,9 +342,11 @@ export class EngineClient {
 			},
 		};
 	}
-
-	async runEngineCommand<T = unknown>(command: { type: string; [key: string]: unknown }): Promise<RpcResult<T>> {
-		return await this.command<T>(command);
+	async runEngineCommand<T = unknown>(
+		command: { type: string; [key: string]: unknown },
+		timeoutMs?: number,
+	): Promise<RpcResult<T>> {
+		return await this.command<T>(command, timeoutMs);
 	}
 
 	async setTreeLabel(entryId: string, label?: string): Promise<RpcResult> {
@@ -638,12 +640,12 @@ export class EngineClient {
 		}>({ type: "get_state" });
 		if (!result.ok) return { ok: false, error: result.error };
 		const model = result.data?.model;
-		const modelLabel = model ? `${model.provider ?? "?"}/${model.id ?? model.name ?? "?"}` : this.status.modelLabel;
+		const modelLabel = model ? `${model.provider ?? "?"}/${model.id ?? model.name ?? "?"}` : undefined;
 		this.setStatus({
 			...this.status,
-			sessionFile: result.data?.sessionFile ?? this.status.sessionFile,
-			sessionName: result.data?.sessionName ?? this.status.sessionName,
-			thinkingLevel: result.data?.thinkingLevel ?? this.status.thinkingLevel,
+			sessionFile: result.data?.sessionFile,
+			sessionName: result.data?.sessionName,
+			thinkingLevel: result.data?.thinkingLevel,
 			modelLabel,
 		});
 		return { ok: true, data: this.getStatus() };
@@ -681,18 +683,24 @@ export class EngineClient {
 		return new Promise<RpcResult>((resolve, reject) => {
 			const timer = setTimeout(() => {
 				this.pending.delete(command.id);
-				resolve({ ok: false, error: `Timed out waiting for ${command.type}` });
+				resolve({
+					ok: false,
+					error: `Timed out waiting for ${command.type}`,
+					...(pending.accepted ? { requestAccepted: true } : {}),
+				});
 			}, timeoutMs);
-			this.pending.set(command.id, {
-				resolve: (value) => {
+			const pending = {
+				resolve: (value: RpcResult) => {
 					clearTimeout(timer);
 					resolve(value);
 				},
-				reject: (error) => {
+				reject: (error: Error) => {
 					clearTimeout(timer);
 					reject(error);
 				},
-			});
+				accepted: false,
+			};
+			this.pending.set(command.id, pending);
 			try {
 				stdin.write(serializeJsonLine(command));
 			} catch (error) {
@@ -720,6 +728,13 @@ export class EngineClient {
 					: { error: typeof value.error === "string" ? value.error : "Request failed" }),
 			});
 			return;
+		}
+		if (isEngineMessage(value) && value.type === "engine_request_accepted") {
+			const requestId = (value as { requestId?: unknown }).requestId;
+			if (typeof requestId === "string") {
+				const pending = this.pending.get(requestId);
+				if (pending) pending.accepted = true;
+			}
 		}
 		if (isExtensionUiRequest(value)) {
 			// Runtime shape is validated loosely; known methods are narrowed by consumers.

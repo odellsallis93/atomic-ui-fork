@@ -27,15 +27,17 @@ process.stdout.write(JSON.stringify({
   pid: process.pid,
 }) + "\\n");
 const rl = createInterface({ input: process.stdin });
+let stateCalls = 0;
 rl.on("line", (line) => {
   const msg = JSON.parse(line);
   if (msg.type === "get_state") {
+    const first = stateCalls++ === 0;
     process.stdout.write(JSON.stringify({
       id: msg.id,
       type: "response",
       command: "get_state",
       success: true,
-      data: { sessionId: "s1", thinkingLevel: "off", model: { provider: "test", id: "tiny" } },
+      data: first ? { sessionFile: "/tmp/old.jsonl", sessionName: "OLD", thinkingLevel: "off", model: { provider: "test", id: "tiny" } } : {},
     }) + "\\n");
     return;
   }
@@ -146,6 +148,10 @@ rl.on("line", (line) => {
     process.stdout.write(JSON.stringify({ id: msg.id, type: "response", command: msg.type, success: true }) + "\\n");
     return;
   }
+  if (msg.type === "accepted_timeout") {
+    process.stdout.write(JSON.stringify({ type: "engine_request_accepted", requestId: msg.id, command: msg.type }) + "\\n");
+    return;
+  }
   if (msg.type === "prompt") {
 		if (Array.isArray(msg.images) && msg.images.length > 0) {
 			process.stdout.write(JSON.stringify({ type: "prompt_image_received", image: msg.images[0] }) + "\\n");
@@ -185,6 +191,12 @@ rl.on("line", (line) => {
 		assert.equal(status.state, "ready");
 		assert.equal(status.protocolVersion, INTERACTIVE_ENGINE_PROTOCOL_VERSION);
 		assert.equal(status.modelLabel, "test/tiny");
+		const cleared = await client.refreshState();
+		assert.equal(cleared.ok, true);
+		assert.equal(cleared.data?.sessionFile, undefined);
+		assert.equal(cleared.data?.sessionName, undefined);
+		assert.equal(cleared.data?.modelLabel, undefined);
+		assert.equal(cleared.data?.thinkingLevel, undefined);
 
 		const completions = await client.getCommandCompletions("mode", "fa");
 		assert.deepEqual(completions, {
@@ -273,6 +285,12 @@ rl.on("line", (line) => {
 				image: { type: "image", data: "cGl4ZWw=", mimeType: "image/png" },
 			},
 		);
+		const acceptedTimeout = await client.runEngineCommand({ type: "accepted_timeout" }, 25);
+		assert.deepEqual(acceptedTimeout, {
+			ok: false,
+			error: "Timed out waiting for accepted_timeout",
+			requestAccepted: true,
+		});
 
 		await client.stop();
 	},

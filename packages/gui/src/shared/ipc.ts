@@ -37,6 +37,8 @@ export interface RpcResult<T = unknown> {
 	ok: boolean;
 	error?: string;
 	data?: T;
+	/** True when a timed-out request was already accepted by the engine. */
+	requestAccepted?: boolean;
 }
 
 export type PromptResult = RpcResult;

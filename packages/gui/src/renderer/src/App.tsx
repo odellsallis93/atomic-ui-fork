@@ -19,8 +19,9 @@ import { Transcript } from "./components/Transcript";
 import { TreeNavigator } from "./components/TreeNavigator";
 import { TrustDialog } from "./components/TrustDialog";
 import { createSubmitGate, planSubmit, readFileAsDataUrl, readImageFiles } from "./helpers/attachments";
-import { formatUsage, useSessionStore } from "./store/session-store";
 import { actionForKey, keyboardShortcut, restoreFailedDraft } from "./helpers/composer-parity";
+import { RefreshGeneration } from "./helpers/refresh-generation";
+import { formatUsage, useSessionStore } from "./store/session-store";
 
 function hasGuiApi(): boolean {
 	return typeof window !== "undefined" && typeof window.atomicGui !== "undefined";
@@ -154,6 +155,8 @@ export function App() {
 	const hydrateTranscript = useSessionStore((s) => s.hydrateTranscript);
 	const setExtensionShortcuts = useSessionStore((s) => s.setExtensionShortcuts);
 	const pendingSessionPath = useRef<string | undefined>(undefined);
+	const transcriptRefreshGeneration = useRef(new RefreshGeneration());
+	const treeRefreshGeneration = useRef(new RefreshGeneration());
 	const [attachedImages, setAttachedImages] = useState<PromptImage[]>([]);
 	const [forkMessages, setForkMessages] = useState<ForkMessageInfo[]>([]);
 	const [compacting, setCompacting] = useState(false);
@@ -188,7 +191,9 @@ export function App() {
 
 	const refreshTranscript = useCallback(async (): Promise<void> => {
 		if (!hasGuiApi()) return;
+		const generation = transcriptRefreshGeneration.current.begin();
 		const result = await window.atomicGui.getEntries();
+		if (!transcriptRefreshGeneration.current.isCurrent(generation)) return;
 		if (!result.ok || !result.data) {
 			setErrorBanner(result.error ?? "Failed to load session transcript");
 			return;
@@ -198,7 +203,9 @@ export function App() {
 
 	const refreshTree = useCallback(async (): Promise<void> => {
 		if (!hasGuiApi()) return;
+		const generation = treeRefreshGeneration.current.begin();
 		const result = await window.atomicGui.getTree();
+		if (!treeRefreshGeneration.current.isCurrent(generation)) return;
 		if (!result.ok || !result.data) {
 			setErrorBanner(result.error ?? "Failed to load session tree");
 			return;
@@ -466,8 +473,10 @@ export function App() {
 				...(plan.images.length > 0 ? { images: plan.images } : {}),
 			});
 			if (!result.ok) {
-				setAttached(plan.images);
-				setComposerText(restoreFailedDraft(submittedMessage, useSessionStore.getState().composerText));
+				if (!result.requestAccepted) {
+					setAttached(plan.images);
+					setComposerText(restoreFailedDraft(submittedMessage, useSessionStore.getState().composerText));
+				}
 				setErrorBanner(result.error ?? "Prompt failed");
 			}
 		} finally {

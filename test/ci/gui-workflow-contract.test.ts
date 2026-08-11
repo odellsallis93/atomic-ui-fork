@@ -23,6 +23,13 @@ test("GUI workflow is a Linux-only changed-path gate", async () => {
 	assert.match(workflow, /^ {6}- "packages\/coding-agent\/docs\/gui\.md"$/mu);
 	assert.match(workflow, /^ {6}- "packages\/gui\/docs\/\*\*"$/mu);
 	assert.match(workflow, /^ {4}runs-on: blacksmith-4vcpu-ubuntu-2404$/mu);
+	for (const path of [
+		"packages/coding-agent/src/core/agent-session-runtime.ts",
+		"packages/coding-agent/src/utils/interactive-engine-bootstrap.ts",
+		"packages/coding-agent/src/utils/interactive-engine-env.ts",
+	]) {
+		assert.match(workflow, new RegExp(`^\\s+- "${path}"$`, "mu"));
+	}
 	assert.doesNotMatch(workflow, /^\s+runs-on:.*(?:macos|windows)/imu);
 	assert.doesNotMatch(workflow, /id-token:\s*write|NPM_TOKEN|NODE_AUTH_TOKEN|secrets\./u);
 });
@@ -54,4 +61,18 @@ test("GUI workflow installs Electron and native dependencies before its checks",
 	assert.match(namedStep(steps, "GUI build"), /npm run build --workspace=@bastani\/atomic-gui/u);
 	assert.ok(steps.indexOf(namedStep(steps, "GUI tests")) < steps.indexOf(namedStep(steps, "GUI typecheck")));
 	assert.ok(steps.indexOf(namedStep(steps, "GUI typecheck")) < steps.indexOf(namedStep(steps, "GUI build")));
+});
+
+test("GUI docs keep the Phase 5 boundary and theme behavior source-backed", async () => {
+	const readme = await readText(join(root, "packages/gui/README.md"));
+	const agentDocs = await readText(join(root, "packages/coding-agent/docs/gui.md"));
+	for (const docs of [readme, agentDocs]) {
+		assert.match(docs, /Linux x64/iu);
+		assert.match(docs, /macOS|Windows/iu);
+		assert.match(docs, /packaging|security|accessibility|performance/iu);
+		assert.match(docs, /npm run test:gui/iu);
+	}
+	assert.match(readme, /session only/iu);
+	assert.match(agentDocs, /does not write `theme`/u);
+	assert.doesNotMatch(agentDocs, /Settings writes `theme`/u);
 });

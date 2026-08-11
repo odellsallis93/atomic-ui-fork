@@ -90,9 +90,9 @@ typecheck, and build coverage only; it is not packaging or release coverage.
 
 ## Phase 5 evidence and recovery
 
-On 2026-08-11, a clean local install on this branch passed the native binding
-build, `npm run test:gui` (24 files, 125 tests), GUI typecheck, and GUI build.
-The test result includes six real-engine lifecycle/session smoke tests and 13
+On 2026-08-11, the Phase 5 checks passed the native binding build,
+`npm run test:gui` (25 files, 127 tests), GUI typecheck, and GUI build. The test
+result includes six real-engine lifecycle/session smoke tests and 13
 deterministic Electron renderer-host tests. The renderer-host tests use a
 protocol-shaped fixture, not a live provider; the evidence does not claim
 provider, packaging, or macOS/Windows parity. The remote Linux workflow result
@@ -145,10 +145,11 @@ engine starts. From there you can:
 
 ## Themes
 
-Settings writes `theme` into `~/.atomic/agent/settings.json` and applies Atomic
-theme JSON tokens as CSS custom properties (`--atomic-*`, plus a few shell
-aliases). Builtin themes ship with `@bastani/atomic`; user themes load from
-`~/.atomic/agent/themes/`.
+Settings reads the effective theme and applies a selected theme live for the
+current GUI session. It does not write `theme` to
+`~/.atomic/agent/settings.json`; persistent theme mutation stays excluded until
+protocol v2 exposes an engine-owned settings RPC. Builtin themes ship with
+`@bastani/atomic`; user themes load from `~/.atomic/agent/themes/`.
 
 ## Auth and trust
 
