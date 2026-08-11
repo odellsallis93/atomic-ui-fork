@@ -266,6 +266,24 @@ test("message lifecycle keeps streamed custom, skill, and system roles out of th
 	);
 });
 
+test("visible inbound custom messages render without marking the composer as working", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	const message = {
+		role: "custom",
+		customType: "intercom_message",
+		content: "**📨 From fixture-peer**\n\nReceived through the generic host",
+		display: true,
+	};
+	ingestEvent({ type: "message_start", message });
+	assert.equal(useSessionStore.getState().working, false);
+	ingestEvent({ type: "message_end", message });
+	assert.equal(useSessionStore.getState().working, false);
+	assert.deepEqual(
+		useSessionStore.getState().entries.map((entry) => [entry.kind, entry.customType, entry.text, entry.streaming]),
+		[["custom", "intercom_message", message.content, false]],
+	);
+});
+
 test("session switch hydration replaces prior transcript and tracks active leaf", () => {
 	const { hydrateTranscript, resetTranscript, setTree } = useSessionStore.getState();
 
@@ -868,8 +886,9 @@ test("compaction events retain durable summaries and render aborted and failed t
 	);
 });
 
-test("entry_appended shows durable extension custom entries", () => {
-	useSessionStore.getState().ingestEvent({
+test("entry_appended shows generic durable extension entries and visible custom messages", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({
 		type: "entry_appended",
 		entry: {
 			type: "custom",
@@ -880,9 +899,27 @@ test("entry_appended shows durable extension custom entries", () => {
 			data: { runId: "r1" },
 		},
 	});
+	ingestEvent({
+		type: "entry_appended",
+		entry: {
+			type: "custom_message",
+			id: "intercom-received",
+			parentId: "custom",
+			timestamp: "2026-01-01T00:00:01Z",
+			customType: "intercom_message",
+			content: "**📨 From peer**\n\nReceived message",
+			display: true,
+			excludeFromContext: true,
+		},
+	});
 	assert.deepEqual(
-		useSessionStore.getState().entries.map((entry) => [entry.id, entry.kind, entry.customType]),
-		[["custom", "custom", "workflow"]],
+		useSessionStore
+			.getState()
+			.entries.map((entry) => [entry.id, entry.kind, entry.customType, entry.text, entry.excludeFromContext]),
+		[
+			["custom", "custom", "workflow", '{\n  "runId": "r1"\n}', undefined],
+			["intercom-received", "custom", "intercom_message", "**📨 From peer**\n\nReceived message", true],
+		],
 	);
 });
 

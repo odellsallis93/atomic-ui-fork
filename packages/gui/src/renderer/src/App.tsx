@@ -550,7 +550,6 @@ export function App() {
 		clearDialog(response.id);
 	};
 
-
 	const searchFiles = useCallback(
 		async (query: string) => {
 			if (!hasGuiApi()) return [];
@@ -634,7 +633,6 @@ export function App() {
 				</div>
 			</header>
 
-
 			{!ready ? (
 				<OnboardingPanel
 					ready={ready}
@@ -683,6 +681,7 @@ export function App() {
 					widgets={widgets}
 					images={attachedImages}
 					keybindings={keybindings}
+					extensionShortcuts={extensionShortcuts}
 					focusRequest={composerFocusRequest}
 					onChange={setComposerText}
 					onSubmit={(behavior, message) => void submit(behavior, message)}
@@ -708,6 +707,11 @@ export function App() {
 						const lastTool = [...entries].reverse().find((entry) => entry.kind === "tool");
 						if (lastTool) toggleEntryExpanded(lastTool.id);
 					}}
+					onExtensionShortcut={(key) =>
+						void window.atomicGui.invokeShortcut(key).then((result) => {
+							if (!result.ok) setErrorBanner(result.error ?? `Shortcut ${key} failed`);
+						})
+					}
 					onHistoryUp={() => {
 						historyUp();
 					}}

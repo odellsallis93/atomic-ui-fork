@@ -1149,7 +1149,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			set((state) => {
 				const existing = state.entries.find((item) => item.id === entryId);
 				return {
-					working: entry.kind !== "user" && entry.kind !== "skill",
+					working:
+						entry.kind === "assistant" || entry.kind === "tool" || entry.kind === "bash" ? true : state.working,
 					entries: upsertEntry(state.entries, {
 						...existing,
 						...entry,
@@ -1347,18 +1348,34 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			const entry = event.entry;
 			if (typeof entry !== "object" || entry === null) return;
 			const value = entry as Record<string, unknown>;
-			if (value.type !== "custom" || typeof value.id !== "string") return;
 			const entryId = value.id;
-			set((state) => ({
-				entries: upsertEntry(state.entries, {
-					id: entryId,
-					kind: "custom",
-					customType: typeof value.customType === "string" ? value.customType : "custom",
-					text: stringify(value.data),
-					streaming: false,
-					expanded: false,
-				}),
-			}));
+			if (typeof entryId !== "string") return;
+			if (value.type === "custom") {
+				set((state) => ({
+					entries: upsertEntry(state.entries, {
+						id: entryId,
+						kind: "custom",
+						customType: typeof value.customType === "string" ? value.customType : "custom",
+						text: stringify(value.data),
+						streaming: false,
+						expanded: false,
+					}),
+				}));
+				return;
+			}
+			if (value.type === "custom_message" && value.display === true) {
+				set((state) => ({
+					entries: upsertEntry(state.entries, {
+						id: entryId,
+						kind: "custom",
+						customType: typeof value.customType === "string" ? value.customType : "custom",
+						text: textFromContent(value.content),
+						streaming: false,
+						expanded: false,
+						excludeFromContext: value.excludeFromContext === true,
+					}),
+				}));
+			}
 			return;
 		}
 		if (type === "auto_compaction_end" || type === "compaction_end") {

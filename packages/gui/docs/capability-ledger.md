@@ -42,7 +42,8 @@ Parity tracker for `@bastani/atomic-gui`. **Do not claim parity from fake-engine
 | Themes | Settings panel | `theme-loader.test.ts` (JSON names, first-match builtin→user→project, `.pi` project dir, string+numeric colors, next-read reload) | unit | partial — host can inspect builtin/user/project theme JSON that matches engine directory order and de-dupe. Persistent theme mutation and configured theme paths require an engine settings/resource RPC, which v2 does not expose. |
 | Auth / trust / first run | Onboarding, auth + trust dialogs | `project-trust.test.ts`; `phase3-settings-ui.test.tsx`; Electron fixture host boundary | unit | partial — first-run panel routes users to trust, provider auth, and model selection without displaying saved credentials. Credentials stay in engine auth flows; no GUI reads, logs, writes, or returns them. |
 | Extension UI host (dialogs/forms/frames) | Generic modals + `ChromeFrame` | `session-store.test.ts`, `ansi` / overlay / key tests, fixture E2E | unit + fixture E2E | partial — select/confirm/input/editor, host forms/picker, working/status/widgets, chrome and frames route generically. `onTerminalInput`, `getEditorText`, autocomplete provider, and RPC theme APIs are engine-declared synchronous/protocol exclusions. |
-| Bundled extensions (workflows/subagents/intercom/MCP/web) | Generic frames only | — | — | open (Phase 4 / M6) |
+| Bundled Intercom | Runtime `/intercom` command → generic `engine_custom_*` session-picker/compose frames; incoming `intercom_message` custom card | `electron-phase2.e2e.test.ts` (“Intercom…”); `session-store.test.ts` visible custom-message entry; source inventory below | fixture E2E + unit + source | partial — renderer-host compose/receive wiring is proven. This does not prove a live broker, peer, or extension session. |
+| Other bundled extensions (workflows/subagents/MCP/web) | Generic frames only | — | — | open (Phase 4 / M6) |
 | CLI machine interfaces (`--print`, `--mode json/rpc`, pipes) | **Excluded** (§3.3) | plan exclusions | docs | excluded |
 | Package admin / credential print / multi-window tabs | **Excluded** or deferred (G11) | plan exclusions | docs | excluded |
 ## Phase 3 exit review (2026-08-11)
@@ -64,6 +65,18 @@ Remaining exact boundaries: protocol v2 has no generic settings snapshot/mutatio
 
 The corpus inventory is source-backed by `packages/coding-agent/src/core/extensions/ui-types.ts` and `modes/rpc/rpc-extension-ui.ts`. Fixture proof ends at renderer-host IPC; it does not prove a third-party extension or live engine path.
 
+
+## Phase 4 Intercom runtime inventory (2026-08-11)
+
+| Runtime surface | GUI disposition | Source evidence |
+|---|---|---|
+| `/intercom` | The engine owns activation. The GUI sends the runtime command through the existing composer and mounts its `ctx.ui.custom` picker and compose surfaces through generic `engine_custom_*` frames. | `packages/intercom/overlay.ts`; `packages/intercom/index.ts`; `packages/coding-agent/src/modes/interactive-engine/protocol.ts` |
+| `alt+m` | The GUI reads the existing runtime shortcut inventory and invokes it through `invoke_shortcut`, including while the generic composer is focused; the engine opens the same generic picker. | `packages/intercom/overlay.ts`; `packages/coding-agent/src/modes/rpc/rpc-command-handler.ts`; `src/renderer/src/App.tsx`; `src/renderer/src/components/Composer.tsx` |
+| Incoming message card | The GUI accepts the visible live `custom` message lifecycle emitted by `sendMessage`: `message_start` then `message_end`, with `customType: "intercom_message"`, and renders it with the generic transcript card. The engine persists the matching custom-message entry before those events. | `packages/intercom/incoming-message-delivery.ts`; `packages/coding-agent/src/core/agent-session-message-queue.ts`; `src/renderer/src/store/session-store.ts` |
+| Tool actions: `list`, `send`, `ask`, `reply`, `pending`, `status` | **Excluded from direct GUI controls.** Protocol v2 exposes no Intercom RPC or broker/session contract. They remain engine tool actions, visible through generic tool/transcript rendering when the engine invokes them. | `packages/intercom/index.ts`; `packages/coding-agent/src/modes/interactive-engine/protocol.ts` |
+| Attachments, group selection, peer presence, and live broker verification | **Excluded from this walkthrough.** No typed v2 host contract exposes these values; the GUI must not read broker state, infer peers, or add an Intercom-specific surface. | `packages/intercom/index.ts`; `packages/intercom/overlay.ts`; `packages/coding-agent/src/modes/rpc/rpc-extension-ui.ts` |
+
+The fixture proves only source-shaped renderer-host frames, shortcut invocation, and live incoming-message lifecycle. It does not claim a live Intercom broker or peer session.
 
 ## Open gates (do not silently close)
 

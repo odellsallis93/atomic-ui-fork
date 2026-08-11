@@ -53,6 +53,12 @@ const appendPrompt = (text) => {
   session.entries.push(message(userId, session.leaf, "user", text), message(assistantId, userId, "assistant", "reply: " + text));
   session.leaf = assistantId;
 };
+const emitIncomingIntercomMessage = () => {
+  const message = { role: "custom", customType: "intercom_message", content: "**📨 From fixture-peer**\n\nReceived through the generic host", display: true };
+  send({ type: "message_start", message });
+  send({ type: "message_end", message });
+};
+let incomingIntercomMessageDelivered = false;
 send({ type: "engine_ready", protocolVersion: 2, pid: process.pid });
 let input = "";
 process.stdin.on("data", (chunk) => {
@@ -64,7 +70,17 @@ process.stdin.on("data", (chunk) => {
     if (!line) continue;
     const request = JSON.parse(line);
     if (request.type === "engine_custom_input") {
-      send({ type: "engine_custom_frame", componentId: request.componentId, requestId: 99, lines: ["input: " + request.data] });
+      if (typeof request.data === "string" && request.data.includes(":3u")) continue;
+      if (request.componentId === "intercom-picker" && request.data === "\r") {
+        send({ type: "engine_custom_close", componentId: "intercom-picker" });
+        send({ type: "engine_custom_open", componentId: "intercom-compose", overlay: true });
+        send({ type: "engine_custom_frame", componentId: "intercom-compose", requestId: 99, lines: ["Compose message to fixture-peer", "Enter sends the message"] });
+      } else if (request.componentId === "intercom-compose" && request.data === "\r") {
+        send({ type: "engine_custom_frame", componentId: "intercom-compose", requestId: 100, lines: ["Message sent to fixture-peer"] });
+        send({ type: "engine_custom_close", componentId: "intercom-compose" });
+      } else {
+        send({ type: "engine_custom_frame", componentId: request.componentId, requestId: 99, lines: ["input: " + request.data] });
+      }
       continue;
     }
     if (request.type === "extension_ui_response") {
@@ -74,12 +90,18 @@ process.stdin.on("data", (chunk) => {
     if (!request.id || typeof request.type !== "string") continue;
     accept(request);
     if (request.type === "get_state") response(request, true, { sessionFile: current().file, sessionName: current().name, model: { provider: "fixture", id: "model" } });
-    else if (request.type === "get_entries") response(request, true, { entries: current().entries, leafId: current().leaf });
+    else if (request.type === "get_entries") {
+      response(request, true, { entries: current().entries, leafId: current().leaf });
+      if (!incomingIntercomMessageDelivered) {
+        incomingIntercomMessageDelivered = true;
+        setTimeout(emitIncomingIntercomMessage, 0);
+      }
+    }
     else if (request.type === "get_tree") response(request, true, { tree: tree(), leafId: current().leaf });
     else if (request.type === "get_fork_messages") response(request, true, { messages: [{ entryId: "root", text: "fixture prompt" }] });
     else if (request.type === "list_sessions") response(request, true, { sessions: Object.entries(sessions).map(([id, session], index) => ({ path: session.file, id, cwd: "/tmp", name: session.name, modified: 10 + index, created: index, messageCount: session.entries.length, firstMessage: session.entries[0].message.content })) });
-    else if (request.type === "get_commands") response(request, true, { commands: [] });
-    else if (request.type === "get_shortcuts") response(request, true, { shortcuts: [] });
+    else if (request.type === "get_commands") response(request, true, { commands: [{ name: "intercom", source: "extension", description: "Open session intercom overlay" }] });
+    else if (request.type === "get_shortcuts") response(request, true, { shortcuts: [{ key: "alt+m", description: "Open session intercom" }] });
     else if (request.type === "get_available_models") response(request, true, { models: [] });
     else if (request.type === "get_session_stats") response(request, true, { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
     else if (request.type === "pause_queued_messages") response(request, true);
@@ -87,7 +109,11 @@ process.stdin.on("data", (chunk) => {
     else if (request.type === "clear_queue") { const drained = queues; queues = { steering: [], followUp: [] }; response(request, true, drained); queueUpdate(); }
     else if (request.type === "abort") { send({ type: "agent_end" }); response(request, true); }
     else if (request.type === "prompt") {
-      if (request.message === "open focused frame") {
+      if (request.message === "/intercom") {
+        send({ type: "engine_custom_open", componentId: "intercom-picker", overlay: true });
+        send({ type: "engine_custom_frame", componentId: "intercom-picker", requestId: 98, lines: ["Select an intercom session: fixture-peer", "Enter opens compose"] });
+        response(request, true);
+      } else if (request.message === "open focused frame") {
         send({ type: "engine_custom_open", componentId: "focus-frame", overlay: true, handlesCtrlC: true });
         send({ type: "engine_custom_frame", componentId: "focus-frame", requestId: 1, lines: ["focused frame"] });
         send({ type: "extension_ui_request", id: "fixture-dialog", method: "input", title: "Fixture input", placeholder: "Type here", timeout: 1000 });
@@ -111,6 +137,14 @@ process.stdin.on("data", (chunk) => {
       const session = current();
       if (!session.entries.some((entry) => entry.id === request.targetId)) response(request, false, undefined, "unknown tree entry");
       else { session.leaf = request.targetId; response(request, true, { cancelled: false, editorText: request.targetId === "edit-target" ? "restored draft" : "" }); }
+    }
+    else if (request.type === "invoke_shortcut") {
+      if (request.key !== "alt+m") response(request, false, undefined, "unsupported fixture shortcut: " + request.key);
+      else {
+        send({ type: "engine_custom_open", componentId: "intercom-picker", overlay: true });
+        send({ type: "engine_custom_frame", componentId: "intercom-picker", requestId: 98, lines: ["Select an intercom session: fixture-peer", "Enter opens compose"] });
+        response(request, true);
+      }
     }
     else if (request.type === "set_label") {
       const node = tree().flatMap(function walk(node) { return [node, ...node.children.flatMap(walk)]; }).find((node) => node.entry.id === request.entryId);
@@ -253,4 +287,36 @@ test("Electron fixture E2E: native dialog owns focused-frame keys and restores f
 	await page.keyboard.press("Escape");
 	await dialog.waitFor({ state: "detached" });
 	await page.getByText("dialog response").waitFor();
+}, 30_000);
+
+test("Electron fixture E2E: Intercom compose frames and independent live receive card use generic contracts", async () => {
+	const page = await launchFixture();
+	await editor(page).click();
+	await page.keyboard.type("/intercom");
+	await page.getByRole("button", { name: "Send" }).click();
+	await page
+		.getByRole("dialog", { name: "Extension UI" })
+		.getByText("Select an intercom session: fixture-peer")
+		.waitFor();
+	await page.keyboard.press("Enter");
+	await page.getByRole("dialog", { name: "Extension UI" }).getByText("Compose message to fixture-peer").waitFor();
+	await page.keyboard.type("hello peer");
+	await page.keyboard.press("Enter");
+	await page.getByRole("dialog", { name: "Extension UI" }).waitFor({ state: "detached" });
+
+	const incomingCard = page.getByText("intercom_message", { exact: true });
+	await incomingCard.waitFor();
+	assert.equal(await incomingCard.count(), 1);
+	await page.getByText("**📨 From fixture-peer**").waitFor();
+	await page.getByText("Received through the generic host").waitFor();
+}, 30_000);
+
+test("Electron fixture E2E: Intercom alt+m opens the generic picker from the focused composer", async () => {
+	const page = await launchFixture();
+	await editor(page).click();
+	await page.keyboard.press("Alt+M");
+	await page
+		.getByRole("dialog", { name: "Extension UI" })
+		.getByText("Select an intercom session: fixture-peer")
+		.waitFor();
 }, 30_000);
