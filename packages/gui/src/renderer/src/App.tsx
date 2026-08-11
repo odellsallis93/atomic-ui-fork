@@ -310,8 +310,14 @@ export function App() {
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent): void => {
-			if (!hasGuiApi() || status.state !== "ready" || modal !== "none") return;
-			if ((event.target as HTMLElement | null)?.closest(".composer-editor")) return;
+			if (!hasGuiApi() || status.state !== "ready" || modal !== "none" || event.defaultPrevented) return;
+			const shortcutKey = shortcutKeyId(event);
+			const extensionShortcut = shortcutKey
+				? extensionShortcuts.find(
+						(candidate) => normalizedShortcutKey(candidate.key) === normalizedShortcutKey(shortcutKey),
+					)
+				: undefined;
+			if ((event.target as HTMLElement | null)?.closest(".composer-editor") && !extensionShortcut) return;
 			const configuredAction = actionForKey(keybindings, keyboardShortcut(event) ?? "", "transcript");
 			if (configuredAction === "app.model.select") {
 				event.preventDefault();
@@ -353,19 +359,11 @@ export function App() {
 			} else if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "a") {
 				event.preventDefault();
 				void openAuth();
-			} else {
-				const key = shortcutKeyId(event);
-				const shortcut = key
-					? extensionShortcuts.find(
-							(candidate) => normalizedShortcutKey(candidate.key) === normalizedShortcutKey(key),
-						)
-					: undefined;
-				if (shortcut) {
-					event.preventDefault();
-					void window.atomicGui.invokeShortcut(shortcut.key).then((result) => {
-						if (!result.ok) setErrorBanner(result.error ?? `Shortcut ${shortcut.key} failed`);
-					});
-				}
+			} else if (extensionShortcut) {
+				event.preventDefault();
+				void window.atomicGui.invokeShortcut(extensionShortcut.key).then((result) => {
+					if (!result.ok) setErrorBanner(result.error ?? `Shortcut ${extensionShortcut.key} failed`);
+				});
 			}
 		};
 		window.addEventListener("keydown", onKeyDown);

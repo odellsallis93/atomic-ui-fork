@@ -105,8 +105,12 @@ process.stdin.on("data", (chunk) => {
       continue;
     }
     if (request.type === "engine_tool_render") {
-      const valid = typeof request.componentId === "string" && typeof request.requestId === "number" && typeof request.width === "number" && typeof request.toolName === "string" && typeof request.toolCallId === "string" && typeof request.executionStarted === "boolean" && typeof request.argsComplete === "boolean" && typeof request.isPartial === "boolean" && typeof request.expanded === "boolean" && typeof request.showImages === "boolean" && typeof request.imageWidthCells === "number" && request.args !== undefined;
-      send({ type: "engine_custom_frame", componentId: request.componentId, requestId: request.requestId, lines: valid ? ["MCP tool · " + request.toolName, "MCP fixture result"] : ["Invalid engine_tool_render request"] });
+      if (request.toolName === "mcp" || request.toolName === "fixture_mcp_lookup") {
+        const valid = typeof request.componentId === "string" && typeof request.requestId === "number" && typeof request.width === "number" && typeof request.toolName === "string" && typeof request.toolCallId === "string" && typeof request.executionStarted === "boolean" && typeof request.argsComplete === "boolean" && typeof request.isPartial === "boolean" && typeof request.expanded === "boolean" && typeof request.showImages === "boolean" && typeof request.imageWidthCells === "number" && request.args !== undefined;
+        send({ type: "engine_custom_frame", componentId: request.componentId, requestId: request.requestId, lines: valid ? ["MCP tool · " + request.toolName, "MCP fixture result"] : ["Invalid engine_tool_render request"] });
+      } else {
+        send({ type: "engine_custom_frame", componentId: request.componentId, requestId: request.requestId, lines: ["remote " + request.toolName + " frame"] });
+      }
       continue;
     }
     if (request.type === "engine_input_form_submit") {
@@ -114,25 +118,35 @@ process.stdin.on("data", (chunk) => {
       continue;
     }
     if (request.type === "extension_ui_response") {
-      send({ type: "engine_custom_frame", componentId: "focus-frame", requestId: 100, lines: ["dialog response"] });
-      send({ type: "engine_custom_frame", componentId: "workflow-graph", requestId: 100, lines: ["workflow dialog response"] });
+      if (request.id === "fixture-dialog") {
+        send({ type: "engine_custom_frame", componentId: "focus-frame", requestId: 100, lines: ["dialog response"] });
+      } else if (request.id === "workflow-dialog") {
+        send({ type: "engine_custom_frame", componentId: "workflow-graph", requestId: 100, lines: ["workflow dialog response"] });
+      } else if (request.id === "stored-searches" && typeof request.value === "string") {
+        send({ type: "extension_ui_request", id: "stored-search-action", method: "select", title: "Result abc123", options: ["View details", "Delete"] });
+      } else if (request.id === "stored-search-action" && request.value === "Delete") {
+        send({ type: "extension_ui_request", id: "stored-search-deleted", method: "notify", message: "Deleted abc123", notifyType: "info" });
+      } else if (request.id === "stored-search-action" && request.value === "View details") {
+        send({ type: "extension_ui_request", id: "stored-search-details", method: "notify", message: "ID: abc123\nType: search\nQueries: protocol docs", notifyType: "info" });
+      }
       continue;
     }
     if (request.type === "engine_custom_render" && request.componentId === "subagent-widget-frame") {
       subagentRenderCount += 1;
       const complete = subagentRenderCount > 1;
       send({ type: "engine_custom_frame", componentId: request.componentId, requestId: request.requestId, lines: complete ? ["○ Async agents · background", "└─ ✓ codebase-analyzer · complete", "   ⎿  inspected protocol"] : ["● Async agents · background", "└─ ◌ codebase-analyzer · running", "   ⎿  inspecting protocol"] });
-	  if (pendingInitialEntries) {
-	    response(pendingInitialEntries, true, { entries: current().entries, leafId: current().leaf });
-	    pendingInitialEntries = undefined;
-	    if (!incomingIntercomMessageDelivered) {
-	      incomingIntercomMessageDelivered = true;
-	      setTimeout(emitIncomingIntercomMessage, 0);
-	    }
-	  }
+      if (pendingInitialEntries) {
+        response(pendingInitialEntries, true, { entries: current().entries, leafId: current().leaf });
+        pendingInitialEntries = undefined;
+        if (!incomingIntercomMessageDelivered) {
+          incomingIntercomMessageDelivered = true;
+          setTimeout(emitIncomingIntercomMessage, 0);
+        }
+      }
       if (!complete) setTimeout(() => send({ type: "engine_custom_invalidate", componentId: request.componentId }), 300);
       continue;
     }
+    if (request.type === "engine_custom_dispose") continue;
     if (!request.id || typeof request.type !== "string") continue;
     accept(request);
     if (request.type === "get_state") response(request, true, { sessionFile: current().file, sessionName: current().name, model: { provider: "fixture", id: "model" } });
@@ -149,8 +163,20 @@ process.stdin.on("data", (chunk) => {
     else if (request.type === "get_tree") response(request, true, { tree: tree(), leafId: current().leaf });
     else if (request.type === "get_fork_messages") response(request, true, { messages: [{ entryId: "root", text: "fixture prompt" }] });
     else if (request.type === "list_sessions") response(request, true, { sessions: Object.entries(sessions).map(([id, session], index) => ({ path: session.file, id, cwd: "/tmp", name: session.name, modified: 10 + index, created: index, messageCount: session.entries.length, firstMessage: session.entries[0].message.content })) });
-    else if (request.type === "get_commands") response(request, true, { commands: [{ name: "workflow", description: "Workflow runtime command" }, { name: "intercom", source: "extension", description: "Open session intercom overlay" }] });
-    else if (request.type === "get_shortcuts") response(request, true, { shortcuts: [{ key: "F2", description: "Open workflow graph" }, { key: "alt+m", description: "Open session intercom" }] });
+    else if (request.type === "get_commands") response(request, true, { commands: [
+      { name: "workflow", source: "extension", description: "Workflow runtime command" },
+      { name: "intercom", source: "extension", description: "Open session intercom overlay" },
+      { name: "websearch", description: "Configure web search", source: "extension" },
+      { name: "curator", description: "Configure web search curator", source: "extension" },
+      { name: "google-account", description: "Show the active Google account for Gemini Web", source: "extension" },
+      { name: "search", description: "Browse stored web search results", source: "extension" },
+    ] });
+    else if (request.type === "get_shortcuts") response(request, true, { shortcuts: [
+      { key: "F2", description: "Open workflow graph" },
+      { key: "alt+m", description: "Open session intercom" },
+      { key: "ctrl+shift+s", description: "Open web search curator" },
+      { key: "ctrl+shift+w", description: "Show web search activity" },
+    ] });
     else if (request.type === "get_available_models") response(request, true, { models: [] });
     else if (request.type === "get_session_stats") response(request, true, { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
     else if (request.type === "pause_queued_messages") response(request, true);
@@ -196,6 +222,15 @@ process.stdin.on("data", (chunk) => {
         send({ type: "engine_custom_open", componentId: "intercom-picker", overlay: true });
         send({ type: "engine_custom_frame", componentId: "intercom-picker", requestId: 98, lines: ["Select an intercom session: fixture-peer", "Enter opens compose"] });
         response(request, true);
+      } else if (request.message.startsWith("/websearch")) {
+        send({ type: "extension_ui_request", id: "curator-open", method: "notify", message: "Opening web search curator...", notifyType: "info" });
+        response(request, true);
+      } else if (request.message.startsWith("/curator")) {
+        send({ type: "extension_ui_request", id: "curator-config", method: "notify", message: "Curator disabled — web_search will return raw results", notifyType: "info" });
+        response(request, true);
+      } else if (request.message === "/search") {
+        send({ type: "extension_ui_request", id: "stored-searches", method: "select", title: "Stored Search Results", options: ["[abc123] \"protocol docs\" (1 queries) - 0m ago"] });
+        response(request, true);
       } else if (request.message === "open focused frame") {
         send({ type: "engine_custom_open", componentId: "focus-frame", overlay: true, handlesCtrlC: true });
         send({ type: "engine_custom_frame", componentId: "focus-frame", requestId: 1, lines: ["focused frame"] });
@@ -206,6 +241,15 @@ process.stdin.on("data", (chunk) => {
         response(request, true);
       } else if (request.message === "start background subagent") {
         send({ type: "engine_custom_open", componentId: "subagent-widget-frame", overlay: false, widgetKey: "subagents.async", widgetPlacement: "belowEditor" });
+        response(request, true);
+      } else if (request.message === "web tool events") {
+        const tools = ["web_search", "code_search", "fetch_content", "get_search_content"];
+        for (const toolName of tools) {
+          const toolCallId = "fixture-" + toolName;
+          send({ type: "tool_execution_start", toolCallId, toolName, args: { query: toolName } });
+          send({ type: "tool_execution_update", toolCallId, toolName, args: { query: toolName }, partialResult: { progress: "partial " + toolName } });
+          send({ type: "tool_execution_end", toolCallId, toolName, result: { result: "complete " + toolName }, isError: toolName === "code_search" });
+        }
         response(request, true);
       } else {
         send({ type: "agent_start" });
@@ -222,6 +266,9 @@ process.stdin.on("data", (chunk) => {
       else if (request.key.toLowerCase() === "alt+m") {
         send({ type: "engine_custom_open", componentId: "intercom-picker", overlay: true });
         send({ type: "engine_custom_frame", componentId: "intercom-picker", requestId: 98, lines: ["Select an intercom session: fixture-peer", "Enter opens compose"] });
+        response(request, true);
+      } else if (request.key.toLowerCase() === "ctrl+shift+w") {
+        send({ type: "extension_ui_request", id: "activity-shortcut", method: "notify", message: "Web search activity toggled", notifyType: "info" });
         response(request, true);
       } else response(request, false, undefined, "unsupported fixture shortcut: " + request.key);
     }
@@ -528,4 +575,75 @@ test("Electron fixture E2E: Intercom alt+m opens the generic picker from the foc
 		.getByRole("dialog", { name: "Extension UI" })
 		.getByText("Select an intercom session: fixture-peer")
 		.waitFor();
+}, 30_000);
+
+test("Electron fixture E2E: runtime web curator, browse, shortcuts, and tools stay generic", async () => {
+	const page = await launchFixture();
+	const runtimeCommands = await page.evaluate(() => window.atomicGui.getCommands());
+	assert.deepEqual(runtimeCommands.data?.map((command) => command.name).sort(), [
+		"curator",
+		"google-account",
+		"intercom",
+		"search",
+		"websearch",
+		"workflow",
+	]);
+	const runtimeShortcuts = await page.evaluate(() => window.atomicGui.getShortcuts());
+	assert.deepEqual(runtimeShortcuts.data, [
+		{ key: "F2", description: "Open workflow graph" },
+		{ key: "alt+m", description: "Open session intercom" },
+		{ key: "ctrl+shift+s", description: "Open web search curator" },
+		{ key: "ctrl+shift+w", description: "Show web search activity" },
+	]);
+	const submit = async (message: string): Promise<void> => {
+		await editor(page).click();
+		await page.keyboard.type(message);
+		await page.keyboard.press("Enter");
+	};
+	const readToast = async (message: string): Promise<void> => {
+		const toast = page.locator(".toast").filter({ hasText: message });
+		await toast.waitFor();
+		await toast.getByRole("button", { name: "Dismiss" }).click();
+		await toast.waitFor({ state: "detached" });
+	};
+
+	await editor(page).click();
+	await page.keyboard.type("/webs");
+	await page.getByRole("button", { name: /\/websearch/ }).waitFor();
+	await page.keyboard.press("Enter");
+	assert.equal((await editor(page).textContent())?.trim(), "/websearch");
+	await page.keyboard.press("Enter");
+	await readToast("Opening web search curator...");
+
+	await submit("/curator off");
+	await readToast("Curator disabled — web_search will return raw results");
+
+	for (const action of ["View details", "Delete"] as const) {
+		await submit("/search");
+		const resultsDialog = page.getByRole("dialog").filter({ hasText: "Stored Search Results" });
+		await resultsDialog.getByRole("button", { name: /protocol docs/ }).click();
+		const actionDialog = page.getByRole("dialog").filter({ hasText: "Result abc123" });
+		await actionDialog.getByRole("button", { name: action }).click();
+		await readToast(action === "Delete" ? "Deleted abc123" : "Queries: protocol docs");
+	}
+	await submit("/search");
+	await page
+		.getByRole("dialog")
+		.filter({ hasText: "Stored Search Results" })
+		.getByRole("button", { name: /protocol docs/ })
+		.click();
+	const cancelledAction = page.getByRole("dialog").filter({ hasText: "Result abc123" });
+	await cancelledAction.getByRole("button", { name: "Cancel" }).click();
+	await cancelledAction.waitFor({ state: "detached" });
+
+	await editor(page).click();
+	await page.keyboard.press("Control+Shift+W");
+	await readToast("Web search activity toggled");
+
+	await submit("web tool events");
+	for (const toolName of ["web_search", "code_search", "fetch_content", "get_search_content"]) {
+		await page.getByText(toolName, { exact: true }).waitFor();
+		await page.getByText(`remote ${toolName} frame`, { exact: true }).waitFor();
+	}
+	await page.getByText("Tool error", { exact: true }).waitFor();
 }, 30_000);
