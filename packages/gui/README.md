@@ -69,8 +69,8 @@ npm run build --workspace=@bastani/atomic-gui
 ## Phase 4 MCP boundary
 
 - `/mcp`, `/mcp setup`, and `/mcp-auth` expose only the existing generic custom-frame contract. The renderer has no MCP-specific IPC or extension fork.
-- MCP tools, including optional direct tools, arrive only as generic `tool_execution_*` events and render through the engine-owned tool frame path.
-- MCP OAuth stays in the engine browser/callback flow. Ctrl+C reaches an MCP frame that owns it; cancellation clears engine-owned state. The GUI never reads, logs, writes, or returns credentials or tokens.
+- MCP tools, including direct tools only when the runtime exposes them, arrive as generic `tool_execution_*` events and render through the engine-owned tool frame path.
+- MCP OAuth stays in the engine browser/callback flow. Ctrl+C reaches the MCP panel, which cancels its scoped engine-owned OAuth owner before close. The GUI never reads, logs, writes, or returns credentials or tokens.
 - Protocol v2 exposes no MCP server config, connection, token, or auth-state RPC. Those surfaces remain excluded from GUI authority.
 
 ## Notes

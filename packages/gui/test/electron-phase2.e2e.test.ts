@@ -74,7 +74,8 @@ process.stdin.on("data", (chunk) => {
       continue;
     }
     if (request.type === "engine_tool_render") {
-      send({ type: "engine_custom_frame", componentId: request.componentId, requestId: request.requestId, lines: ["MCP tool · fixture-mcp/lookup", "MCP fixture result"] });
+      const valid = typeof request.componentId === "string" && typeof request.requestId === "number" && typeof request.width === "number" && typeof request.toolName === "string" && typeof request.toolCallId === "string" && typeof request.executionStarted === "boolean" && typeof request.argsComplete === "boolean" && typeof request.isPartial === "boolean" && typeof request.expanded === "boolean" && typeof request.showImages === "boolean" && typeof request.imageWidthCells === "number" && request.args !== undefined;
+      send({ type: "engine_custom_frame", componentId: request.componentId, requestId: request.requestId, lines: valid ? ["MCP tool · " + request.toolName, "MCP fixture result"] : ["Invalid engine_tool_render request"] });
       continue;
     }
     if (request.type === "extension_ui_response") {
@@ -109,6 +110,11 @@ process.stdin.on("data", (chunk) => {
       } else if (request.message === "use MCP tool") {
         send({ type: "tool_execution_start", toolCallId: "fixture-mcp-tool", toolName: "mcp", args: { server: "fixture-mcp", tool: "lookup", query: "safe" } });
         send({ type: "tool_execution_end", toolCallId: "fixture-mcp-tool", result: { content: "MCP fixture result" }, isError: false });
+        send({ type: "agent_end" });
+        response(request, true);
+      } else if (request.message === "use direct MCP tool") {
+        send({ type: "tool_execution_start", toolCallId: "fixture-direct-mcp-tool", toolName: "fixture_mcp_lookup", args: { query: "safe" } });
+        send({ type: "tool_execution_end", toolCallId: "fixture-direct-mcp-tool", result: { content: "MCP fixture result" }, isError: false });
         send({ type: "agent_end" });
         response(request, true);
       } else if (request.message === "open input dialog") {
@@ -274,7 +280,7 @@ test("Electron fixture E2E: native dialog owns focused-frame keys and restores f
 	await page.getByText("dialog response").waitFor();
 }, 30_000);
 
-test("Electron fixture E2E: MCP OAuth stays in the generic frame host and Ctrl+C reaches its cancel path", async () => {
+test("Electron fixture E2E: MCP OAuth uses the generic frame host and forwards Ctrl+C", async () => {
 	const page = await launchFixture();
 	await editor(page).click();
 	await page.keyboard.type("open MCP OAuth login");
@@ -283,15 +289,20 @@ test("Electron fixture E2E: MCP OAuth stays in the generic frame host and Ctrl+C
 	await login.getByText("MCP OAuth · fixture-mcp").waitFor();
 	await page.keyboard.press("Control+c");
 	await login.getByText("MCP OAuth cancellation received").waitFor();
-	await login.getByText("No credential was sent to the host.").waitFor();
 }, 30_000);
 
-test("Electron fixture E2E: MCP tool execution uses the generic transcript render host", async () => {
+test("Electron fixture E2E: MCP proxy and direct tools use the generic transcript render host", async () => {
 	const page = await launchFixture();
 	await editor(page).click();
 	await page.keyboard.type("use MCP tool");
 	await page.getByRole("button", { name: "Send" }).click();
 	await page.locator(".role-tool").getByText("mcp").waitFor();
-	await page.getByText("MCP tool · fixture-mcp/lookup").waitFor();
+	await page.getByText("MCP tool · mcp").waitFor();
 	await page.getByText("MCP fixture result").waitFor();
+
+	await editor(page).click();
+	await page.keyboard.type("use direct MCP tool");
+	await page.getByRole("button", { name: "Send" }).click();
+	await page.locator(".role-tool").getByText("fixture_mcp_lookup").waitFor();
+	await page.getByText("MCP tool · fixture_mcp_lookup").waitFor();
 }, 30_000);

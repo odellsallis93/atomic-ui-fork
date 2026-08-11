@@ -281,6 +281,19 @@ export function authenticate(
   return result
 }
 
+/** Cancel one user-owned OAuth flow without disturbing other MCP servers. */
+export function cancelAuthentication(serverName: string): void {
+  const owner = pendingAuthentications.get(serverName)
+  if (!owner) return
+  pendingAuthentications.delete(serverName)
+  const error = new OAuthSessionResetError(serverName, "user_cancel")
+  owner.controller.abort(error)
+  owner.reject(error)
+  clearOwnedOAuthState(serverName, owner.oauthState)
+  if (owner.oauthState) cancelPendingCallback(owner.oauthState, error)
+  if (owner.transport) void retireTransport(serverName, owner.transport)
+}
+
 /**
  * Retire every OAuth single-flight owner before a replacement session can start.
  * Caller-visible promises reject immediately; non-abortable SDK work remains observed
@@ -334,8 +347,8 @@ export async function getValidToken(
       const result = await runSdkAuth(authProvider, { serverUrl })
       if (result !== "AUTHORIZED") return null
       return getAuthForUrl(serverName, serverUrl)?.tokens ?? null
-    } catch (error) {
-      console.error(`MCP Auth: Token refresh failed for ${serverName}`, { error })
+    } catch {
+      console.error(`MCP Auth: Token refresh failed for ${serverName}`)
       return null
     }
   }
