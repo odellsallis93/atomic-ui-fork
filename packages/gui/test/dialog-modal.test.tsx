@@ -73,6 +73,27 @@ describe("DialogModal keyboard and timeout contract", () => {
 		assert.deepEqual(editorResponses, []);
 	});
 
+	test("masks OAuth token and authorization-code prompts", async () => {
+		await render(
+			{
+				id: "oauth-prompt-1",
+				method: "oauth_prompt",
+				provider: "example",
+				loginId: "login-1",
+				prompt: { message: "Paste token" },
+			},
+			() => undefined,
+		);
+		assert.equal((container.querySelector("input") as HTMLInputElement).type, "password");
+		act(() => root.unmount());
+
+		await render(
+			{ id: "oauth-code-1", method: "oauth_manual_code", provider: "example", loginId: "login-1" },
+			() => undefined,
+		);
+		assert.equal((container.querySelector("input") as HTMLInputElement).type, "password");
+	});
+
 	test("responds once on Escape and restores the element that was focused before opening", async () => {
 		const previous = document.createElement("button");
 		previous.textContent = "frame";

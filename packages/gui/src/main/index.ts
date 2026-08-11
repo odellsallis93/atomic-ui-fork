@@ -1,15 +1,37 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain, session, shell } from "electron";
 import type { ExtensionUiResponse, PromptRequest } from "../shared/ipc.ts";
 import { IPC_CHANNELS } from "../shared/ipc.ts";
 import { EngineSupervisor } from "./engine-supervisor.ts";
-import { isAllowedAppNavigation, isSafeExternalUrl } from "./security.ts";
+import { isAllowedAppNavigation, isSafeExternalUrl, isTrustedIpcSender } from "./security.ts";
 
 const mainDir = dirname(fileURLToPath(import.meta.url));
 const rendererIndex = join(mainDir, "../renderer/index.html");
 const devRendererUrl = process.env.ELECTRON_RENDERER_URL;
+
+const CONTENT_SECURITY_POLICY = [
+	"default-src 'self'",
+	"base-uri 'none'",
+	"object-src 'none'",
+	"frame-ancestors 'none'",
+	"form-action 'none'",
+	"script-src 'self'",
+	"style-src 'self' 'unsafe-inline'",
+	"img-src 'self' data:",
+	"connect-src 'self'",
+].join("; ");
+
+function installContentSecurityPolicy(): void {
+	session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+		const responseHeaders = { ...details.responseHeaders };
+		if (isAllowedAppNavigation(details.url, rendererIndex, devRendererUrl)) {
+			responseHeaders["Content-Security-Policy"] = [CONTENT_SECURITY_POLICY];
+		}
+		callback({ responseHeaders });
+	});
+}
 
 let mainWindow: BrowserWindow | null = null;
 let supervisor: EngineSupervisor | null = null;
@@ -43,6 +65,9 @@ function createWindow(): void {
 	mainWindow.webContents.on("will-navigate", (event, url) => {
 		if (!isAllowedAppNavigation(url, rendererIndex, devRendererUrl)) event.preventDefault();
 	});
+	mainWindow.webContents.on("will-redirect", (event, url) => {
+		if (!isAllowedAppNavigation(url, rendererIndex, devRendererUrl)) event.preventDefault();
+	});
 	mainWindow.webContents.setWindowOpenHandler(({ url }) => {
 		if (isSafeExternalUrl(url)) void shell.openExternal(url);
 		return { action: "deny" };
@@ -64,71 +89,86 @@ function createWindow(): void {
 	}
 }
 
+function registerIpcHandler(channel: string, handler: Parameters<typeof ipcMain.handle>[1]): void {
+	ipcMain.handle(channel, (event, ...args) => {
+		const senderFrame = event.senderFrame;
+		if (
+			!mainWindow ||
+			mainWindow.isDestroyed() ||
+			!senderFrame ||
+			!isTrustedIpcSender(event.sender.id, mainWindow.webContents.id, senderFrame.url, rendererIndex, devRendererUrl)
+		) {
+			throw new Error("Rejected IPC sender");
+		}
+		return handler(event, ...args);
+	});
+}
+
 function registerIpc(): void {
-	ipcMain.handle(IPC_CHANNELS.getStatus, () => supervisor?.getStatus() ?? { state: "idle" });
-	ipcMain.handle(IPC_CHANNELS.startEngine, async (_event, options?: { cwd?: string; sessionPath?: string }) => {
+	registerIpcHandler(IPC_CHANNELS.getStatus, () => supervisor?.getStatus() ?? { state: "idle" });
+	registerIpcHandler(IPC_CHANNELS.startEngine, async (_event, options?: { cwd?: string; sessionPath?: string }) => {
 		if (!supervisor) throw new Error("No window");
 		return await supervisor.start(options);
 	});
-	ipcMain.handle(IPC_CHANNELS.stopEngine, async () => {
+	registerIpcHandler(IPC_CHANNELS.stopEngine, async () => {
 		await supervisor?.stop();
 	});
-	ipcMain.handle(IPC_CHANNELS.prompt, async (_event, request: PromptRequest) => {
+	registerIpcHandler(IPC_CHANNELS.prompt, async (_event, request: PromptRequest) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.prompt(request);
 	});
-	ipcMain.handle(IPC_CHANNELS.abort, async () => {
+	registerIpcHandler(IPC_CHANNELS.abort, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.abort();
 	});
-	ipcMain.handle(
+	registerIpcHandler(
 		IPC_CHANNELS.bash,
 		async (_event, command: string, excludeFromContext?: boolean, requestId?: string) => {
 			if (!supervisor) return { ok: false, error: "No window" };
 			return await supervisor.bash(command, excludeFromContext, requestId);
 		},
 	);
-	ipcMain.handle(IPC_CHANNELS.newSession, async () => {
+	registerIpcHandler(IPC_CHANNELS.newSession, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.newSession();
 	});
-	ipcMain.handle(IPC_CHANNELS.switchSession, async (_event, sessionPath: string) => {
+	registerIpcHandler(IPC_CHANNELS.switchSession, async (_event, sessionPath: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.switchSession(sessionPath);
 	});
-	ipcMain.handle(IPC_CHANNELS.setSessionName, async (_event, name: string) => {
+	registerIpcHandler(IPC_CHANNELS.setSessionName, async (_event, name: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.setSessionName(name);
 	});
-	ipcMain.handle(IPC_CHANNELS.cloneSession, async () => {
+	registerIpcHandler(IPC_CHANNELS.cloneSession, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.cloneSession();
 	});
-	ipcMain.handle(IPC_CHANNELS.forkSession, async (_event, entryId: string) => {
+	registerIpcHandler(IPC_CHANNELS.forkSession, async (_event, entryId: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.forkSession(entryId);
 	});
-	ipcMain.handle(IPC_CHANNELS.getForkMessages, async () => {
+	registerIpcHandler(IPC_CHANNELS.getForkMessages, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getForkMessages();
 	});
-	ipcMain.handle(IPC_CHANNELS.importSession, async (_event, inputPath: string, cwdOverride?: string) => {
+	registerIpcHandler(IPC_CHANNELS.importSession, async (_event, inputPath: string, cwdOverride?: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.importSession(inputPath, cwdOverride);
 	});
-	ipcMain.handle(IPC_CHANNELS.exportHtml, async (_event, outputPath?: string) => {
+	registerIpcHandler(IPC_CHANNELS.exportHtml, async (_event, outputPath?: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.exportHtml(outputPath);
 	});
-	ipcMain.handle(IPC_CHANNELS.compact, async () => {
+	registerIpcHandler(IPC_CHANNELS.compact, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.compact();
 	});
-	ipcMain.handle(IPC_CHANNELS.getTree, async () => {
+	registerIpcHandler(IPC_CHANNELS.getTree, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getTree();
 	});
-	ipcMain.handle(
+	registerIpcHandler(
 		IPC_CHANNELS.navigateTree,
 		async (
 			_event,
@@ -139,152 +179,159 @@ function registerIpc(): void {
 			return await supervisor.navigateTree(targetId, options);
 		},
 	);
-	ipcMain.handle(IPC_CHANNELS.setTreeLabel, async (_event, entryId: string, label?: string) => {
+	registerIpcHandler(IPC_CHANNELS.setTreeLabel, async (_event, entryId: string, label?: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.setTreeLabel(entryId, label);
 	});
-	ipcMain.handle(IPC_CHANNELS.getCommands, async () => {
+	registerIpcHandler(IPC_CHANNELS.getCommands, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getCommands();
 	});
-	ipcMain.handle(IPC_CHANNELS.getCommandCompletions, async (_event, commandName: string, argumentPrefix: string) => {
-		if (!supervisor) return { ok: false, error: "No window" };
-		return await supervisor.getCommandCompletions(commandName, argumentPrefix);
-	});
-	ipcMain.handle(IPC_CHANNELS.getEntries, async () => {
+	registerIpcHandler(
+		IPC_CHANNELS.getCommandCompletions,
+		async (_event, commandName: string, argumentPrefix: string) => {
+			if (!supervisor) return { ok: false, error: "No window" };
+			return await supervisor.getCommandCompletions(commandName, argumentPrefix);
+		},
+	);
+	registerIpcHandler(IPC_CHANNELS.getEntries, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getEntries();
 	});
-	ipcMain.handle(IPC_CHANNELS.getShortcuts, async () => {
+	registerIpcHandler(IPC_CHANNELS.getShortcuts, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getShortcuts();
 	});
-	ipcMain.handle(IPC_CHANNELS.invokeShortcut, async (_event, key: string) => {
+	registerIpcHandler(IPC_CHANNELS.invokeShortcut, async (_event, key: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.invokeShortcut(key);
 	});
-	ipcMain.handle(IPC_CHANNELS.getModels, async () => {
+	registerIpcHandler(IPC_CHANNELS.getModels, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getModels();
 	});
-	ipcMain.handle(IPC_CHANNELS.getAuthCatalog, async () => {
+	registerIpcHandler(IPC_CHANNELS.getAuthCatalog, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getAuthCatalog();
 	});
-	ipcMain.handle(IPC_CHANNELS.loginProvider, async (_event, provider: string, authType?: "api_key" | "oauth") => {
+	registerIpcHandler(IPC_CHANNELS.loginProvider, async (_event, provider: string, authType?: "api_key" | "oauth") => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.loginProvider(provider, authType);
 	});
-	ipcMain.handle(IPC_CHANNELS.logoutProvider, async (_event, provider: string) => {
+	registerIpcHandler(IPC_CHANNELS.logoutProvider, async (_event, provider: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.logoutProvider(provider);
 	});
-	ipcMain.handle(IPC_CHANNELS.cancelLoginProvider, async (_event, provider: string) => {
+	registerIpcHandler(IPC_CHANNELS.cancelLoginProvider, async (_event, provider: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.cancelLoginProvider(provider);
 	});
-	ipcMain.handle(IPC_CHANNELS.setModel, async (_event, provider: string, modelId: string) => {
+	registerIpcHandler(IPC_CHANNELS.setModel, async (_event, provider: string, modelId: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.setModel(provider, modelId);
 	});
-	ipcMain.handle(IPC_CHANNELS.cycleModel, async (_event, direction?: "forward" | "backward") => {
+	registerIpcHandler(IPC_CHANNELS.cycleModel, async (_event, direction?: "forward" | "backward") => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.cycleModel(direction);
 	});
-	ipcMain.handle(IPC_CHANNELS.cycleThinking, async () => {
+	registerIpcHandler(IPC_CHANNELS.cycleThinking, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.cycleThinking();
 	});
-	ipcMain.handle(IPC_CHANNELS.setThinkingLevel, async (_event, level: string) => {
+	registerIpcHandler(IPC_CHANNELS.setThinkingLevel, async (_event, level: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.setThinkingLevel(level);
 	});
-	ipcMain.handle(IPC_CHANNELS.getAvailableThinkingLevels, async () => {
+	registerIpcHandler(IPC_CHANNELS.getAvailableThinkingLevels, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getAvailableThinkingLevels();
 	});
-	ipcMain.handle(IPC_CHANNELS.setSteeringMode, async (_event, mode: "all" | "one-at-a-time") => {
+	registerIpcHandler(IPC_CHANNELS.setSteeringMode, async (_event, mode: "all" | "one-at-a-time") => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.setSteeringMode(mode);
 	});
-	ipcMain.handle(IPC_CHANNELS.setFollowUpMode, async (_event, mode: "all" | "one-at-a-time") => {
+	registerIpcHandler(IPC_CHANNELS.setFollowUpMode, async (_event, mode: "all" | "one-at-a-time") => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.setFollowUpMode(mode);
 	});
-	ipcMain.handle(IPC_CHANNELS.setAutoCompaction, async (_event, enabled: boolean) => {
+	registerIpcHandler(IPC_CHANNELS.setAutoCompaction, async (_event, enabled: boolean) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.setAutoCompaction(enabled);
 	});
-	ipcMain.handle(IPC_CHANNELS.setAutoRetry, async (_event, enabled: boolean) => {
+	registerIpcHandler(IPC_CHANNELS.setAutoRetry, async (_event, enabled: boolean) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.setAutoRetry(enabled);
 	});
-	ipcMain.handle(IPC_CHANNELS.getSessionStats, async () => {
+	registerIpcHandler(IPC_CHANNELS.getSessionStats, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getSessionStats();
 	});
-	ipcMain.handle(IPC_CHANNELS.refreshState, async () => {
+	registerIpcHandler(IPC_CHANNELS.refreshState, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.refreshState();
 	});
-	ipcMain.handle(IPC_CHANNELS.listSessions, async (_event, options?: { cwd?: string; all?: boolean }) => {
+	registerIpcHandler(IPC_CHANNELS.listSessions, async (_event, options?: { cwd?: string; all?: boolean }) => {
 		if (!supervisor) return [];
 		return await supervisor.listSessions(options);
 	});
-	ipcMain.handle(IPC_CHANNELS.renameSession, async (_event, sessionPath: string, name: string) => {
+	registerIpcHandler(IPC_CHANNELS.renameSession, async (_event, sessionPath: string, name: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.renameSession(sessionPath, name);
 	});
-	ipcMain.handle(IPC_CHANNELS.deleteSession, async (_event, sessionPath: string) => {
+	registerIpcHandler(IPC_CHANNELS.deleteSession, async (_event, sessionPath: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.deleteSession(sessionPath);
 	});
-	ipcMain.handle(IPC_CHANNELS.searchFiles, async (_event, query: string, cwd?: string) => {
+	registerIpcHandler(IPC_CHANNELS.searchFiles, async (_event, query: string, cwd?: string) => {
 		if (!supervisor) return [];
 		return await supervisor.searchFiles(query, cwd);
 	});
-	ipcMain.handle(IPC_CHANNELS.listThemes, () => supervisor?.listThemes() ?? []);
-	ipcMain.handle(
+	registerIpcHandler(IPC_CHANNELS.listThemes, () => supervisor?.listThemes() ?? []);
+	registerIpcHandler(
 		IPC_CHANNELS.getThemeCss,
 		(_event, name?: string) => supervisor?.getThemeCss(name) ?? { name: "dark", cssVariables: {} },
 	);
-	ipcMain.handle(
+	registerIpcHandler(
 		IPC_CHANNELS.getSettings,
 		() => supervisor?.getSettings() ?? { theme: "dark", path: "", exists: false },
 	);
-	ipcMain.handle(IPC_CHANNELS.setTheme, (_event, name: string) => {
+	registerIpcHandler(IPC_CHANNELS.setTheme, (_event, name: string) => {
 		if (!supervisor) throw new Error("No window");
 		return supervisor.setTheme(name);
 	});
-	ipcMain.handle(IPC_CHANNELS.getTrustStatus, (_event, cwd?: string) => supervisor?.getTrustStatus(cwd));
-	ipcMain.handle(IPC_CHANNELS.getTrustOptions, (_event, cwd?: string) => supervisor?.getTrustOptions(cwd) ?? []);
-	ipcMain.handle(IPC_CHANNELS.applyTrust, (_event, optionId: string, cwd?: string) => {
+	registerIpcHandler(IPC_CHANNELS.getTrustStatus, (_event, cwd?: string) => supervisor?.getTrustStatus(cwd));
+	registerIpcHandler(IPC_CHANNELS.getTrustOptions, (_event, cwd?: string) => supervisor?.getTrustOptions(cwd) ?? []);
+	registerIpcHandler(IPC_CHANNELS.applyTrust, (_event, optionId: string, cwd?: string) => {
 		if (!supervisor) throw new Error("No window");
 		return supervisor.applyTrust(optionId, cwd);
 	});
-	ipcMain.handle(IPC_CHANNELS.submitInputForm, (_event, componentId: string, values: Record<string, string>) => {
+	registerIpcHandler(IPC_CHANNELS.submitInputForm, (_event, componentId: string, values: Record<string, string>) => {
 		supervisor?.submitInputForm(componentId, values);
 	});
-	ipcMain.handle(IPC_CHANNELS.cancelInputForm, (_event, componentId: string) => {
+	registerIpcHandler(IPC_CHANNELS.cancelInputForm, (_event, componentId: string) => {
 		supervisor?.cancelInputForm(componentId);
 	});
-	ipcMain.handle(IPC_CHANNELS.runEngineCommand, async (_event, command: { type: string; [key: string]: unknown }) => {
-		if (!supervisor) return { ok: false, error: "No window" };
-		return await supervisor.runEngineCommand(command);
-	});
-	ipcMain.handle(IPC_CHANNELS.editExternally, async (_event, text: string) => {
+	registerIpcHandler(
+		IPC_CHANNELS.runEngineCommand,
+		async (_event, command: { type: string; [key: string]: unknown }) => {
+			if (!supervisor) return { ok: false, error: "No window" };
+			return await supervisor.runEngineCommand(command);
+		},
+	);
+	registerIpcHandler(IPC_CHANNELS.editExternally, async (_event, text: string) => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.editExternally(text);
 	});
-	ipcMain.handle(IPC_CHANNELS.sendEngineCommand, (_event, command: { type: string; [key: string]: unknown }) => {
+	registerIpcHandler(IPC_CHANNELS.sendEngineCommand, (_event, command: { type: string; [key: string]: unknown }) => {
 		supervisor?.sendEngineCommand(command);
 	});
-	ipcMain.handle(IPC_CHANNELS.respondExtensionUi, async (_event, response: ExtensionUiResponse) => {
+	registerIpcHandler(IPC_CHANNELS.respondExtensionUi, async (_event, response: ExtensionUiResponse) => {
 		await supervisor?.respondExtensionUi(response);
 	});
 }
 
 app.whenReady().then(() => {
+	installContentSecurityPolicy();
 	registerIpc();
 	createWindow();
 	app.on("activate", () => {

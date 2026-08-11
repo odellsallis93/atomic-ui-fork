@@ -5,14 +5,44 @@ import { _electron } from "playwright";
 
 const packageDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const releaseDir = join(packageDir, "release");
+const GUI_ENVIRONMENT_KEYS = ["DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"];
+
+function smokeEnvironment() {
+	const env = {
+		PATH: process.env.PATH ?? "",
+		HOME: process.env.HOME ?? "",
+		TMPDIR: process.env.TMPDIR ?? "",
+		LANG: process.env.LANG ?? "C",
+	};
+	for (const key of GUI_ENVIRONMENT_KEYS) {
+		const value = process.env[key];
+		if (value !== undefined) env[key] = value;
+	}
+	return { ...env, NODE_ENV: "test" };
+}
+
+function hasPackagedExecutable(outputDir) {
+	if (process.platform === "darwin") {
+		return existsSync(join(outputDir, "Atomic.app", "Contents", "MacOS", "Atomic"));
+	}
+	const names = process.platform === "win32" ? ["Atomic.exe"] : ["atomic", "Atomic"];
+	return names.some((name) => {
+		const executablePath = join(outputDir, name);
+		return existsSync(executablePath) && statSync(executablePath).isFile();
+	});
+}
 
 function platformOutputDir() {
-	const expected = `${process.platform === "darwin" ? "mac" : process.platform}-${process.arch}`;
-	const match = readdirSync(releaseDir, { withFileTypes: true }).find(
-		(entry) => entry.isDirectory() && entry.name === expected,
-	);
-	if (!match) throw new Error(`No directory artifact at ${join(releaseDir, expected)}`);
-	return join(releaseDir, match.name);
+	const platform = process.platform === "darwin" ? "mac" : process.platform === "win32" ? "win" : "linux";
+	const names = [`${platform}-${process.arch}`, `${platform}-${process.arch}-unpacked`, `${platform}-unpacked`, platform];
+	const directories = readdirSync(releaseDir, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => entry.name);
+	for (const name of [...names, ...directories.filter((entry) => entry.startsWith(`${platform}-`))]) {
+		const outputDir = join(releaseDir, name);
+		if (hasPackagedExecutable(outputDir)) return outputDir;
+	}
+	throw new Error(`No ${platform} directory artifact with an executable under ${releaseDir}`);
 }
 
 export function packagedExecutable(outputDir = platformOutputDir()) {
@@ -38,22 +68,19 @@ export async function runPackagedSmoke() {
 	try {
 		application = await _electron.launch({
 			executablePath,
-			args: [appPath, `--user-data-dir=${userDataDir}`, "--no-sandbox", "--disable-gpu"],
-			env: {
-				PATH: process.env.PATH ?? "",
-				HOME: process.env.HOME ?? "",
-				TMPDIR: process.env.TMPDIR ?? "",
-				LANG: process.env.LANG ?? "C",
-				NODE_ENV: "test",
-			},
+			args: [appPath, `--user-data-dir=${userDataDir}`, "--disable-gpu"],
+			env: smokeEnvironment(),
 			timeout: 30_000,
 		});
 		const page = await application.firstWindow({ timeout: 30_000 });
 		if ((await page.title()) !== "Atomic") throw new Error(`Unexpected packaged window title: ${await page.title()}`);
 		if (!page.url().startsWith("file:")) throw new Error(`Unexpected packaged renderer URL: ${page.url()}`);
-		if (!(await page.evaluate(() => typeof window.atomicGui?.getStatus === "function"))) {
-			throw new Error("Packaged preload bridge did not start");
-		}
+		const bridgeReady = await page.evaluate(async () => {
+			if (typeof window.atomicGui?.getStatus !== "function") return false;
+			const status = await window.atomicGui.getStatus();
+			return typeof status?.state === "string";
+		});
+		if (!bridgeReady) throw new Error("Packaged preload bridge did not answer IPC");
 		console.log(`packaged smoke passed: ${executablePath}`);
 	} finally {
 		await application?.close().catch(() => undefined);
