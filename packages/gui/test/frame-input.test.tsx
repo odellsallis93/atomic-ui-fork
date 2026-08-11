@@ -81,3 +81,23 @@ test("focused frames do not receive Ctrl+C unless the engine declared ownership"
 	);
 	assert.deepEqual(inputs, []);
 });
+
+test("a handlesCtrlC frame owns Ctrl+C and Escape after a native dialog closes", async () => {
+	const inputs: string[] = [];
+	const workflowFrame = { ...frame, handlesCtrlC: true };
+	root = createRoot(container);
+	await act(async () => {
+		root.render(
+			createElement(FrameOverlay, {
+				frames: [workflowFrame],
+				modalOpen: false,
+				onDismiss: () => undefined,
+				onInput: (_componentId: string, data: string) => inputs.push(data),
+				onRender: () => undefined,
+			}),
+		);
+	});
+	window.dispatchEvent(new KeyboardEvent("keydown", { key: "c", ctrlKey: true, bubbles: true, cancelable: true }));
+	window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+	assert.deepEqual(inputs, ["\x03", "\x1b"]);
+});

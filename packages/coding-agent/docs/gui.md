@@ -22,10 +22,12 @@ the engine child.
 | M3 Sessions | Mostly done — resume picker (search/sort/all-projects), persisted transcript hydration on start/switch/tree navigation, rename/delete, clone/fork/import/export/compact, and tree folds/labels/edit-resubmit. Share and legacy composer `/import` or `/atomic` are excluded: protocol v2 exposes no share RPC and runtime `get_commands` inventories extension/prompt/skill commands only. |
 | M4 Models / settings | Partial — model picker, cycle model/thinking, theme loader, provider login/logout + OAuth UI, project trust prompt (full onboarding still open) |
 | M5 Extension UI host | Partial — native dialogs/notify/status/widgets, extension shortcut dispatch, `engine_input_form_*`, `hostSessionPicker` (`engine_session_picker_*`), ANSI frame overlays with render loop + `overlayOptions` + control/invalidate + legacy key encoding + kitty key-release + mouse-scroll wheel + autowrap terminal mode; remote custom header/footer/editor slots and transcript-local engine tool renderer frames |
-| M6–M7 | Not started |
+| M6 | Partial — Workflows has a scripted Electron renderer-host walkthrough: Composer sends generic `/workflow …` prompts for dispatch/list/status/attach, runtime F2 opens the generic custom-frame graph, and generic input-form/session-picker/dialog/widget routes cover its host surfaces. This is fixture evidence only; no workflow RPC, GUI-only renderer, live DBOS workflow proof, or other bundled-extension walkthrough is claimed. |
 
 The authoritative plan lives at
 [`specs/2026-08-08-electron-gui-plan.md`](../../../specs/2026-08-08-electron-gui-plan.md).
+
+Workflow route inventory and exclusions: [`packages/gui/docs/workflow-walkthrough.md`](../../gui/docs/workflow-walkthrough.md).
 
 ## Running locally
 

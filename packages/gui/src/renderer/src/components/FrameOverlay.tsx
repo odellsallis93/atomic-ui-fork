@@ -3,7 +3,7 @@ import { ansiLineToSegments } from "../helpers/ansi";
 import { nextFrameRenderRequestId } from "../helpers/frame-render-ids";
 import { encodeTerminalKey, encodeTerminalKeyRelease } from "../helpers/key-encode";
 import { encodeWheelDelta } from "../helpers/mouse-scroll";
-import { defaultRenderGrid, overlayOptionsToStyle } from "../helpers/overlay-geometry";
+import { defaultRenderGrid, frameRenderGrid, overlayOptionsToStyle } from "../helpers/overlay-geometry";
 import type { CustomFrame } from "../store/session-store";
 
 export function FrameOverlay(props: {
@@ -53,13 +53,11 @@ function FrameSurface(props: {
 	const pipelineRender = useCallback((): void => {
 		const el = bodyRef.current ?? surfaceRef.current;
 		const rect = el?.getBoundingClientRect();
-		const grid = defaultRenderGrid({
-			widthPx: rect?.width && rect.width > 0 ? rect.width : window.innerWidth * 0.8,
-			heightPx: rect?.height && rect.height > 0 ? rect.height : window.innerHeight * 0.6,
-		});
+		const grid = rect && rect.width > 0 && rect.height > 0
+			? defaultRenderGrid({ widthPx: rect.width, heightPx: rect.height })
+			: frameRenderGrid(frame.overlayOptions, { widthPx: window.innerWidth, heightPx: window.innerHeight }, frame.overlay);
 		onRenderRef.current(nextFrameRenderRequestId(frame.componentId), grid.width, grid.rows);
-	}, [frame.componentId]);
-
+	}, [frame.componentId, frame.overlay, frame.overlayOptions]);
 	useEffect(() => {
 		if (!frame.focused || modalOpen) return;
 		const isUnhandledCtrlC = (event: KeyboardEvent): boolean =>

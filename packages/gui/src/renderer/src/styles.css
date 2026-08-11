@@ -749,6 +749,10 @@ input {
 	max-height: 40vh;
 }
 
+.frame-overlay-inline[aria-hidden="true"] {
+	pointer-events: none;
+}
+
 .frame-overlay-positioned {
 	inset: auto;
 }

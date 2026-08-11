@@ -53,6 +53,12 @@ const appendPrompt = (text) => {
   session.entries.push(message(userId, session.leaf, "user", text), message(assistantId, userId, "assistant", "reply: " + text));
   session.leaf = assistantId;
 };
+const openWorkflowGraph = () => {
+  send({ type: "engine_custom_open", componentId: "workflow-graph", overlay: true, handlesCtrlC: true, overlayOptions: { anchor: "center", width: "100%", maxHeight: "100%", margin: 0 } });
+  send({ type: "engine_custom_frame", componentId: "workflow-graph", requestId: 1, lines: ["workflow graph", "run-a → stage-1"] });
+  send({ type: "extension_ui_request", id: "workflow-dialog", method: "input", title: "Workflow note", placeholder: "Add a note" });
+  send({ type: "extension_ui_request", id: "workflow-widget", method: "setWidget", widgetKey: "workflow.run", widgetLines: ["run-a · running"], widgetPlacement: "belowEditor" });
+};
 send({ type: "engine_ready", protocolVersion: 2, pid: process.pid });
 let input = "";
 process.stdin.on("data", (chunk) => {
@@ -64,11 +70,24 @@ process.stdin.on("data", (chunk) => {
     if (!line) continue;
     const request = JSON.parse(line);
     if (request.type === "engine_custom_input") {
-      send({ type: "engine_custom_frame", componentId: request.componentId, requestId: 99, lines: ["input: " + request.data] });
+      if (request.componentId === "workflow-graph" && request.data === "\u001b") {
+        send({ type: "engine_custom_control", componentId: "workflow-graph", action: "hide" });
+      } else if (request.componentId === "workflow-graph") {
+        send({ type: "engine_custom_frame", componentId: "workflow-graph", requestId: 101, lines: ["workflow graph input: " + request.data] });
+      } else if (request.componentId === "workflow-attach") {
+        send({ type: "engine_custom_frame", componentId: "workflow-attach", requestId: 99, lines: ["stage attached: " + request.data] });
+      } else {
+        send({ type: "engine_custom_frame", componentId: request.componentId, requestId: 99, lines: ["input: " + request.data] });
+      }
+      continue;
+    }
+    if (request.type === "engine_input_form_submit") {
+      send({ type: "extension_ui_request", id: "workflow-dispatch", method: "notify", message: "workflow dispatched", notifyType: "info" });
       continue;
     }
     if (request.type === "extension_ui_response") {
       send({ type: "engine_custom_frame", componentId: "focus-frame", requestId: 100, lines: ["dialog response"] });
+      send({ type: "engine_custom_frame", componentId: "workflow-graph", requestId: 100, lines: ["workflow dialog response"] });
       continue;
     }
     if (!request.id || typeof request.type !== "string") continue;
@@ -78,8 +97,8 @@ process.stdin.on("data", (chunk) => {
     else if (request.type === "get_tree") response(request, true, { tree: tree(), leafId: current().leaf });
     else if (request.type === "get_fork_messages") response(request, true, { messages: [{ entryId: "root", text: "fixture prompt" }] });
     else if (request.type === "list_sessions") response(request, true, { sessions: Object.entries(sessions).map(([id, session], index) => ({ path: session.file, id, cwd: "/tmp", name: session.name, modified: 10 + index, created: index, messageCount: session.entries.length, firstMessage: session.entries[0].message.content })) });
-    else if (request.type === "get_commands") response(request, true, { commands: [] });
-    else if (request.type === "get_shortcuts") response(request, true, { shortcuts: [] });
+    else if (request.type === "get_commands") response(request, true, { commands: [{ name: "workflow", description: "Workflow runtime command" }] });
+    else if (request.type === "get_shortcuts") response(request, true, { shortcuts: [{ key: "F2", description: "Open workflow graph" }] });
     else if (request.type === "get_available_models") response(request, true, { models: [] });
     else if (request.type === "get_session_stats") response(request, true, { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
     else if (request.type === "pause_queued_messages") response(request, true);
@@ -87,7 +106,27 @@ process.stdin.on("data", (chunk) => {
     else if (request.type === "clear_queue") { const drained = queues; queues = { steering: [], followUp: [] }; response(request, true, drained); queueUpdate(); }
     else if (request.type === "abort") { send({ type: "agent_end" }); response(request, true); }
     else if (request.type === "prompt") {
-      if (request.message === "open focused frame") {
+      if (request.message === "/workflow demo") {
+        send({ type: "engine_input_form_open", componentId: "workflow-form", title: "Dispatch workflow", submitLabel: "Run", fields: [{ name: "goal", type: "string", initialValue: "", description: "Goal", required: true }] });
+        response(request, true);
+      } else if (request.message === "/workflow list") {
+        send({ type: "engine_custom_open", componentId: "workflow-list", overlay: false, deferInlineCustomUiFocus: true });
+        send({ type: "engine_custom_frame", componentId: "workflow-list", requestId: 1, lines: ["workflow list", "demo"] });
+        response(request, true);
+      } else if (request.message === "/workflow status") {
+        send({ type: "engine_custom_open", componentId: "workflow-status", overlay: false, deferInlineCustomUiFocus: true });
+        send({ type: "engine_custom_frame", componentId: "workflow-status", requestId: 1, lines: ["workflow status", "run-a: running"] });
+        response(request, true);
+      } else if (request.message === "/workflow attach run-a stage-1") {
+        send({ type: "engine_custom_open", componentId: "workflow-attach", overlay: false });
+        send({ type: "engine_custom_frame", componentId: "workflow-attach", requestId: 1, lines: ["attach run-a stage-1"] });
+        response(request, true);
+      } else if (request.message === "/workflow resume") {
+        send({ type: "engine_session_picker_open", componentId: "workflow-resume", sessions: [{ path: "/tmp/workflow-run.jsonl", name: "run-a", modified: 1, created: 1, messageCount: 1 }], showRenameHint: false });
+        response(request, true);
+      } else if (request.message.startsWith("/workflow")) {
+        response(request, false, undefined, "unsupported workflow prompt");
+      } else if (request.message === "open focused frame") {
         send({ type: "engine_custom_open", componentId: "focus-frame", overlay: true, handlesCtrlC: true });
         send({ type: "engine_custom_frame", componentId: "focus-frame", requestId: 1, lines: ["focused frame"] });
         send({ type: "extension_ui_request", id: "fixture-dialog", method: "input", title: "Fixture input", placeholder: "Type here", timeout: 1000 });
@@ -105,6 +144,7 @@ process.stdin.on("data", (chunk) => {
         response(request, true);
       }
     }
+    else if (request.type === "invoke_shortcut" && request.key.toLowerCase() === "f2") { openWorkflowGraph(); response(request, true); }
     else if (request.type === "fork") { active = "fork"; response(request, true, { text: "fork edit", cancelled: false }); }
     else if (request.type === "import_session") { active = "imported"; response(request, true, { cancelled: false }); }
     else if (request.type === "navigate_tree") {
@@ -253,4 +293,44 @@ test("Electron fixture E2E: native dialog owns focused-frame keys and restores f
 	await page.keyboard.press("Escape");
 	await dialog.waitFor({ state: "detached" });
 	await page.getByText("dialog response").waitFor();
+}, 30_000);
+
+test("Electron fixture E2E: workflow routes stay on generic prompts and frames", async () => {
+	const page = await launchFixture();
+
+	await editor(page).click();
+	await page.keyboard.type("/workflow demo");
+	await page.getByRole("button", { name: "Send" }).click();
+	await page.getByText("Dispatch workflow").waitFor();
+	await page.getByLabel("Goal").fill("ship the fixture");
+	await page.getByRole("button", { name: "Run" }).click();
+	await page.getByText("workflow dispatched").waitFor();
+
+	for (const command of ["/workflow list", "/workflow status"]) {
+		await editor(page).click();
+		await page.keyboard.type(command);
+		await page.getByRole("button", { name: "Send" }).click();
+	}
+	await page.getByText("workflow list").waitFor();
+	await page.getByText("workflow status").waitFor();
+
+	await page.keyboard.press("F2");
+	await page.getByText("workflow graph").waitFor();
+	await page.getByText("run-a · running").waitFor();
+	const dialog = page.getByRole("dialog").filter({ hasText: "Workflow note" });
+	await dialog.waitFor();
+	await dialog.locator("input").fill("only the dialog sees this");
+	await page.keyboard.press("Escape");
+	await dialog.waitFor({ state: "detached" });
+	await page.keyboard.press("ArrowRight");
+	await page.getByText(/workflow graph input/).waitFor();
+	await page.keyboard.press("Escape");
+	await page.getByText("workflow graph").waitFor({ state: "detached" });
+
+	await editor(page).click();
+	await page.keyboard.type("/workflow attach run-a stage-1");
+	await page.getByRole("button", { name: "Send" }).click();
+	await page.getByText("attach run-a stage-1").waitFor();
+	await page.keyboard.press("Enter");
+	await page.getByText(/stage attached/).waitFor();
 }, 30_000);

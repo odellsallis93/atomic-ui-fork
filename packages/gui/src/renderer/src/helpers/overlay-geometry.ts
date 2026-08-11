@@ -137,3 +137,19 @@ export function defaultRenderGrid(viewport: { widthPx: number; heightPx: number 
 		cellHeightPx,
 	};
 }
+
+/**
+ * Choose the initial terminal grid before the frame has painted. The engine may
+ * request a full viewport overlay; otherwise preserve the compact host defaults.
+ */
+export function frameRenderGrid(
+	overlayOptions: GuiOverlayOptions | undefined,
+	viewport: { widthPx: number; heightPx: number },
+	overlay: boolean,
+): { width: number; rows: number; cellWidthPx: number; cellHeightPx: number } {
+	const widthPx =
+		overlay && overlayOptions?.width === "100%" ? viewport.widthPx : viewport.widthPx * (overlay ? 0.8 : 0.96);
+	const heightPx =
+		overlay && overlayOptions?.maxHeight === "100%" ? viewport.heightPx : viewport.heightPx * (overlay ? 0.6 : 0.25);
+	return defaultRenderGrid({ widthPx, heightPx });
+}

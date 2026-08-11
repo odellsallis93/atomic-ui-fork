@@ -283,7 +283,7 @@ npm run dev --workspace=@bastani/atomic-gui
 
 | Extension area | User outcome | Validation | Done when |
 |---|---|---|---|
-| Workflows | Dispatch/status/list/graph/stage attach from GUI | Scripted E2E | Walkthrough doc + test pass |
+| Workflows | Dispatch/status/list/graph/stage attach from GUI | Scripted renderer-host E2E | Done for fixture host path — `packages/gui/docs/workflow-walkthrough.md` and `electron-phase2.e2e.test.ts`; generic prompt/shortcut/form/picker/frame routes only, live DBOS workflow proof excluded |
 | Subagents | Background status / control visible | Scripted E2E | No TUI required |
 | Intercom | Compose/receive | Scripted E2E | Approved gaps documented |
 | MCP | Login and tool use host UI | Scripted E2E | OAuth cancellation safe |

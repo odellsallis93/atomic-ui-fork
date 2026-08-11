@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { clearFrameRenderRequestId, nextFrameRenderRequestId } from "../helpers/frame-render-ids";
-import { defaultRenderGrid } from "../helpers/overlay-geometry";
+import { frameRenderGrid } from "../helpers/overlay-geometry";
 import type { CustomFrame } from "../store/session-store";
 
 function frameRenderSignature(frames: CustomFrame[]): string {
@@ -31,10 +31,11 @@ export function FrameRenderHost(props: {
 		for (const frame of current) {
 			if (frame.hidden) continue;
 			const requestId = nextFrameRenderRequestId(frame.componentId);
-			const grid = defaultRenderGrid({
-				widthPx: window.innerWidth * (frame.overlay ? 0.8 : 0.96),
-				heightPx: window.innerHeight * (frame.overlay ? 0.6 : 0.25),
-			});
+			const grid = frameRenderGrid(
+				frame.overlayOptions,
+				{ widthPx: window.innerWidth, heightPx: window.innerHeight },
+				frame.overlay,
+			);
 			onRenderRef.current(frame.componentId, requestId, grid.width, grid.rows);
 		}
 		for (const componentId of knownIds.current) {
