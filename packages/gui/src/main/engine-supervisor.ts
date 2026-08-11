@@ -240,12 +240,12 @@ export class EngineSupervisor {
 	}
 
 	listThemes() {
-		return listThemes();
+		return listThemes(process.env, this.cwd);
 	}
 
 	getThemeCss(name?: string) {
 		const theme = name?.trim() || readGuiSettings().theme;
-		return loadThemeCss(theme);
+		return loadThemeCss(theme, process.env, this.cwd);
 	}
 
 	getSettings() {
@@ -254,7 +254,7 @@ export class EngineSupervisor {
 
 	setTheme(name: string) {
 		writeThemeSetting(name);
-		return loadThemeCss(name);
+		return loadThemeCss(name, process.env, this.cwd);
 	}
 
 	getTrustStatus(cwd?: string) {

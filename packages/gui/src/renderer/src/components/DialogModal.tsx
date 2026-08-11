@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ExtensionUiRequest, ExtensionUiResponse } from "../../../shared/ipc";
 
 function titleOf(request: ExtensionUiRequest): string {
@@ -17,6 +17,27 @@ export function DialogModal(props: {
 		request.method === "editor" && typeof request.prefill === "string" ? request.prefill : "",
 	);
 
+	useEffect(() => {
+		const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		const focus = window.setTimeout(() => {
+			(document.querySelector(".modal input, .modal textarea, .modal button") as HTMLElement | null)?.focus();
+		}, 0);
+		const cancel = () => props.onRespond({ id: request.id, cancelled: true });
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				cancel();
+			}
+		};
+		document.addEventListener("keydown", onKeyDown);
+		const timeout = "timeout" in request && request.timeout && request.timeout > 0 ? window.setTimeout(cancel, request.timeout) : undefined;
+		return () => {
+			window.clearTimeout(focus);
+			if (timeout !== undefined) window.clearTimeout(timeout);
+			document.removeEventListener("keydown", onKeyDown);
+			previous?.focus();
+		};
+	}, [props.onRespond, request]);
 	if (request.method === "confirm") {
 		return (
 			<div className="modal-backdrop">

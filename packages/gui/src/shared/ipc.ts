@@ -133,7 +133,7 @@ export interface ForkMessageInfo {
 
 export interface ThemeSummary {
 	name: string;
-	source: "builtin" | "user";
+	source: "builtin" | "user" | "project";
 	path: string;
 }
 
