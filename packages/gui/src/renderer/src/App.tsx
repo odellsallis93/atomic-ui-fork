@@ -19,6 +19,7 @@ import { TreeNavigator } from "./components/TreeNavigator";
 import { TrustDialog } from "./components/TrustDialog";
 import { createSubmitGate, planSubmit, readFileAsDataUrl, readImageFiles } from "./helpers/attachments";
 import { formatUsage, useSessionStore } from "./store/session-store";
+import { actionForKey, keyboardShortcut, restoreFailedDraft } from "./helpers/composer-parity";
 
 function hasGuiApi(): boolean {
 	return typeof window !== "undefined" && typeof window.atomicGui !== "undefined";
@@ -96,6 +97,7 @@ export function App() {
 	const usageLabel = useSessionStore((s) => s.usageLabel);
 	const commands = useSessionStore((s) => s.commands);
 	const extensionShortcuts = useSessionStore((s) => s.extensionShortcuts);
+	const keybindings = useSessionStore((s) => s.keybindings);
 	const models = useSessionStore((s) => s.models);
 	const sessions = useSessionStore((s) => s.sessions);
 	const treeNodes = useSessionStore((s) => s.treeNodes);
@@ -282,29 +284,43 @@ export function App() {
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent): void => {
 			if (!hasGuiApi() || status.state !== "ready") return;
-			if (event.ctrlKey && event.key.toLowerCase() === "l") {
+			if ((event.target as HTMLElement | null)?.closest(".composer-editor")) return;
+			const configuredAction = actionForKey(keybindings, keyboardShortcut(event) ?? "", "transcript");
+			if (configuredAction === "app.model.select") {
 				event.preventDefault();
 				void openModels();
-			} else if (event.ctrlKey && event.key.toLowerCase() === "p") {
+				return;
+			}
+			if (configuredAction === "app.model.cycleForward" || configuredAction === "app.model.cycleBackward") {
 				event.preventDefault();
-				void window.atomicGui.cycleModel("forward").then((result) => {
-					if (!result.ok) setErrorBanner(result.error);
-					else void refreshMetadata();
-				});
-			} else if (event.shiftKey && event.key === "Tab") {
+				void window.atomicGui
+					.cycleModel(configuredAction === "app.model.cycleForward" ? "forward" : "backward")
+					.then((result) => {
+						if (!result.ok) setErrorBanner(result.error);
+						else void refreshMetadata();
+					});
+				return;
+			}
+			if (configuredAction === "app.thinking.cycle") {
 				event.preventDefault();
 				void window.atomicGui.cycleThinking().then((result) => {
 					if (!result.ok) setErrorBanner(result.error);
 					else void refreshMetadata();
 				});
-			} else if (event.ctrlKey && event.key.toLowerCase() === "t") {
+				return;
+			}
+			if (configuredAction === "app.thinking.toggle") {
 				event.preventDefault();
 				toggleThinking();
-			} else if (event.ctrlKey && event.key.toLowerCase() === "o") {
+				return;
+			}
+			if (configuredAction === "app.tools.expand") {
 				event.preventDefault();
 				const lastTool = [...entries].reverse().find((entry) => entry.kind === "tool");
 				if (lastTool) toggleEntryExpanded(lastTool.id);
-			} else if (event.ctrlKey && event.key.toLowerCase() === ",") {
+				return;
+			}
+			if (event.ctrlKey && event.key.toLowerCase() === ",") {
 				event.preventDefault();
 				void openSettings();
 			} else if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "a") {
@@ -330,6 +346,7 @@ export function App() {
 	}, [
 		entries,
 		extensionShortcuts,
+		keybindings,
 		openAuth,
 		openModels,
 		openSettings,
@@ -366,7 +383,7 @@ export function App() {
 		await window.atomicGui.stopEngine();
 	};
 
-	const submit = async (behavior?: "steer" | "followUp"): Promise<void> => {
+	const submit = async (behavior?: "steer" | "followUp", submittedMessage = composerText): Promise<void> => {
 		if (!hasGuiApi()) return;
 		// One submit at a time: the read-wait below yields, so a second Enter would otherwise
 		// re-enter with the same composer text and send it twice.
@@ -376,7 +393,7 @@ export function App() {
 			while (pendingImageReads.current.size > 0) {
 				await Promise.all([...pendingImageReads.current]);
 			}
-			const plan = planSubmit(composerText, attachedImagesRef.current);
+			const plan = planSubmit(submittedMessage, attachedImagesRef.current);
 			if (plan.kind === "none") return;
 			// Drop any banner from the previous submit so a stale advisory cannot outlive it.
 			setErrorBanner(undefined);
@@ -407,6 +424,15 @@ export function App() {
 				return;
 			}
 
+			if (!behavior) {
+				const resumed = await window.atomicGui.runEngineCommand({ type: "resume_queued_messages" });
+				if (!resumed.ok) {
+					setAttached(plan.images);
+					setComposerText(restoreFailedDraft(submittedMessage, useSessionStore.getState().composerText));
+					setErrorBanner(resumed.error ?? "Could not resume queued messages");
+					return;
+				}
+			}
 			setAttached([]);
 			const result = await window.atomicGui.prompt({
 				message: plan.message,
@@ -415,6 +441,7 @@ export function App() {
 			});
 			if (!result.ok) {
 				setAttached(plan.images);
+				setComposerText(restoreFailedDraft(submittedMessage, useSessionStore.getState().composerText));
 				setErrorBanner(result.error ?? "Prompt failed");
 			}
 		} finally {
@@ -441,10 +468,41 @@ export function App() {
 		[setAttached, setErrorBanner],
 	);
 
-	const abort = async (): Promise<void> => {
+	const dequeue = async (): Promise<void> => {
 		if (!hasGuiApi()) return;
+		const result = await window.atomicGui.runEngineCommand<{ steering: string[]; followUp: string[] }>({
+			type: "clear_queue",
+		});
+		if (!result.ok) {
+			setErrorBanner(result.error ?? "Could not restore queued messages");
+			return;
+		}
+		const queued = [...(result.data?.steering ?? []), ...(result.data?.followUp ?? [])];
+		setComposerText(restoreFailedDraft(queued.join("\n\n"), useSessionStore.getState().composerText));
+	};
+
+	const abort = async (restoreQueue: boolean): Promise<void> => {
+		if (!hasGuiApi()) return;
+		const paused = await window.atomicGui.runEngineCommand({ type: "pause_queued_messages" });
+		if (!paused.ok) {
+			setErrorBanner(paused.error ?? "Could not pause queued messages");
+			return;
+		}
+		if (restoreQueue) await dequeue();
 		const result = await window.atomicGui.abort();
 		if (!result.ok) setErrorBanner(result.error ?? "Abort failed");
+	};
+
+	const clear = (): void => {
+		if (working || queue.length > 0) void abort(true);
+		else setComposerText("");
+	};
+
+	const openExternalEditor = async (text: string): Promise<void> => {
+		if (!hasGuiApi()) return;
+		const result = await window.atomicGui.editExternally(text);
+		if (result.ok) setComposerText(result.text);
+		else setErrorBanner(result.error);
 	};
 
 	const respondDialog = async (response: ExtensionUiResponse): Promise<void> => {
@@ -566,9 +624,31 @@ export function App() {
 					commands={commands}
 					widgets={widgets}
 					images={attachedImages}
+					keybindings={keybindings}
 					onChange={setComposerText}
-					onSubmit={(behavior) => void submit(behavior)}
-					onAbort={() => void abort()}
+					onSubmit={(behavior, message) => void submit(behavior, message)}
+					onAbort={(restoreQueue) => void abort(restoreQueue)}
+					onClear={clear}
+					onDequeue={() => void dequeue()}
+					onExternalEditor={(text) => void openExternalEditor(text)}
+					onModelSelect={() => void openModels()}
+					onModelCycle={(direction) =>
+						void window.atomicGui.cycleModel(direction).then((result) => {
+							if (!result.ok) setErrorBanner(result.error);
+							else void refreshMetadata();
+						})
+					}
+					onThinkingCycle={() =>
+						void window.atomicGui.cycleThinking().then((result) => {
+							if (!result.ok) setErrorBanner(result.error);
+							else void refreshMetadata();
+						})
+					}
+					onThinkingToggle={toggleThinking}
+					onToolsExpand={() => {
+						const lastTool = [...entries].reverse().find((entry) => entry.kind === "tool");
+						if (lastTool) toggleEntryExpanded(lastTool.id);
+					}}
 					onHistoryUp={() => {
 						historyUp();
 					}}

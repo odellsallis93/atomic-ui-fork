@@ -314,6 +314,8 @@ export interface GuiHostApi {
 	applyTrust(optionId: string, cwd?: string): Promise<TrustStatus>;
 	submitInputForm(componentId: string, values: Record<string, string>): Promise<void>;
 	cancelInputForm(componentId: string): Promise<void>;
+	runEngineCommand<T = unknown>(command: { type: string; [key: string]: unknown }): Promise<RpcResult<T>>;
+	editExternally(text: string): Promise<{ ok: true; text: string } | { ok: false; error: string }>;
 	sendEngineCommand(command: { type: string; [key: string]: unknown }): Promise<void>;
 	respondExtensionUi(response: ExtensionUiResponse): Promise<void>;
 	onStatus(listener: (status: EngineStatus) => void): () => void;
@@ -365,6 +367,8 @@ export const IPC_CHANNELS = {
 	applyTrust: "gui:apply-trust",
 	submitInputForm: "gui:submit-input-form",
 	cancelInputForm: "gui:cancel-input-form",
+	runEngineCommand: "gui:run-engine-command",
+	editExternally: "gui:edit-externally",
 	sendEngineCommand: "gui:send-engine-command",
 	respondExtensionUi: "gui:respond-extension-ui",
 	status: "gui:status",

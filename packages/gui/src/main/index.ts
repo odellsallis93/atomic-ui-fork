@@ -211,6 +211,14 @@ function registerIpc(): void {
 	ipcMain.handle(IPC_CHANNELS.cancelInputForm, (_event, componentId: string) => {
 		supervisor?.cancelInputForm(componentId);
 	});
+	ipcMain.handle(IPC_CHANNELS.runEngineCommand, async (_event, command: { type: string; [key: string]: unknown }) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.runEngineCommand(command);
+	});
+	ipcMain.handle(IPC_CHANNELS.editExternally, async (_event, text: string) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.editExternally(text);
+	});
 	ipcMain.handle(IPC_CHANNELS.sendEngineCommand, (_event, command: { type: string; [key: string]: unknown }) => {
 		supervisor?.sendEngineCommand(command);
 	});
