@@ -73,6 +73,21 @@ test("ingestEvent streams assistant text deltas into one entry", () => {
 	assert.equal(entries[0]?.streaming, false);
 });
 
+test("updating an earlier transcript entry preserves its position", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({ type: "message_start", message: { id: "m1", role: "assistant", content: [] } });
+	ingestEvent({ type: "tool_execution_start", toolCallId: "tool-1", toolName: "bash", args: {} });
+	ingestEvent({
+		type: "message_update",
+		message: { id: "m1", role: "assistant", content: [] },
+		assistantMessageEvent: { type: "text_delta", delta: "Hello" },
+	});
+	assert.deepEqual(
+		useSessionStore.getState().entries.map((entry) => entry.id),
+		["m1", "tool-1"],
+	);
+});
+
 test("hydrateTranscript restores durable messages and session boundaries", () => {
 	const { hydrateTranscript } = useSessionStore.getState();
 	hydrateTranscript(

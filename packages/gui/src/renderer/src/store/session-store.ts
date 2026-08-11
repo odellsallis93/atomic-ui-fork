@@ -191,6 +191,14 @@ function nextId(prefix: string): string {
 	return `${prefix}-${entryCounter}`;
 }
 
+function upsertEntry(entries: TranscriptEntry[], nextEntry: TranscriptEntry): TranscriptEntry[] {
+	const index = entries.findIndex((entry) => entry.id === nextEntry.id);
+	if (index === -1) return [...entries, nextEntry];
+	const nextEntries = entries.slice();
+	nextEntries[index] = nextEntry;
+	return nextEntries;
+}
+
 function textFromContent(content: unknown): string {
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
@@ -1091,24 +1099,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				const existing = state.entries.find((item) => item.id === entryId);
 				return {
 					working: entry.kind !== "user" && entry.kind !== "skill",
-					entries: [
-						...state.entries.filter((item) => item.id !== entryId),
-						{
-							...existing,
-							...entry,
-							id: entryId,
-							toolName: entry.toolName ?? existing?.toolName,
-							toolCallId: entry.toolCallId ?? existing?.toolCallId,
-							toolArgs: existing?.toolArgs ?? entry.toolArgs,
-							remoteRenderId: existing?.remoteRenderId ?? entry.remoteRenderId,
-							remoteRenderLines: existing?.remoteRenderLines,
-							remoteRenderGeneration: existing?.remoteRenderGeneration ?? entry.remoteRenderGeneration,
-							remoteRenderAppliedRequestId: existing?.remoteRenderAppliedRequestId,
-							text: entry.text || existing?.text || "",
-							expanded: existing?.expanded ?? entry.expanded,
-							toolResult: entry.role === "toolResult" ? message : existing?.toolResult,
-						},
-					],
+					entries: upsertEntry(state.entries, {
+						...existing,
+						...entry,
+						id: entryId,
+						toolName: entry.toolName ?? existing?.toolName,
+						toolCallId: entry.toolCallId ?? existing?.toolCallId,
+						toolArgs: existing?.toolArgs ?? entry.toolArgs,
+						remoteRenderId: existing?.remoteRenderId ?? entry.remoteRenderId,
+						remoteRenderLines: existing?.remoteRenderLines,
+						remoteRenderGeneration: existing?.remoteRenderGeneration ?? entry.remoteRenderGeneration,
+						remoteRenderAppliedRequestId: existing?.remoteRenderAppliedRequestId,
+						text: entry.text || existing?.text || "",
+						expanded: existing?.expanded ?? entry.expanded,
+						toolResult: entry.role === "toolResult" ? message : existing?.toolResult,
+					}),
 				};
 			});
 			return;
@@ -1168,7 +1173,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				return {
 					working: streaming,
 					workingLabel: "streaming",
-					entries: [...state.entries.filter((entry) => entry.id !== id), nextEntry],
+					entries: upsertEntry(state.entries, nextEntry),
 				};
 			});
 			return;
@@ -1188,24 +1193,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				const nextEntry = transcriptEntryFromMessage(id, message, false);
 				if (!nextEntry) return state;
 				return {
-					entries: [
-						...state.entries.filter((entry) => entry.id !== id),
-						{
-							...existing,
-							...nextEntry,
-							text: nextEntry.text || existing?.text || "",
-							thinking: nextEntry.thinking ?? existing?.thinking,
-							expanded: existing?.expanded ?? nextEntry.expanded,
-							toolName: nextEntry.toolName ?? existing?.toolName,
-							toolCallId: nextEntry.toolCallId ?? existing?.toolCallId,
-							toolArgs: existing?.toolArgs ?? nextEntry.toolArgs,
-							remoteRenderId: existing?.remoteRenderId ?? nextEntry.remoteRenderId,
-							remoteRenderLines: existing?.remoteRenderLines,
-							remoteRenderGeneration: existing?.remoteRenderGeneration ?? nextEntry.remoteRenderGeneration,
-							remoteRenderAppliedRequestId: existing?.remoteRenderAppliedRequestId,
-							toolResult: role === "toolResult" ? message : existing?.toolResult,
-						},
-					],
+					entries: upsertEntry(state.entries, {
+						...existing,
+						...nextEntry,
+						text: nextEntry.text || existing?.text || "",
+						thinking: nextEntry.thinking ?? existing?.thinking,
+						expanded: existing?.expanded ?? nextEntry.expanded,
+						toolName: nextEntry.toolName ?? existing?.toolName,
+						toolCallId: nextEntry.toolCallId ?? existing?.toolCallId,
+						toolArgs: existing?.toolArgs ?? nextEntry.toolArgs,
+						remoteRenderId: existing?.remoteRenderId ?? nextEntry.remoteRenderId,
+						remoteRenderLines: existing?.remoteRenderLines,
+						remoteRenderGeneration: existing?.remoteRenderGeneration ?? nextEntry.remoteRenderGeneration,
+						remoteRenderAppliedRequestId: existing?.remoteRenderAppliedRequestId,
+						toolResult: role === "toolResult" ? message : existing?.toolResult,
+					}),
 				};
 			});
 			return;
@@ -1232,7 +1234,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				return {
 					working: true,
 					workingLabel: toolName,
-					entries: [...state.entries.filter((entry) => entry.id !== toolCallId), nextEntry],
+					entries: upsertEntry(state.entries, nextEntry),
 				};
 			});
 			return;
@@ -1287,17 +1289,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			if (value.type !== "custom" || typeof value.id !== "string") return;
 			const entryId = value.id;
 			set((state) => ({
-				entries: [
-					...state.entries.filter((item) => item.id !== entryId),
-					{
-						id: entryId,
-						kind: "custom",
-						customType: typeof value.customType === "string" ? value.customType : "custom",
-						text: stringify(value.data),
-						streaming: false,
-						expanded: false,
-					},
-				],
+				entries: upsertEntry(state.entries, {
+					id: entryId,
+					kind: "custom",
+					customType: typeof value.customType === "string" ? value.customType : "custom",
+					text: stringify(value.data),
+					streaming: false,
+					expanded: false,
+				}),
 			}));
 			return;
 		}

@@ -1,7 +1,12 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ansiLineToSegments } from "../helpers/ansi";
 import { renderMarkdown } from "../helpers/markdown";
-import { getVirtualWindow, isNearTranscriptEnd } from "../helpers/virtual-window";
+import {
+	DEFAULT_ENTRY_HEIGHT,
+	getEntryIndexAtOffset,
+	getVirtualWindow,
+	isNearTranscriptEnd,
+} from "../helpers/virtual-window";
 import type { TranscriptEntry } from "../store/session-store";
 
 function MarkdownBody({ source }: { source: string }) {
@@ -12,26 +17,38 @@ function MarkdownBody({ source }: { source: string }) {
 	return <div ref={ref} className="entry-body markdown" />;
 }
 
+function withOccurrenceKeys<T>(items: readonly T[], keyFor: (item: T) => string): Array<{ item: T; key: string }> {
+	const occurrences = new Map<string, number>();
+	return items.map((item) => {
+		const baseKey = keyFor(item);
+		const occurrence = occurrences.get(baseKey) ?? 0;
+		occurrences.set(baseKey, occurrence + 1);
+		return { item, key: `${baseKey}:${occurrence}` };
+	});
+}
+
 function ToolBody({ entry }: { entry: TranscriptEntry }) {
 	if (entry.remoteRenderLines) {
 		return (
 			<pre className="tool-body">
-				{entry.remoteRenderLines.map((line) => (
-					<div key={`${entry.id}-${line}`} className="ansi-line">
-						{ansiLineToSegments(line).map((segment) => (
-							<span
-								key={`${entry.id}-${line}-${segment.text}-${segment.fg ?? ""}-${segment.bg ?? ""}`}
-								style={{
-									color: segment.fg,
-									background: segment.bg,
-									fontWeight: segment.bold ? 700 : undefined,
-									opacity: segment.dim ? 0.65 : undefined,
-									textDecoration: segment.underline ? "underline" : undefined,
-								}}
-							>
-								{segment.text}
-							</span>
-						))}
+				{withOccurrenceKeys(entry.remoteRenderLines, (line) => line).map(({ item: line, key: lineKey }) => (
+					<div key={`${entry.id}-line-${lineKey}`} className="ansi-line">
+						{withOccurrenceKeys(ansiLineToSegments(line), (segment) => JSON.stringify(segment)).map(
+							({ item: segment, key: segmentKey }) => (
+								<span
+									key={segmentKey}
+									style={{
+										color: segment.fg,
+										background: segment.bg,
+										fontWeight: segment.bold ? 700 : undefined,
+										opacity: segment.dim ? 0.65 : undefined,
+										textDecoration: segment.underline ? "underline" : undefined,
+									}}
+								>
+									{segment.text}
+								</span>
+							),
+						)}
 					</div>
 				))}
 			</pre>
@@ -49,11 +66,15 @@ function EntryView({
 	hideThinking,
 	hiddenThinkingLabel,
 	onToggle,
+	disclosures,
+	onDisclosureToggle,
 }: {
 	entry: TranscriptEntry;
 	hideThinking: boolean;
 	hiddenThinkingLabel: string;
 	onToggle: (id: string) => void;
+	disclosures: ReadonlyMap<string, boolean>;
+	onDisclosureToggle: (id: string, open: boolean) => void;
 }) {
 	if (entry.kind === "compaction" || entry.kind === "branchSummary") {
 		return (
@@ -110,7 +131,11 @@ function EntryView({
 			</div>
 			{entry.thinking && hideThinking ? <div className="thinking-hidden">{hiddenThinkingLabel}</div> : null}
 			{entry.thinking && !hideThinking ? (
-				<details className="thinking" open={entry.streaming}>
+				<details
+					className="thinking"
+					open={disclosures.get(`${entry.id}:thinking`) ?? entry.streaming}
+					onToggle={(event) => onDisclosureToggle(`${entry.id}:thinking`, event.currentTarget.open)}
+				>
 					<summary>thinking</summary>
 					<pre>{entry.thinking}</pre>
 				</details>
@@ -121,7 +146,10 @@ function EntryView({
 				<ToolBody entry={entry} />
 			) : entry.kind === "skill" ? (
 				<div className="entry-body">
-					<details>
+					<details
+						open={disclosures.get(`${entry.id}:skill`) ?? false}
+						onToggle={(event) => onDisclosureToggle(`${entry.id}:skill`, event.currentTarget.open)}
+					>
 						<summary>{entry.skillLocation}</summary>
 						<pre>{entry.skillContent}</pre>
 					</details>
@@ -136,32 +164,50 @@ function EntryView({
 
 function MeasuredEntry({
 	entry,
+	index,
 	top,
 	hideThinking,
 	hiddenThinkingLabel,
 	onToggle,
+	disclosures,
+	onDisclosureToggle,
 	onMeasure,
 }: {
 	entry: TranscriptEntry;
+	index: number;
 	top: number;
 	hideThinking: boolean;
 	hiddenThinkingLabel: string;
 	onToggle: (id: string) => void;
-	onMeasure: (id: string, height: number) => void;
+	disclosures: ReadonlyMap<string, boolean>;
+	onDisclosureToggle: (id: string, open: boolean) => void;
+	onMeasure: (id: string, height: number, index: number) => void;
 }) {
 	const ref = useRef<HTMLDivElement | null>(null);
 	useLayoutEffect(() => {
 		const node = ref.current;
 		if (!node) return;
-		const measure = () => onMeasure(entry.id, node.getBoundingClientRect().height);
+		const measure = () => onMeasure(entry.id, node.getBoundingClientRect().height, index);
 		measure();
 		const observer = new ResizeObserver(measure);
 		observer.observe(node);
 		return () => observer.disconnect();
-	}, [entry.id, onMeasure]);
+	}, [entry.id, index, onMeasure]);
 	return (
-		<div ref={ref} className="transcript-virtual-row" style={{ transform: `translateY(${top}px)` }}>
-			<EntryView entry={entry} hideThinking={hideThinking} hiddenThinkingLabel={hiddenThinkingLabel} onToggle={onToggle} />
+		<div
+			ref={ref}
+			className="transcript-virtual-row"
+			data-entry-id={entry.id}
+			style={{ transform: `translateY(${top}px)` }}
+		>
+			<EntryView
+				entry={entry}
+				hideThinking={hideThinking}
+				hiddenThinkingLabel={hiddenThinkingLabel}
+				onToggle={onToggle}
+				disclosures={disclosures}
+				onDisclosureToggle={onDisclosureToggle}
+			/>
 		</div>
 	);
 }
@@ -183,29 +229,52 @@ export function Transcript({
 	const heights = useRef(new Map<string, number>());
 	const followRef = useRef(true);
 	const previousLeafId = useRef(leafId);
+	const disclosures = useRef(new Map<string, boolean>());
 	const [scrollTop, setScrollTop] = useState(0);
 	const [viewportHeight, setViewportHeight] = useState(0);
-	const [measurementVersion, setMeasurementVersion] = useState(0);
+	const [, setMeasurementVersion] = useState(0);
+	const [focusedEntryId, setFocusedEntryId] = useState<string>();
 	const ids = useMemo(() => entries.map((entry) => entry.id), [entries]);
-	const virtual = useMemo(
-		() => getVirtualWindow(entries.length, scrollTop, viewportHeight, heights.current, ids),
-		[entries.length, ids, measurementVersion, scrollTop, viewportHeight],
-	);
+	const virtual = getVirtualWindow(entries.length, scrollTop, viewportHeight, heights.current, ids);
+	const anchorIndex = useMemo(() => getEntryIndexAtOffset(virtual.offsets, scrollTop), [scrollTop, virtual.offsets]);
+	const anchorIndexRef = useRef(anchorIndex);
+	anchorIndexRef.current = anchorIndex;
+	const focusedIndex = focusedEntryId ? ids.indexOf(focusedEntryId) : -1;
+	const renderIndices = useMemo(() => {
+		const indices = Array.from({ length: virtual.end - virtual.start }, (_, index) => virtual.start + index);
+		if (focusedIndex >= 0 && !indices.includes(focusedIndex)) indices.push(focusedIndex);
+		return indices;
+	}, [focusedIndex, virtual.end, virtual.start]);
 	const lastEntry = entries.at(-1);
 	const scrollKey = `${entries.length}:${lastEntry?.id ?? ""}:${lastEntry?.text.length ?? 0}:${lastEntry?.streaming ? 1 : 0}`;
-	const onMeasure = useCallback((id: string, height: number) => {
-		if (height <= 0 || heights.current.get(id) === height) return;
+	const onMeasure = useCallback((id: string, height: number, entryIndex: number) => {
+		const previousHeight = heights.current.get(id) ?? DEFAULT_ENTRY_HEIGHT;
+		if (height <= 0 || previousHeight === height) return;
+		const scroller = scrollerRef.current;
+		if (scroller && !followRef.current && entryIndex < anchorIndexRef.current) {
+			scroller.scrollTop += height - previousHeight;
+			setScrollTop(scroller.scrollTop);
+		}
 		heights.current.set(id, height);
 		setMeasurementVersion((version) => version + 1);
+	}, []);
+	const onDisclosureToggle = useCallback((id: string, open: boolean) => {
+		disclosures.current.set(id, open);
 	}, []);
 
 	useLayoutEffect(() => {
 		if (previousLeafId.current === leafId) return;
 		previousLeafId.current = leafId;
-		heights.current.clear();
+		const liveIds = new Set(ids);
+		for (const id of heights.current.keys()) {
+			if (!liveIds.has(id)) heights.current.delete(id);
+		}
 		followRef.current = true;
+		const scroller = scrollerRef.current;
+		if (scroller) scroller.scrollTop = 0;
 		setScrollTop(0);
-	}, [leafId]);
+		setMeasurementVersion((version) => version + 1);
+	}, [ids, leafId]);
 	useLayoutEffect(() => {
 		const scroller = scrollerRef.current;
 		if (!scroller) return;
@@ -215,45 +284,55 @@ export function Transcript({
 		return () => observer.disconnect();
 	}, []);
 	useLayoutEffect(() => {
+		void scrollKey;
+		void virtual.totalHeight;
 		const scroller = scrollerRef.current;
 		if (scroller && followRef.current) scroller.scrollTop = scroller.scrollHeight;
 	}, [scrollKey, virtual.totalHeight]);
-
-	if (entries.length === 0) {
-		return (
-			<section className="transcript">
-				<div className="empty-state">
-					<h1>Atomic</h1>
-					<p>Desktop host for the interactive engine. Start the engine, then send a prompt.</p>
-				</div>
-			</section>
-		);
-	}
 
 	return (
 		<section
 			ref={scrollerRef}
 			className="transcript"
 			aria-label="Transcript"
+			onFocusCapture={(event) => {
+				const row =
+					event.target instanceof Element ? event.target.closest<HTMLElement>(".transcript-virtual-row") : null;
+				setFocusedEntryId(row?.dataset.entryId);
+			}}
 			onScroll={(event) => {
 				const node = event.currentTarget;
 				followRef.current = isNearTranscriptEnd(node.scrollTop, node.clientHeight, node.scrollHeight);
 				setScrollTop(node.scrollTop);
 			}}
 		>
-			<div className="transcript-virtualizer" style={{ height: virtual.totalHeight }}>
-				{entries.slice(virtual.start, virtual.end).map((entry, index) => (
-					<MeasuredEntry
-						key={entry.id}
-						entry={entry}
-						top={virtual.offsets[virtual.start + index] ?? 0}
-						hideThinking={hideThinking}
-						hiddenThinkingLabel={hiddenThinkingLabel}
-						onToggle={onToggle}
-						onMeasure={onMeasure}
-					/>
-				))}
-			</div>
+			{entries.length === 0 ? (
+				<div className="empty-state">
+					<h1>Atomic</h1>
+					<p>Desktop host for the interactive engine. Start the engine, then send a prompt.</p>
+				</div>
+			) : (
+				<div className="transcript-virtualizer" style={{ height: virtual.totalHeight }}>
+					{renderIndices.map((index) => {
+						const entry = entries[index];
+						if (!entry) return null;
+						return (
+							<MeasuredEntry
+								key={entry.id}
+								entry={entry}
+								index={index}
+								top={virtual.offsets[index] ?? 0}
+								hideThinking={hideThinking}
+								hiddenThinkingLabel={hiddenThinkingLabel}
+								onToggle={onToggle}
+								disclosures={disclosures.current}
+								onDisclosureToggle={onDisclosureToggle}
+								onMeasure={onMeasure}
+							/>
+						);
+					})}
+				</div>
+			)}
 		</section>
 	);
 }

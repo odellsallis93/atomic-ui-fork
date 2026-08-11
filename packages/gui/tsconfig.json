@@ -21,6 +21,6 @@
 			"@renderer/*": ["./src/renderer/src/*"]
 		}
 	},
-	"include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "vitest.config.ts"],
+	"include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx", "vitest.config.ts"],
 	"exclude": ["node_modules", "out", "release", "dist"]
 }

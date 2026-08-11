@@ -36,6 +36,18 @@ export function getVirtualWindow(
 	return { start, end, totalHeight: offsets[entryCount], offsets };
 }
 
+/** Returns the entry that owns a document offset. */
+export function getEntryIndexAtOffset(offsets: readonly number[], scrollTop: number): number {
+	let low = 0;
+	let high = Math.max(0, offsets.length - 2);
+	while (low < high) {
+		const middle = Math.ceil((low + high) / 2);
+		if ((offsets[middle] ?? 0) <= scrollTop) low = middle;
+		else high = middle - 1;
+	}
+	return low;
+}
+
 export function isNearTranscriptEnd(
 	scrollTop: number,
 	viewportHeight: number,
