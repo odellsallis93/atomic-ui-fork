@@ -10,7 +10,7 @@
 		"build": "electron-vite build",
 		"preview": "electron-vite preview",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
-		"test": "vitest --run --config vitest.config.ts",
+		"test": "npm run build && vitest --run --config vitest.config.ts",
 		"pack": "npm run build && electron-builder --dir",
 		"dist": "npm run build && electron-builder"
 	},
@@ -33,6 +33,7 @@
 		"electron-builder": "26.15.3",
 		"electron-vite": "5.0.0",
 		"jsdom": "30.0.1",
+		"playwright": "1.58.2",
 		"vite": "7.3.6"
 	},
 	"build": {
