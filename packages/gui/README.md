@@ -23,7 +23,8 @@ Fake-engine unit tests prove host structure only; parity claims require
 | M3 | Mostly done — resume picker, tree folds/labels/edit-resubmit, clone/fork/import/export/compact. Share and legacy `/import`/`/atomic` remain explicit exclusions: no permitted runtime inventory route. |
 | M4 | Partial — model picker parses scoped engine models, thinking/settings controls use existing RPCs, theme loading follows JSON-name first-match precedence, auth/trust/onboarding route through engine-owned flows. Persistent settings/theme/fast-mode mutation remains excluded until protocol v2 adds RPCs. |
 | M5 | Partial — dialogs, input forms, ANSI frames + render loop + overlay geometry + kitty key-release + terminal-mode allowlist (chrome swap blocked on §5.3) |
-| M6–M7 | Not started — bundled-extension walkthroughs, CI jobs, packaging |
+| M6 | Partial — web-access uses the engine-discovered command/shortcut catalog and generic dialogs: `/websearch`, `/curator`, and `/search`. The curator remains the extension-owned browser/Glimpse surface; provider config, cookies, stored-result RPCs, and secrets are excluded. |
+| M7 | Not started — CI jobs, packaging |
 
 ## Develop
 

@@ -68,7 +68,11 @@ process.stdin.on("data", (chunk) => {
       continue;
     }
     if (request.type === "extension_ui_response") {
-      send({ type: "engine_custom_frame", componentId: "focus-frame", requestId: 100, lines: ["dialog response"] });
+      if (request.id === "fixture-dialog") {
+        send({ type: "engine_custom_frame", componentId: "focus-frame", requestId: 100, lines: ["dialog response"] });
+      } else {
+        send({ type: "extension_ui_request", id: "search-details", method: "notify", message: "Stored search result details opened", notifyType: "info" });
+      }
       continue;
     }
     if (!request.id || typeof request.type !== "string") continue;
@@ -78,16 +82,33 @@ process.stdin.on("data", (chunk) => {
     else if (request.type === "get_tree") response(request, true, { tree: tree(), leafId: current().leaf });
     else if (request.type === "get_fork_messages") response(request, true, { messages: [{ entryId: "root", text: "fixture prompt" }] });
     else if (request.type === "list_sessions") response(request, true, { sessions: Object.entries(sessions).map(([id, session], index) => ({ path: session.file, id, cwd: "/tmp", name: session.name, modified: 10 + index, created: index, messageCount: session.entries.length, firstMessage: session.entries[0].message.content })) });
-    else if (request.type === "get_commands") response(request, true, { commands: [] });
-    else if (request.type === "get_shortcuts") response(request, true, { shortcuts: [] });
+    else if (request.type === "get_commands") response(request, true, { commands: [
+      { name: "websearch", description: "Open web search curator", source: "extension" },
+      { name: "curator", description: "Configure web search curator", source: "extension" },
+      { name: "search", description: "Browse stored web search results", source: "extension" },
+    ] });
+    else if (request.type === "get_shortcuts") response(request, true, { shortcuts: [{ key: "ctrl+shift+w", description: "Open web search curator" }] });
     else if (request.type === "get_available_models") response(request, true, { models: [] });
+    else if (request.type === "invoke_shortcut") {
+      send({ type: "extension_ui_request", id: "curator-shortcut", method: "notify", message: "Opening web search curator...", notifyType: "info" });
+      response(request, true);
+    }
     else if (request.type === "get_session_stats") response(request, true, { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
     else if (request.type === "pause_queued_messages") response(request, true);
     else if (request.type === "resume_queued_messages") { queues = { steering: [], followUp: [] }; queueUpdate(); response(request, true, { released: true }); }
     else if (request.type === "clear_queue") { const drained = queues; queues = { steering: [], followUp: [] }; response(request, true, drained); queueUpdate(); }
     else if (request.type === "abort") { send({ type: "agent_end" }); response(request, true); }
     else if (request.type === "prompt") {
-      if (request.message === "open focused frame") {
+      if (request.message.startsWith("/websearch")) {
+        send({ type: "extension_ui_request", id: "curator-open", method: "notify", message: "Opening web search curator...", notifyType: "info" });
+        response(request, true);
+      } else if (request.message.startsWith("/curator")) {
+        send({ type: "extension_ui_request", id: "curator-config", method: "notify", message: "Curator disabled — web_search will return raw results", notifyType: "info" });
+        response(request, true);
+      } else if (request.message === "/search") {
+        send({ type: "extension_ui_request", id: "stored-searches", method: "select", title: "Stored Search Results", options: ["[abc123] \"protocol docs\" (1 queries) - 0m ago"] });
+        response(request, true);
+      } else if (request.message === "open focused frame") {
         send({ type: "engine_custom_open", componentId: "focus-frame", overlay: true, handlesCtrlC: true });
         send({ type: "engine_custom_frame", componentId: "focus-frame", requestId: 1, lines: ["focused frame"] });
         send({ type: "extension_ui_request", id: "fixture-dialog", method: "input", title: "Fixture input", placeholder: "Type here", timeout: 1000 });
@@ -253,4 +274,41 @@ test("Electron fixture E2E: native dialog owns focused-frame keys and restores f
 	await page.keyboard.press("Escape");
 	await dialog.waitFor({ state: "detached" });
 	await page.getByText("dialog response").waitFor();
+}, 30_000);
+
+test("Electron fixture E2E: runtime web curator and stored-search flows stay generic", async () => {
+	const page = await launchFixture();
+	const runtimeCommands = await page.evaluate(() => window.atomicGui.getCommands());
+	assert.equal(
+		runtimeCommands.data?.some((command) => command.name === "websearch"),
+		true,
+	);
+	/** Enter submits runtime commands; Tab alone accepts a highlighted completion. */
+	const submit = async (message: string): Promise<void> => {
+		await editor(page).click();
+		await page.keyboard.type(message);
+		await page.keyboard.press("Enter");
+	};
+	/** Notify toasts persist until dismissed, and the toast stack overlays the composer actions. */
+	const readToast = async (message: string): Promise<void> => {
+		const toast = page.locator(".toast").filter({ hasText: message });
+		await toast.waitFor();
+		await toast.getByRole("button", { name: "Dismiss" }).click();
+		await toast.waitFor({ state: "detached" });
+	};
+
+	await submit("/websearch protocol docs");
+	await readToast("Opening web search curator...");
+
+	await submit("/curator off");
+	await readToast("Curator disabled — web_search will return raw results");
+
+	await submit("/search");
+	const dialog = page.getByRole("dialog").filter({ hasText: "Stored Search Results" });
+	await dialog.getByRole("button", { name: /protocol docs/ }).click();
+	await readToast("Stored search result details opened");
+
+	// The fixture advertises "ctrl+shift+w"; ControlOrMeta would send super+shift+w on macOS.
+	await page.locator("body").press("Control+Shift+W");
+	await page.getByText("Opening web search curator...").waitFor();
 }, 30_000);

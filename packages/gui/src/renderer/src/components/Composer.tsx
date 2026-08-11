@@ -188,7 +188,7 @@ export function Composer(props: {
 				if (item) applyCompletion(item);
 				return;
 			}
-			if (action === "tui.input.submit" && !parseCompletionQuery(current.value).kind && !current.disabled) {
+			if (action === "tui.input.submit" && !current.disabled) {
 				event.preventDefault();
 				current.onSubmit(
 					current.working ? "steer" : undefined,

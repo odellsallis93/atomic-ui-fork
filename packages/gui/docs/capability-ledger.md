@@ -42,7 +42,7 @@ Parity tracker for `@bastani/atomic-gui`. **Do not claim parity from fake-engine
 | Themes | Settings panel | `theme-loader.test.ts` (JSON names, first-match builtin→user→project, `.pi` project dir, string+numeric colors, next-read reload) | unit | partial — host can inspect builtin/user/project theme JSON that matches engine directory order and de-dupe. Persistent theme mutation and configured theme paths require an engine settings/resource RPC, which v2 does not expose. |
 | Auth / trust / first run | Onboarding, auth + trust dialogs | `project-trust.test.ts`; `phase3-settings-ui.test.tsx`; Electron fixture host boundary | unit | partial — first-run panel routes users to trust, provider auth, and model selection without displaying saved credentials. Credentials stay in engine auth flows; no GUI reads, logs, writes, or returns them. |
 | Extension UI host (dialogs/forms/frames) | Generic modals + `ChromeFrame` | `session-store.test.ts`, `ansi` / overlay / key tests, fixture E2E | unit + fixture E2E | partial — select/confirm/input/editor, host forms/picker, working/status/widgets, chrome and frames route generically. `onTerminalInput`, `getEditorText`, autocomplete provider, and RPC theme APIs are engine-declared synchronous/protocol exclusions. |
-| Bundled extensions (workflows/subagents/intercom/MCP/web) | Generic frames only | — | — | open (Phase 4 / M6) |
+| Bundled web-access curator / browse | Runtime command catalog → Composer (`/websearch`, `/curator`, `/search`); runtime shortcut route; generic `DialogModal` | `electron-phase2.e2e.test.ts` (“runtime web curator and stored-search flows stay generic”); `packages/web-access/index.ts`, `index-heavy.ts`, `web-search-command.ts` | fixture E2E + source inventory | partial — curator opens its own runtime browser/Glimpse surface; stored-result browse uses generic `ctx.ui.select`/`notify`. No web-specific renderer, provider setup, cookie access, or secret display is added. |
 | CLI machine interfaces (`--print`, `--mode json/rpc`, pipes) | **Excluded** (§3.3) | plan exclusions | docs | excluded |
 | Package admin / credential print / multi-window tabs | **Excluded** or deferred (G11) | plan exclusions | docs | excluded |
 ## Phase 3 exit review (2026-08-11)
@@ -63,6 +63,17 @@ Remaining exact boundaries: protocol v2 has no generic settings snapshot/mutatio
 | RPC theme APIs and configured resource paths | no v2 host route | Engine returns no host value; GUI does not invent a parallel authority. |
 
 The corpus inventory is source-backed by `packages/coding-agent/src/core/extensions/ui-types.ts` and `modes/rpc/rpc-extension-ui.ts`. Fixture proof ends at renderer-host IPC; it does not prove a third-party extension or live engine path.
+
+## Web-access runtime inventory (Phase 4)
+
+| Runtime capability | Generic GUI route | Source evidence | Boundary / exclusion |
+|---|---|---|---|
+| Open curator | Composer runtime command `/websearch [queries]` or registered runtime shortcut | `packages/web-access/web-search-command.ts`; `packages/web-access/web-search-features.ts`; command and shortcut catalog bridge in `packages/coding-agent/src/modes/interactive-engine/remote-command-catalog.ts` | The extension opens its own curator browser/Glimpse window. Protocol v2 exposes no curator-server or browser-window host contract, so the Electron renderer does not embed, proxy, or recreate it. |
+| Toggle curator workflow | Composer runtime command `/curator [on\|off\|summary-review]` | `packages/web-access/index-heavy.ts` | The extension persists its own config. The GUI has no config RPC and does not read, write, or render web-access config, API keys, browser cookies, or account details. |
+| Browse stored results | Composer runtime command `/search` → generic `ctx.ui.select` then `ctx.ui.notify` | `packages/web-access/index-heavy.ts`; generic v2 dialog bridge `packages/coding-agent/src/modes/rpc/rpc-extension-ui.ts`; `DialogModal.tsx` | Result detail text is extension-owned. No result-store RPC exists, so there is no extension-specific list, delete, or detail panel. |
+| Search tool results | Existing transcript generic tool renderer | `packages/web-access/index.ts`; `ToolRenderHost.tsx` | Tool execution remains agent/engine-owned. This slice does not add provider controls or a direct search form. |
+
+The runtime command catalog and shortcuts are discovered from the active engine; the host never hard-codes web-access command names or shortcuts. Fixture coverage proves renderer-host command discovery, composer dispatch, shortcut dispatch, and generic browse dialogs only. It does not prove provider access, real browser launch, persistent storage, OAuth, cookie access, or a live search.
 
 
 ## Open gates (do not silently close)
