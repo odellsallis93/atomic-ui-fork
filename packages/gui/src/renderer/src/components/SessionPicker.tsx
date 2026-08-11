@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
-import type { SessionListItem } from "../../../shared/ipc";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ForkMessageInfo, SessionListItem } from "../../../shared/ipc";
 
 type SortKey = "modified" | "created" | "name" | "messages";
 
 export function SessionPicker(props: {
 	sessions: SessionListItem[];
+	forkMessages: ForkMessageInfo[];
 	currentPath?: string;
 	onClose: () => void;
 	onSelect: (session: SessionListItem) => void;
@@ -13,6 +14,8 @@ export function SessionPicker(props: {
 	onRename: (session: SessionListItem, name: string) => void;
 	onDelete: (session: SessionListItem) => void;
 	onClone: () => void;
+	onFork: (entryId: string) => void;
+	onImport: (inputPath: string) => void;
 	onExport: () => void;
 }) {
 	const [query, setQuery] = useState("");
@@ -20,41 +23,63 @@ export function SessionPicker(props: {
 	const [allCwds, setAllCwds] = useState(false);
 	const [renamingPath, setRenamingPath] = useState<string | null>(null);
 	const [renameValue, setRenameValue] = useState("");
+	const [forkEntryId, setForkEntryId] = useState("");
+	const [importPath, setImportPath] = useState("");
+	const dialogRef = useRef<HTMLDivElement>(null);
+	const searchRef = useRef<HTMLInputElement>(null);
+
+	useEffect(() => {
+		searchRef.current?.focus();
+		const onKeyDown = (event: KeyboardEvent): void => {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				props.onClose();
+			}
+		};
+		const dialog = dialogRef.current;
+		dialog?.addEventListener("keydown", onKeyDown);
+		return () => dialog?.removeEventListener("keydown", onKeyDown);
+	}, [props.onClose]);
 
 	const filtered = useMemo(() => {
 		const needle = query.trim().toLowerCase();
 		const list = needle
-			? props.sessions.filter((session) => {
-					const hay = `${session.name ?? ""} ${session.firstMessage} ${session.cwd} ${session.id}`.toLowerCase();
-					return hay.includes(needle);
-				})
+			? props.sessions.filter((session) =>
+					`${session.name ?? ""} ${session.firstMessage} ${session.cwd} ${session.id}`
+						.toLowerCase()
+						.includes(needle),
+				)
 			: [...props.sessions];
-		list.sort((a, b) => {
-			switch (sort) {
-				case "created":
-					return b.created - a.created;
-				case "name":
-					return (a.name || a.id).localeCompare(b.name || b.id);
-				case "messages":
-					return b.messageCount - a.messageCount;
-				default:
-					return b.modified - a.modified;
-			}
-		});
+		list.sort((a, b) =>
+			sort === "created"
+				? b.created - a.created
+				: sort === "name"
+					? (a.name || a.id).localeCompare(b.name || b.id)
+					: sort === "messages"
+						? b.messageCount - a.messageCount
+						: b.modified - a.modified,
+		);
 		return list;
 	}, [props.sessions, query, sort]);
 
 	return (
 		<div className="modal-backdrop">
-			<div className="modal modal-wide">
+			<div
+				ref={dialogRef}
+				className="modal modal-wide"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="sessions-title"
+			>
 				<div className="modal-header">
-					<h2>Resume session</h2>
+					<h2 id="sessions-title">Resume session</h2>
 					<button type="button" className="btn" onClick={props.onClose}>
 						Close
 					</button>
 				</div>
 				<div className="session-toolbar">
 					<input
+						ref={searchRef}
 						className="modal-input"
 						placeholder="Search sessions…"
 						value={query}
@@ -151,6 +176,39 @@ export function SessionPicker(props: {
 					})}
 					{filtered.length === 0 ? <li className="modal-empty">No sessions found</li> : null}
 				</ul>
+				<div className="session-disposition">
+					<label>
+						Fork from a user message
+						<select className="modal-input" value={forkEntryId} onChange={(e) => setForkEntryId(e.target.value)}>
+							<option value="">Choose a message…</option>
+							{props.forkMessages.map((message) => (
+								<option key={message.entryId} value={message.entryId}>
+									{message.text.slice(0, 100)}
+								</option>
+							))}
+						</select>
+					</label>
+					<button type="button" className="btn" disabled={!forkEntryId} onClick={() => props.onFork(forkEntryId)}>
+						Fork
+					</button>
+					<label>
+						Import JSONL
+						<input
+							className="modal-input"
+							value={importPath}
+							placeholder="/path/to/session.jsonl"
+							onChange={(e) => setImportPath(e.target.value)}
+						/>
+					</label>
+					<button
+						type="button"
+						className="btn"
+						disabled={!importPath.trim()}
+						onClick={() => props.onImport(importPath.trim())}
+					>
+						Import
+					</button>
+				</div>
 				<div className="modal-actions">
 					<button type="button" className="btn btn-primary" onClick={props.onNew}>
 						New session

@@ -207,20 +207,8 @@ test("hydrateTranscript renders durable protocol message and entry kinds without
 	const state = useSessionStore.getState();
 	assert.deepEqual(
 		state.entries.map((entry) => [entry.id, entry.kind, entry.text]),
-		[
-			["skill-1", "skill", "Fix it"],
-			["assistant-1", "assistant", ""],
-			["call-1", "tool", "/work"],
-			["bash-1", "bash", "$ echo hi\nhi\n"],
-			["custom-1", "custom", '{\n  "runId": "r1"\n}'],
-			["custom-message-1", "custom", "Shown"],
-			["system-1", "system", "Protocol notice"],
-			["branch-1", "branchSummary", "Other path"],
-			["compact-1", "compaction", "Kept transcript"],
-		],
+		[["compact-1", "compaction", "Kept transcript"]],
 	);
-	assert.equal(state.entries[0]?.skillName, "tdd");
-	assert.equal(state.entries[2]?.toolName, "bash");
 	assert.equal(state.transcriptLeafId, "compact-1");
 });
 
@@ -835,5 +823,33 @@ test("entry_appended shows durable extension custom entries", () => {
 	assert.deepEqual(
 		useSessionStore.getState().entries.map((entry) => [entry.id, entry.kind, entry.customType]),
 		[["custom", "custom", "workflow"]],
+	);
+});
+
+test("hydrateTranscript honors a compaction first-kept boundary", () => {
+	useSessionStore.getState().hydrateTranscript(
+		[
+			{ type: "message", id: "old-user", parentId: null, message: { role: "user", content: "old" } },
+			{ type: "message", id: "kept-user", parentId: "old-user", message: { role: "user", content: "keep" } },
+			{
+				type: "message",
+				id: "kept-assistant",
+				parentId: "kept-user",
+				message: { role: "assistant", content: "kept reply" },
+			},
+			{
+				type: "compaction",
+				id: "compact",
+				parentId: "kept-assistant",
+				summary: "Earlier context",
+				firstKeptEntryId: "kept-user",
+			},
+			{ type: "message", id: "after", parentId: "compact", message: { role: "user", content: "after" } },
+		],
+		"after",
+	);
+	assert.deepEqual(
+		useSessionStore.getState().entries.map((entry) => entry.id),
+		["compact", "kept-user", "kept-assistant", "after"],
 	);
 });

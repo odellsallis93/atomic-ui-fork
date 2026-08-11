@@ -19,7 +19,7 @@ the engine child.
 | M0 Skeleton + engine bridge | Done |
 | M1 Core chat parity | Mostly done — active-leaf-only durable transcript hydration, user/assistant/custom/skill/system/branch/compaction/tool/bash handling, thinking toggle, footer + usage meter, working indicator, and engine-rendered live/durable tool cards. The host reads engine-owned JSONL through `get_entries` and follows its `leafId`/`parentId` path; it does not treat history order as the active transcript. Durable-kind coverage is unit-tested from `SessionEntry` / `AgentMessage` shapes; extension-owned custom renderers and a real-engine transcript corpus remain open. |
 | M2 Input system | Mostly done — CodeMirror composer, `/` command and command-argument + `@` autocomplete, history, `!`/`!!` bash, steer/follow-up/abort, queue chips |
-| M3 Sessions | Mostly done — resume picker (search/sort/all-projects), persisted transcript hydration on start/switch/tree navigation, rename/delete, clone, export HTML, compact, session tree navigator, and engine-backed paged session listing (with an offline host fallback) |
+| M3 Sessions | Mostly done — resume picker (search/sort/all-projects), persisted transcript hydration on start/switch/tree navigation, rename/delete, clone/fork/import/export/compact, and tree folds/labels/edit-resubmit. Share and legacy composer `/import` or `/atomic` are excluded: protocol v2 exposes no share RPC and runtime `get_commands` inventories extension/prompt/skill commands only. |
 | M4 Models / settings | Partial — model picker, cycle model/thinking, theme loader, provider login/logout + OAuth UI, project trust prompt (full onboarding still open) |
 | M5 Extension UI host | Partial — native dialogs/notify/status/widgets, extension shortcut dispatch, `engine_input_form_*`, `hostSessionPicker` (`engine_session_picker_*`), ANSI frame overlays with render loop + `overlayOptions` + control/invalidate + legacy key encoding + kitty key-release + mouse-scroll wheel + autowrap terminal mode; remote custom header/footer/editor slots and transcript-local engine tool renderer frames |
 | M6–M7 | Not started |
@@ -69,10 +69,10 @@ The Sessions modal lists JSONL sessions under `~/.atomic/agent/sessions/` throug
 engine's `list_sessions` RPC while it is running, with a host-side fallback before the
 engine starts. From there you can:
 
-- Search, sort (modified/created/name/messages), and toggle all-projects
 - Resume / new session / rename / delete
-- Clone the current leaf (`clone` RPC) and export HTML (`export_html` RPC)
-- Open **Tree** for `get_tree` / `navigate_tree`
+- Clone the current leaf (`clone` RPC), fork from an engine-supplied user message (`get_fork_messages` → `fork`), import JSONL (`import_session`), and export HTML (`export_html`)
+- Open **Tree** for `get_tree` / `navigate_tree`; local folds do not change the engine tree, while labels use `set_label` and selecting a user turn restores engine-supplied editor text for edit/resubmit
+- **Excluded:** share has no protocol-v2 RPC; legacy `/import` and `/atomic` do not appear in runtime `get_commands`, so the GUI does not invent composer routes
 
 ## Themes
 

@@ -101,6 +101,29 @@ rl.on("line", (line) => {
     }) + "\\n");
     return;
   }
+  if (msg.type === "get_commands") {
+    process.stdout.write(JSON.stringify({
+      id: msg.id,
+      type: "response",
+      command: "get_commands",
+      success: true,
+      data: { commands: [
+        { name: "review", source: "extension", description: "Review" },
+        { name: "brief", source: "prompt" },
+        { name: "skill:tdd", source: "skill" },
+        { name: "import", source: "builtin" },
+      ] },
+    }) + "\\n");
+    return;
+  }
+  if (["get_fork_messages", "fork", "import_session", "set_label", "navigate_tree"].includes(msg.type)) {
+    const data = msg.type === "get_fork_messages" ? { messages: [{ entryId: "u1", text: "fork here" }] }
+      : msg.type === "fork" ? { text: "fork here", cancelled: false }
+      : msg.type === "import_session" ? { cancelled: false }
+      : msg.type === "navigate_tree" ? { cancelled: false, editorText: "edit me" } : undefined;
+    process.stdout.write(JSON.stringify({ id: msg.id, type: "response", command: msg.type, success: true, data }) + "\\n");
+    return;
+  }
   if (msg.type === "prompt") {
 		if (Array.isArray(msg.images) && msg.images.length > 0) {
 			process.stdout.write(JSON.stringify({ type: "prompt_image_received", image: msg.images[0] }) + "\\n");
@@ -172,6 +195,22 @@ rl.on("line", (line) => {
 			data: [{ key: "ctrl+k", description: "Run extension action" }],
 		});
 		assert.deepEqual(await client.invokeShortcut("ctrl+k"), { ok: true, data: undefined });
+		assert.deepEqual(await client.getCommands(), {
+			ok: true,
+			data: [
+				{ name: "review", source: "extension", description: "Review" },
+				{ name: "brief", source: "prompt" },
+				{ name: "skill:tdd", source: "skill" },
+			],
+		});
+		assert.deepEqual(await client.getForkMessages(), { ok: true, data: [{ entryId: "u1", text: "fork here" }] });
+		assert.deepEqual(await client.forkSession("u1"), { ok: true, data: { text: "fork here", cancelled: false } });
+		assert.deepEqual(await client.importSession("/tmp/import.jsonl"), { ok: true, data: { cancelled: false } });
+		assert.deepEqual(await client.navigateTree("u1", { label: "keep" }), {
+			ok: true,
+			data: { cancelled: false, editorText: "edit me" },
+		});
+		assert.deepEqual(await client.setTreeLabel("u1", "kept"), { ok: true, data: undefined });
 
 		const result = await client.prompt({
 			message: "ping",

@@ -9,6 +9,7 @@ import type {
 	ExtensionShortcutInfo,
 	ExtensionUiRequest,
 	ExtensionUiResponse,
+	ForkMessageInfo,
 	GuiBashResult,
 	GuiRpcEvent,
 	ModelInfo,
@@ -19,6 +20,7 @@ import type {
 	SessionStatsSummary,
 	SessionTreeNodeInfo,
 	SlashCommandInfo,
+	TreeNavigationOptions,
 } from "../shared/ipc.ts";
 import {
 	INTERACTIVE_ENGINE_BOOTSTRAP_FLAG,
@@ -263,6 +265,30 @@ export class EngineClient {
 		return result;
 	}
 
+	async forkSession(entryId: string): Promise<RpcResult<{ text?: string; cancelled: boolean }>> {
+		return await this.command({ type: "fork", entryId });
+	}
+
+	async getForkMessages(): Promise<RpcResult<ForkMessageInfo[]>> {
+		const result = await this.command<{ messages?: ForkMessageInfo[] }>({ type: "get_fork_messages" });
+		if (!result.ok) return { ok: false, error: result.error };
+		return { ok: true, data: Array.isArray(result.data?.messages) ? result.data.messages : [] };
+	}
+
+	async importSession(inputPath: string, cwdOverride?: string): Promise<RpcResult<{ cancelled: boolean }>> {
+		const result = await this.command<{ cancelled?: boolean }>(
+			{
+				type: "import_session",
+				inputPath,
+				...(cwdOverride ? { cwdOverride } : {}),
+			},
+			120_000,
+		);
+		if (!result.ok) return { ok: false, error: result.error };
+		await this.refreshState().catch(() => undefined);
+		return { ok: true, data: { cancelled: result.data?.cancelled === true } };
+	}
+
 	async exportHtml(outputPath?: string): Promise<RpcResult<{ path: string }>> {
 		return await this.command<{ path: string }>({
 			type: "export_html",
@@ -287,10 +313,14 @@ export class EngineClient {
 		};
 	}
 
-	async navigateTree(targetId: string): Promise<RpcResult<{ cancelled: boolean; editorText?: string }>> {
+	async navigateTree(
+		targetId: string,
+		options?: TreeNavigationOptions,
+	): Promise<RpcResult<{ cancelled: boolean; editorText?: string }>> {
 		const result = await this.command<{ cancelled?: boolean; editorText?: string }>({
 			type: "navigate_tree",
 			targetId,
+			...(options ? { options } : {}),
 		});
 		if (!result.ok) return { ok: false, error: result.error };
 		return {
@@ -300,6 +330,10 @@ export class EngineClient {
 				...(typeof result.data?.editorText === "string" ? { editorText: result.data.editorText } : {}),
 			},
 		};
+	}
+
+	async setTreeLabel(entryId: string, label?: string): Promise<RpcResult> {
+		return await this.command({ type: "set_label", entryId, ...(label?.trim() ? { label: label.trim() } : {}) });
 	}
 
 	sendEngineCommand(command: { type: string; [key: string]: unknown }): void {
@@ -314,11 +348,18 @@ export class EngineClient {
 			type: "get_commands",
 		});
 		if (!result.ok) return { ok: false, error: result.error };
-		const data = Array.isArray(result.data)
+		const raw = Array.isArray(result.data)
 			? result.data
 			: Array.isArray(result.data?.commands)
 				? result.data.commands
 				: [];
+		const data = raw.filter(
+			(command): command is SlashCommandInfo =>
+				typeof command === "object" &&
+				command !== null &&
+				typeof command.name === "string" &&
+				(command.source === "extension" || command.source === "prompt" || command.source === "skill"),
+		);
 		return { ok: true, data };
 	}
 
@@ -662,7 +703,16 @@ function mapTreeNode(value: unknown): SessionTreeNodeInfo {
 		return { id: "unknown", kind: "unknown", summary: "(invalid node)", children: [] };
 	}
 	const node = value as {
-		entry?: { id?: string; type?: string; message?: { role?: string; content?: unknown }; name?: string };
+		entry?: {
+			id?: string;
+			type?: string;
+			message?: { role?: string; content?: unknown };
+			name?: string;
+			summary?: string;
+			provider?: string;
+			modelId?: string;
+			thinkingLevel?: string;
+		};
 		label?: string;
 		children?: unknown[];
 	};
@@ -670,7 +720,13 @@ function mapTreeNode(value: unknown): SessionTreeNodeInfo {
 	const id = typeof entry.id === "string" ? entry.id : randomNodeId();
 	const kind = typeof entry.type === "string" ? entry.type : "entry";
 	let summary = kind;
-	if (kind === "session_info" && typeof entry.name === "string") summary = `name: ${entry.name}`;
+	if (kind === "compaction")
+		summary = typeof entry.summary === "string" ? `Compaction: ${entry.summary.slice(0, 80)}` : "Compaction";
+	else if (kind === "branch_summary")
+		summary = typeof entry.summary === "string" ? `Branch: ${entry.summary.slice(0, 80)}` : "Branch summary";
+	else if (kind === "session_info" && typeof entry.name === "string") summary = `name: ${entry.name}`;
+	else if (kind === "model_change") summary = `model: ${entry.provider ?? "?"}/${entry.modelId ?? "?"}`;
+	else if (kind === "thinking_level_change") summary = `thinking: ${entry.thinkingLevel ?? "?"}`;
 	else if (entry.message) {
 		const role = entry.message.role ?? "message";
 		const content = entry.message.content;

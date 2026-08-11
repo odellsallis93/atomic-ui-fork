@@ -351,9 +351,26 @@ function activeLeafEntries(entries: unknown[], leafId: string | null | undefined
 }
 
 function transcriptEntriesFromSessionEntries(entries: unknown[], leafId: string | null | undefined): TranscriptEntry[] {
+	const pathEntries = activeLeafEntries(entries, leafId);
+	const boundaryIndex = pathEntries.reduce(
+		(latest, entry, index) => (entry.type === "compaction" ? index : latest),
+		-1,
+	);
+	const boundary = boundaryIndex >= 0 ? pathEntries[boundaryIndex] : undefined;
+	const firstKeptEntryId = typeof boundary?.firstKeptEntryId === "string" ? boundary.firstKeptEntryId : null;
+	const keptIndex = firstKeptEntryId ? pathEntries.findIndex((entry) => entry.id === firstKeptEntryId) : -1;
+	const visibleEntries = boundary
+		? [
+				boundary,
+				...pathEntries.filter(
+					(_entry, index) =>
+						index !== boundaryIndex && (index > boundaryIndex || (keptIndex >= 0 && index >= keptIndex)),
+				),
+			]
+		: pathEntries;
 	const hydrated: TranscriptEntry[] = [];
 	const tools = new Map<string, TranscriptEntry>();
-	for (const value of activeLeafEntries(entries, leafId)) {
+	for (const value of visibleEntries) {
 		if (typeof value.id !== "string" || typeof value.type !== "string") continue;
 		if (value.type === "message" && typeof value.message === "object" && value.message !== null) {
 			const message = value.message as Record<string, unknown>;

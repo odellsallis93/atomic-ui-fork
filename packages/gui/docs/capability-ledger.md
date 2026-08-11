@@ -35,7 +35,7 @@ Parity tracker for `@bastani/atomic-gui`. **Do not claim parity from fake-engine
 | Composer text + `/` + `@` | `Composer.tsx`, `Autocomplete.tsx` | component source; limited unit coverage | unit | partial — Phase 2 |
 | Queue / steer / follow-up chips | Composer queue UI | store `queue_update` tests | unit | partial — dequeue open (Phase 2) |
 | Image paste / DnD attachments | Composer + `App.addPastedImages` | `attachments.test.ts`; fake image echo in `engine-client.test.ts` | unit + fake | partial — Phase 0 wire shape proven; real-engine image provider path still open (G3) |
-| Sessions list/resume/rename/delete/clone/export/compact/tree | Session picker / tree modal | `session-list.test.ts`, `session-ops.test.ts`, smoke switch | unit + real-engine | partial — fork/share/import open (G8) |
+| Sessions list/resume/rename/delete/clone/export/compact/tree | Session picker / tree modal; engine `fork`, `import_session`, `set_label`, `get_commands` | `engine-client.test.ts` routes fork/import/label and filters the executable `get_commands` inventory; `session-store.test.ts` honors active-leaf compaction boundaries; `tree-navigator.test.ts` covers folded search and active-leaf retention; runtime inventory: `rpc-command-handler.ts` | unit + source inventory | partial — fork/import/label route through existing RPC. Import preserves the JSONL cwd unless engine recovery needs an override. Share has no runtime RPC and stays excluded. A manual Electron walkthrough remains open: stream, abort, tree-edit, compact, then inspect the visible boundary. |
 | Models / thinking cycle | Model picker | source + RPC client methods | unit | partial |
 | Settings / themes | Settings panel | `settings-store.test.ts`, `theme-loader.test.ts` | unit | partial |
 | Auth / trust | Auth + trust dialogs | `project-trust.test.ts` | unit | partial — onboarding open |
@@ -50,8 +50,8 @@ Parity tracker for `@bastani/atomic-gui`. **Do not claim parity from fake-engine
 |---|---|---|
 | G3 | Image normalize/resize/`blockImages` authority | Attachment real-engine row stays partial |
 | G6 | Default new-chat session persistence | New-chat route notes remain open |
-| G7 | Prior-plan `/import`, `/atomic` | No GUI route until runtime `get_commands` inventory |
-| G8 | Fork / share / import | Session ops partial |
+| G7 | Legacy `/import`, `/atomic` | **Excluded:** `engine-client.test.ts` verifies `get_commands` accepts only the runtime extension/prompt/skill sources; the runtime handler inventories neither legacy name. Import uses `import_session` RPC. |
+| G8 | Fork / share / import | Fork and JSONL import route through existing RPC. **Share excluded:** protocol v2 and runtime inventory expose no route. |
 | G9 | Settings/theme resolution into engine RPC | Settings partial |
 | G10 | Protocol identity changes | Protocol stays v2 |
 
