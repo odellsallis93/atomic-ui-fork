@@ -125,6 +125,9 @@ process.stdin.on("data", (chunk) => {
         response(request, true);
       }
     }
+    else if (request.type === "new_session") response(request, true, { cancelled: true });
+    else if (request.type === "clone") response(request, true, { cancelled: true });
+    else if (request.type === "switch_session") response(request, true, { cancelled: true });
     else if (request.type === "fork") { active = "fork"; response(request, true, { text: "fork edit", cancelled: false }); }
     else if (request.type === "import_session") { active = "imported"; response(request, true, { cancelled: false }); }
     else if (request.type === "navigate_tree") {
@@ -218,6 +221,29 @@ test("Electron fixture E2E: session switch removes a stale custom subagent widge
 	await dialog.getByRole("button", { name: "Fork", exact: true }).click();
 	await page.getByText("fork durable prompt").waitFor();
 	await page.locator(".widget-block").waitFor({ state: "detached" });
+}, 30_000);
+
+test("Electron fixture E2E: cancelled replacement operations keep the live widget", async () => {
+	const page = await launchFixture(true);
+	await editor(page).click();
+	await page.keyboard.type("start background subagent");
+	await page.getByRole("button", { name: "Send" }).click();
+	const widget = page.locator(".widget-block");
+	await widget.getByText("codebase-analyzer · running").waitFor();
+
+	await page.getByRole("button", { name: "Sessions" }).click();
+	const dialog = page.getByRole("dialog", { name: "Resume session" });
+	await dialog.getByRole("button", { name: "New session" }).click();
+	await dialog.waitFor();
+	await widget.getByText("codebase-analyzer").waitFor();
+
+	await dialog.getByRole("button", { name: "Clone current" }).click();
+	await dialog.waitFor();
+	await widget.getByText("codebase-analyzer").waitFor();
+
+	await dialog.getByRole("button", { name: /main · current/ }).click();
+	await dialog.waitFor();
+	await widget.getByText("codebase-analyzer").waitFor();
 }, 30_000);
 
 test("Electron fixture E2E: queue pause, resume, and dequeue render protocol-v2 queues", async () => {
