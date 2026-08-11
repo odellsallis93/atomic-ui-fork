@@ -191,6 +191,20 @@ test("keeps disclosures and focused controls mounted across a virtual scroll", (
 	assert.equal(container.querySelector<HTMLDetailsElement>("details.thinking")?.open, true, "disclosure state survives remount");
 });
 
+test("keeps disclosure targets and transcript live-region semantics valid for remote tools", () => {
+	const entries = [{ ...makeEntries(1, "tool")[0]!, remoteRenderLines: ["remote output"] }];
+	act(() => {
+		root.render(<Transcript entries={entries} leafId="leaf-a" hideThinking={false} hiddenThinkingLabel="hidden" onToggle={() => {}} />);
+	});
+	const transcript = container.querySelector<HTMLElement>(".transcript");
+	assert.equal(transcript?.getAttribute("role"), "log");
+	assert.equal(transcript?.getAttribute("aria-live"), "polite");
+	assert.equal(transcript?.getAttribute("aria-relevant"), "additions text");
+	const toggle = container.querySelector<HTMLButtonElement>("button[aria-controls]");
+	assert.ok(toggle);
+	assert.ok(document.getElementById(toggle.getAttribute("aria-controls") ?? ""));
+});
+
 test("renders repeated ANSI lines without duplicate content keys", () => {
 	const entries = [{ ...makeEntries(1, "tool")[0]!, remoteRenderLines: ["│  │", "│  │", ""] }];
 	act(() => {

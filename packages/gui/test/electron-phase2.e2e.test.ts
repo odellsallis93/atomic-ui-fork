@@ -478,6 +478,36 @@ test("Electron fixture E2E: native dialog owns focused-frame keys and restores f
 	await page.getByText("dialog response").waitFor();
 }, 30_000);
 
+test("Electron fixture E2E: keyboard-only controls have names and modal focus returns to the opener", async () => {
+	const page = await launchFixture();
+	const composer = page.getByRole("textbox", { name: "Message Atomic" });
+	await composer.waitFor();
+
+	const settingsButton = page.getByRole("button", { name: "Settings" });
+	await settingsButton.focus();
+	await page.keyboard.press("Enter");
+	const dialog = page.getByRole("dialog", { name: "Settings" });
+	await dialog.waitFor();
+	const unnamed = await dialog.locator("input,select,textarea").evaluateAll(
+		(controls) =>
+			controls.filter((control) => {
+				const element = control as HTMLInputElement;
+				return !element.getAttribute("aria-label") && !element.labels?.length;
+			}).length,
+	);
+	assert.equal(unnamed, 0, "every settings form control has an accessible name");
+
+	for (let index = 0; index < 12; index += 1) {
+		await page.keyboard.press("Tab");
+		assert.equal(await page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]'))), true);
+	}
+	await page.keyboard.press("Shift+Tab");
+	assert.equal(await page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]'))), true);
+	await page.keyboard.press("Escape");
+	await dialog.waitFor({ state: "detached" });
+	assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Settings");
+}, 30_000);
+
 test("Electron fixture E2E: MCP OAuth uses the generic frame host and forwards Ctrl+C", async () => {
 	const page = await launchFixture();
 	await editor(page).click();

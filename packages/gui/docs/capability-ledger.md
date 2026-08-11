@@ -50,13 +50,25 @@ Parity tracker for `@bastani/atomic-gui`. **Do not claim parity from fake-engine
 | Other bundled extensions (remaining live-provider/broker surfaces) | Generic frames only | Phase 4 rows and inventories above | docs | open — live DBOS/provider execution, broker peers, configured MCP servers, and provider-backed web access remain engine-owned or excluded |
 | CLI machine interfaces (`--print`, `--mode json/rpc`, pipes) | **Excluded** (§3.3) | plan exclusions | docs | excluded |
 | Package admin / credential print / multi-window tabs | **Excluded** or deferred (G11) | plan exclusions | docs | excluded |
+| Keyboard accessibility and modal focus | Named controls and generic modals; Tab/Escape handling and opener focus return | `test/autocomplete-accessibility.test.tsx`; `test/dialog-modal.test.tsx`; keyboard-only case in `test/electron-phase2.e2e.test.ts`; `src/renderer/src/helpers/modal-focus.ts` | unit + fixture E2E | proven for DOM names and keyboard focus behavior; screen-reader and OS-specific accessibility remain untested |
+| Renderer performance budgets | Virtualized transcript and live tool renderer | `test/performance-budget.test.tsx`; `test/transcript-virtualization.test.tsx`; `src/renderer/src/helpers/virtual-window.ts` | unit | proven for the tested renderer probes: 10,000 rows ≤1500ms with <40 mounted rows and 120 deltas ≤2500ms; hardware, provider/network, cross-platform, and packaged-app performance remain unproven |
 | Host-platform directory packaging + startup | `npm run pack` / `pack:directory` | `scripts/packaged-smoke.mjs`; `docs/packaging-security.md` (macOS arm64 run) | e2e + docs | proven — directory artifact starts and exposes the preload bridge on the tested host; installer targets are not claimed |
 | DMG / NSIS / AppImage installers | Declared electron-builder targets, not proven here | `package.json` build config; `docs/packaging-security.md` | docs | open — unsupported by this host-only smoke; signing, notarization, and per-platform installer checks remain release work |
 | Electron security boundary | Sandboxed BrowserWindow, CSP, locked navigation, external browser handoff, sender-checked IPC | `test/security.test.ts`; `src/main/security.ts`; `docs/packaging-security.md` | unit + docs | partial — host protections and IPC sender checks are covered; engine trust, credential backend, key-based redaction limits, and update signing remain risks |
 
 ## Phase 5.2/5.3 exit review (2026-08-11)
 
-The directory package smoke starts the actual packaged Electron executable and checks the window, packaged renderer URL, and typed preload bridge. The security review is source-backed in [`packaging-security.md`](packaging-security.md). It records exact limits for engine-inherited environment/tool authority, key-based raw-log redaction, engine-owned credential storage, unsigned release artifacts, and absent update verification. No CI, accessibility, performance, engine-protocol, installer-proof, or update implementation claim is added here.
+The directory package smoke starts the actual packaged Electron executable and checks the window, packaged renderer URL, and typed preload bridge. The security review is source-backed in [`packaging-security.md`](packaging-security.md). It records exact limits for engine-inherited environment/tool authority, key-based raw-log redaction, engine-owned credential storage, unsigned release artifacts, and absent update verification. No provider/network, cross-OS, screen-reader, packaged-app performance, installer-proof, engine-protocol, or update implementation claim is added here.
+
+## Phase 5.4/5.5 accessibility and performance exit evidence (2026-08-11)
+
+The accessibility checks cover named controls, modal labels, keyboard Tab
+trapping, Escape dismissal, and focus return to the opener. The performance
+checks cover the exact renderer limits in the ledger: 10,000 transcript rows in
+≤1500ms with fewer than 40 mounted rows, and 120 tool-stream deltas in ≤2500ms.
+These results cover DOM/keyboard behavior and renderer/jsdom probes only. They
+do not claim screen-reader certification, provider/network behavior, other OSes,
+or packaged-app performance.
 ## Phase 3 exit review (2026-08-11)
 
 Phase 3 settings/theme/model/onboarding review fixes preserve protocol v2 and engine authority. The GUI now uses read-only global→project theme precedence, no longer writes generic settings JSON, resolves themes by JSON `name` with first-match builtin→user→project order, includes legacy `.pi` project themes, and supports string plus numeric color tokens. Scoped models are parsed from `get_available_models` and displayed in the model picker. Existing settings controls route through engine RPCs (`set_thinking_level`, steering/follow-up modes, auto compaction/retry).

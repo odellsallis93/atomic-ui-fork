@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionTreeNodeInfo } from "../../../shared/ipc";
+import { useModalFocus } from "../helpers/modal-focus";
 
 export type TreeRow = SessionTreeNodeInfo & { depth: number; hasChildren: boolean };
 
@@ -66,7 +67,8 @@ export function TreeNavigator(props: {
 	const [folded, setFolded] = useState<Set<string>>(() => new Set());
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [label, setLabel] = useState("");
-	const dialogRef = useRef<HTMLDivElement>(null);
+	const dialogRef = useModalFocus<HTMLDivElement>('input[aria-label="Filter session tree"]', props.onClose);
+	const labelInputRef = useRef<HTMLInputElement>(null);
 	const filterRef = useRef<HTMLInputElement>(null);
 	const rows = useMemo(
 		() => treeRows(props.nodes, props.leafId, folded, query),
@@ -74,18 +76,9 @@ export function TreeNavigator(props: {
 	);
 
 	useEffect(() => {
-		filterRef.current?.focus();
-		const onKeyDown = (event: KeyboardEvent): void => {
-			if (event.key === "Escape") {
-				event.preventDefault();
-				props.onClose();
-			}
-		};
-		const dialog = dialogRef.current;
-		dialog?.addEventListener("keydown", onKeyDown);
-		return () => dialog?.removeEventListener("keydown", onKeyDown);
-	}, [props.onClose]);
-
+		if (!editingId) return;
+		window.setTimeout(() => labelInputRef.current?.focus(), 0);
+	}, [editingId]);
 	const toggleFold = (entryId: string): void => {
 		setFolded((current) => {
 			const next = new Set(current);
@@ -110,6 +103,7 @@ export function TreeNavigator(props: {
 				<input
 					ref={filterRef}
 					className="modal-input"
+					aria-label="Filter session tree"
 					placeholder="Filter nodes…"
 					value={query}
 					onChange={(e) => setQuery(e.target.value)}
@@ -158,7 +152,8 @@ export function TreeNavigator(props: {
 								<div className="session-rename-row">
 									<input
 										className="modal-input"
-										autoFocus
+										ref={labelInputRef}
+										aria-label={`Label ${row.summary}`}
 										value={label}
 										placeholder="Optional label"
 										onChange={(e) => setLabel(e.target.value)}

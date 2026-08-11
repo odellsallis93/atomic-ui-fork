@@ -279,8 +279,13 @@ export function App() {
 		setModal("tree");
 	}, [refreshTree, setModal]);
 
+	// Bump synchronously so the focus request is batched into the same commit that unmounts the
+	// modal. React flushes deleted-subtree effect cleanups (useModalFocus restoring focus to the
+	// opener) before mounted passive effects, so the composer deterministically wins. Deferring
+	// with requestAnimationFrame made this a race that the composer lost whenever rAF was
+	// throttled or suspended (occluded/background window), leaving focus on the opener button.
 	const focusComposer = useCallback((): void => {
-		window.requestAnimationFrame(() => setComposerFocusRequest((request) => request + 1));
+		setComposerFocusRequest((request) => request + 1);
 	}, []);
 
 	const openSettings = useCallback(async (): Promise<void> => {
@@ -580,8 +585,8 @@ export function App() {
 					<span className="brand-mark">∀ Atomic</span>
 					<span className="brand-sub">GUI host · {themeName}</span>
 				</div>
-				<div className="status-chip">
-					<span className={`status-dot ${status.state}`} />
+				<div className="status-chip" role="status" aria-label={`Engine status: ${status.state}`}>
+					<span className={`status-dot ${status.state}`} aria-hidden="true" />
 					<span>{status.state}</span>
 					{status.pid ? <span>pid {status.pid}</span> : null}
 				</div>
@@ -663,7 +668,11 @@ export function App() {
 				onToggle={toggleEntryExpanded}
 			/>
 
-			{showRawLog ? <pre className="raw-log">{rawLines.join("\n")}</pre> : null}
+			{showRawLog ? (
+				<pre className="raw-log" role="log" aria-label="Raw engine log">
+					{rawLines.join("\n")}
+				</pre>
+			) : null}
 
 			{customEditor ? (
 				<ChromeFrame

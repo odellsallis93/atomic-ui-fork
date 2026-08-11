@@ -24,7 +24,7 @@ the engine child.
 | M5 Extension UI host | Partial — native dialogs/notify/status/widgets, extension shortcut dispatch, `engine_input_form_*`, `hostSessionPicker` (`engine_session_picker_*`), ANSI frame overlays with render loop + `overlayOptions` + control/invalidate + legacy key encoding + kitty key-release + mouse-scroll wheel + autowrap terminal mode; remote custom header/footer/editor slots and transcript-local engine tool renderer frames |
 | M6 | Partial — Workflows has a scripted Electron renderer-host walkthrough: Composer sends generic `/workflow …` prompts for dispatch/list/status/attach, runtime F2 opens the generic custom-frame graph, and generic input-form/session-picker/dialog/widget routes cover its host surfaces. This is fixture evidence only; no workflow RPC, GUI-only renderer, live DBOS workflow proof, or other bundled-extension walkthrough is claimed. |
 
-| M7 Release readiness | Partial — Phase 5.1 adds a changed-path Linux x64 GUI CI gate and Phase 5.6 documents scope and recovery. Packaging, security, accessibility, and performance are not covered by that gate. |
+| M7 Release readiness | Partial — Phase 5.1 adds changed-path Linux x64 GUI CI; Phase 5.2/5.3 adds host-platform directory packaging/startup smoke and a source-backed security review; Phase 5.4/5.5 adds focused accessibility and renderer-budget evidence. Signed DMG/NSIS/AppImage installers, packaging CI, updates, provider/network behavior, cross-platform behavior, and screen-reader validation remain open or unproven. |
 
 ## Supported scope and GUI-vs-CLI boundary
 
@@ -34,10 +34,13 @@ tools, sessions, models, configuration, and their semantics; the GUI replaces
 the terminal compositor. It does not add a GUI-only engine protocol or a second
 configuration authority.
 
-This release-readiness slice validates **Linux x64 only**. It makes no macOS or
-Windows support claim, even though the private package manifest lists desktop
-targets. It also does not cover packaging, signing, updates, security review,
-accessibility, performance, live provider behavior, or remote deployment.
+This release-readiness slice validates **Linux x64 only** for its CI and makes no
+macOS or Windows support claim, even though the private package manifest lists
+desktop targets. Host-platform directory packaging and startup smoke, source
+security review, named-control/modal keyboard checks, and renderer budget probes
+are separate evidence. They do not cover signed installers, packaging CI,
+updates, provider/network behavior, screen-reader certification, or packaged-app
+performance.
 
 The terminal CLI remains the primary interface. Keep machine interfaces
 (`--print`, JSON/RPC modes, and pipes), launch flags, package administration,
@@ -50,6 +53,14 @@ The authoritative plan lives at
 [`specs/2026-08-08-electron-gui-plan.md`](../../../specs/2026-08-08-electron-gui-plan.md).
 
 Workflow route inventory and exclusions: [`packages/gui/docs/workflow-walkthrough.md`](../../gui/docs/workflow-walkthrough.md).
+
+Packaging/security evidence: [`packages/gui/docs/packaging-security.md`](../../gui/docs/packaging-security.md)
+records the host-platform directory smoke, its 26-file / 134-test security-gate
+receipt, source review, and exact installer/update/platform limits.
+
+Accessibility/performance evidence: [`packages/gui/docs/capability-ledger.md`](../../gui/docs/capability-ledger.md)
+records the focused named-control, modal-label, Tab/Escape/focus-return checks
+and the renderer budgets.
 
 ## Running locally
 
@@ -97,6 +108,27 @@ deterministic Electron renderer-host tests. The renderer-host tests use a
 protocol-shaped fixture, not a live provider; the evidence does not claim
 provider, packaging, or macOS/Windows parity. The remote Linux workflow result
 is the CI gate.
+
+### Phase 5.4/5.5 accessibility and performance evidence
+
+The focused accessibility checks cover named controls and modal labels, keyboard
+Tab trapping, Escape dismissal, and focus return to the opener through
+`test/autocomplete-accessibility.test.tsx`, `test/dialog-modal.test.tsx`, and
+the keyboard-only Electron case in `test/electron-phase2.e2e.test.ts`. They
+prove DOM and keyboard behavior, not screen-reader certification or an
+OS-specific accessibility stack.
+
+The focused renderer checks in `test/performance-budget.test.tsx` cover 10,000
+transcript rows in ≤1500ms with fewer than 40 mounted rows, plus 120 tool-stream
+deltas in ≤2500ms. `test/transcript-virtualization.test.tsx` covers live-region
+and disclosure semantics. These are renderer/jsdom probes, not provider/network,
+cross-platform, or packaged-app performance claims.
+
+The CI receipt above remains the historical **25 files / 127 tests** gate. The
+packaging/security receipt remains the separate **26 files / 134 tests** run.
+After merged full-gate verification, the integrated GUI suite passed with **29
+files / 141 tests**. This count does not add provider/network, cross-platform,
+screen-reader, or packaged-app claims.
 
 To recover a failed local check, repeat `npm ci --ignore-scripts`, run
 `node node_modules/electron/install.js`, rebuild

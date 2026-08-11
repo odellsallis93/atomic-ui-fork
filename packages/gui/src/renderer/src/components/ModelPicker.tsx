@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ModelInfo } from "../../../shared/ipc";
+import { useModalFocus } from "../helpers/modal-focus";
 
 export function ModelPicker(props: {
 	models: ModelInfo[];
@@ -8,6 +9,7 @@ export function ModelPicker(props: {
 	onSelect: (model: ModelInfo) => void;
 }) {
 	const [query, setQuery] = useState("");
+	const dialogRef = useModalFocus<HTMLDivElement>(undefined, props.onClose);
 	const ordered = useMemo(
 		() => [...props.models].sort((a, b) => Number(b.scoped === true) - Number(a.scoped === true)),
 		[props.models],
@@ -25,16 +27,30 @@ export function ModelPicker(props: {
 
 	return (
 		<div className="modal-backdrop">
-			<div className="modal modal-wide">
+			<div
+				ref={dialogRef}
+				className="modal modal-wide"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="model-title"
+			>
 				<div className="modal-header">
-					<h2>Select model</h2>
+					<h2 id="model-title">Select model</h2>
 					<button type="button" className="btn" onClick={props.onClose}>
 						Close
 					</button>
 				</div>
 				{props.currentLabel ? <p className="modal-subtitle">Current: {props.currentLabel}</p> : null}
-				{hasScoped ? <p className="settings-hint">Scoped models are supplied by the engine and shown first.</p> : null}
-				<input className="modal-input" placeholder="Search models…" value={query} onChange={(e) => setQuery(e.target.value)} />
+				{hasScoped ? (
+					<p className="settings-hint">Scoped models are supplied by the engine and shown first.</p>
+				) : null}
+				<input
+					className="modal-input"
+					aria-label="Search models"
+					placeholder="Search models…"
+					value={query}
+					onChange={(e) => setQuery(e.target.value)}
+				/>
 				<ul className="modal-list">
 					{filtered.map((model) => (
 						<li key={`${model.provider}/${model.id}`}>

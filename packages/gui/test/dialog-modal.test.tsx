@@ -60,7 +60,7 @@ describe("DialogModal keyboard and timeout contract", () => {
 		act(() => {
 			input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
 		});
-		assert.deepEqual(inputResponses, [{ id: "input-1", value: "" }]);
+		assert.deepEqual(inputResponses, [{ id: "input-1", value: "answer" }]);
 
 		act(() => root.unmount());
 		const editorResponses: ExtensionUiResponse[] = [];

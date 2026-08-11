@@ -53,17 +53,27 @@ function FrameSurface(props: {
 	const pipelineRender = useCallback((): void => {
 		const el = bodyRef.current ?? surfaceRef.current;
 		const rect = el?.getBoundingClientRect();
-		const grid = rect && rect.width > 0 && rect.height > 0
-			? defaultRenderGrid({ widthPx: rect.width, heightPx: rect.height })
-			: frameRenderGrid(frame.overlayOptions, { widthPx: window.innerWidth, heightPx: window.innerHeight }, frame.overlay);
+		const grid =
+			rect && rect.width > 0 && rect.height > 0
+				? defaultRenderGrid({ widthPx: rect.width, heightPx: rect.height })
+				: frameRenderGrid(
+						frame.overlayOptions,
+						{ widthPx: window.innerWidth, heightPx: window.innerHeight },
+						frame.overlay,
+					);
 		onRenderRef.current(nextFrameRenderRequestId(frame.componentId), grid.width, grid.rows);
 	}, [frame.componentId, frame.overlay, frame.overlayOptions]);
 	useEffect(() => {
 		if (!frame.focused || modalOpen) return;
 		const isUnhandledCtrlC = (event: KeyboardEvent): boolean =>
 			event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "c" && !frame.handlesCtrlC;
+		const isNativeControl = (event: KeyboardEvent): boolean => {
+			if (!(event.target instanceof Element) || !surfaceRef.current?.contains(event.target)) return false;
+			const isCloseButton = Boolean(event.target.closest(".frame-chrome button"));
+			return event.key === "Tab" || ((event.key === "Enter" || event.key === " ") && isCloseButton);
+		};
 		const onKeyDown = (event: KeyboardEvent): void => {
-			if (isUnhandledCtrlC(event)) return;
+			if (isNativeControl(event) || isUnhandledCtrlC(event)) return;
 			const encoded = encodeTerminalKey(event);
 			if (encoded === undefined) return;
 			event.preventDefault();
@@ -72,7 +82,7 @@ function FrameSurface(props: {
 			pipelineRender();
 		};
 		const onKeyUp = (event: KeyboardEvent): void => {
-			if (isUnhandledCtrlC(event)) return;
+			if (isNativeControl(event) || isUnhandledCtrlC(event)) return;
 			const encoded = encodeTerminalKeyRelease(event);
 			if (encoded === undefined) return;
 			event.preventDefault();
@@ -101,22 +111,40 @@ function FrameSurface(props: {
 		return () => window.removeEventListener("wheel", onWheel, true);
 	}, [frame.focused, frame.mouseScrollTracking, modalOpen, pipelineRender]);
 
+	useEffect(() => {
+		if (!frame.overlay || !frame.focused || modalOpen) return;
+		const surface = surfaceRef.current;
+		if (surface && !surface.contains(document.activeElement)) {
+			surface.tabIndex = -1;
+			surface.focus();
+		}
+	}, [frame.focused, frame.overlay, modalOpen]);
+
 	const style = useMemo(() => overlayOptionsToStyle(frame.overlayOptions), [frame.overlayOptions]);
 
 	return (
 		<div
 			ref={surfaceRef}
+			tabIndex={frame.overlay && frame.focused && !modalOpen ? -1 : undefined}
 			className={`frame-overlay${frame.overlay ? " frame-overlay-modal" : " frame-overlay-inline"}${
 				frame.overlayOptions ? " frame-overlay-positioned" : ""
 			}`}
+			onKeyDown={(event) => {
+				if (frame.overlay && !modalOpen && event.key === "Tab") {
+					event.preventDefault();
+					surfaceRef.current?.querySelector<HTMLButtonElement>(".frame-chrome button")?.focus();
+				}
+			}}
 			style={style}
 			role="dialog"
 			aria-label="Extension UI"
-			aria-hidden={!frame.focused}
+			aria-modal={frame.overlay && frame.focused && !modalOpen ? true : undefined}
+			aria-hidden={frame.focused && !modalOpen ? undefined : true}
+			inert={frame.focused && !modalOpen ? undefined : true}
 		>
 			<div className="frame-chrome">
 				<span>Extension UI · {frame.componentId}</span>
-				<button type="button" className="btn" onClick={onDismiss}>
+				<button type="button" className="btn" tabIndex={frame.focused && !modalOpen ? 0 : -1} onClick={onDismiss}>
 					Close
 				</button>
 			</div>

@@ -24,7 +24,7 @@ Fake-engine unit tests prove host structure only; parity claims require
 | M4 | Partial — model picker parses scoped engine models, thinking/settings controls use existing RPCs, theme loading follows JSON-name first-match precedence, auth/trust/onboarding route through engine-owned flows. Persistent settings/theme/fast-mode mutation remains excluded until protocol v2 adds RPCs. |
 | M5 | Partial — dialogs, input forms, ANSI frames + render loop + overlay geometry + kitty key-release + terminal-mode allowlist (chrome swap blocked on §5.3) |
 | M6 | Partial — Workflows, subagents, and Intercom walkthroughs are renderer-host E2E-proven through generic prompt/form/session-picker/custom-frame/widget routes; MCP panels and proxy/direct tool rendering use the same generic host contracts; web-access uses the engine-discovered command/shortcut catalog and generic dialogs for `/websearch`, `/curator`, and `/search`. Live workflow/DBOS, subagent job controls, Intercom broker/peer, configured MCP OAuth/calls, curator browser/Glimpse, provider config, cookies, stored-result RPCs, secrets, and other protocol-v2 exclusions remain open or excluded by protocol v2. |
-| M7 | Partial — host-platform directory packaging and deterministic packaged startup smoke are proven; signed DMG/NSIS/AppImage outputs, CI packaging, and updates remain open or explicitly unsupported in this environment. |
+| M7 | Partial — changed-path Linux x64 CI, host-platform directory packaging/startup smoke, source security review, and focused accessibility/performance evidence are documented. Signed DMG/NSIS/AppImage installers, packaging CI, and updates remain open or unproven. |
 
 ## Supported scope and host boundary
 
@@ -35,9 +35,12 @@ compositor; it does not fork CLI behavior or add a second configuration system.
 
 This Phase 5 slice has **Linux x64 CI coverage only**. The Electron manifest
 contains macOS and Windows targets, but this workflow does not test or promise
-support for those operating systems. No signed installer, update, accessibility,
-or performance gate is included here; host-platform packaging smoke and the
-source-backed security review are documented separately.
+support for those operating systems. Focused accessibility checks cover named
+controls, modal labels, keyboard Tab/Escape behavior, and focus return; focused
+renderer budgets cover the bounded transcript and tool-stream probes. These
+checks do not claim screen-reader certification, provider/network behavior, or
+packaged-app performance. Host-platform packaging smoke and the source-backed
+security review are documented separately.
 
 The GUI supports interactive engine-host flows covered by the linked ledger and
 walkthroughs. CLI machine interfaces (`--print`, JSON/RPC modes, and pipes),
@@ -77,6 +80,28 @@ and 13 deterministic Electron renderer-host tests; it does not claim live
 provider, installer, or cross-platform parity. Host-platform directory packaging
 and the security review are documented separately. The remote Linux workflow is
 the CI gate; no macOS or Windows result is claimed by this slice.
+
+## Phase 5 accessibility/performance evidence (2026-08-11)
+
+The focused checks are:
+
+- `test/autocomplete-accessibility.test.tsx`, `test/dialog-modal.test.tsx`,
+  and the keyboard-only case in `test/electron-phase2.e2e.test.ts` cover named
+  controls, modal labels, Tab trapping, Escape dismissal, and focus return to
+  the opener. The checks cover DOM and keyboard behavior; they do not certify a
+  screen reader or an OS-specific accessibility stack.
+- `test/performance-budget.test.tsx` checks 10,000 transcript rows in ≤1500ms
+  with fewer than 40 mounted rows, and 120 tool-stream deltas in ≤2500ms.
+  `test/transcript-virtualization.test.tsx` covers live-region and disclosure
+  semantics. These are renderer/jsdom probes, not provider/network,
+  cross-platform, or packaged-app performance claims.
+
+The historical CI receipt above remains **25 files / 127 tests**. The separate
+packaging/security receipt is recorded in
+[`docs/packaging-security.md`](docs/packaging-security.md), including its
+26-file / 134-test security-gate run. After the merged full-gate verification,
+the integrated GUI suite passed with **29 files / 141 tests**; this count does
+not add provider/network, cross-platform, screen-reader, or packaged-app claims.
 
 ## Recovery
 
@@ -123,9 +148,10 @@ npm run test --workspace=@bastani/atomic-gui
 npm run typecheck --workspace=@bastani/atomic-gui
 npm run build --workspace=@bastani/atomic-gui
 ```
-`npm run pack --workspace=@bastani/atomic-gui` produces a host-platform directory
-artifact and runs the packaged startup smoke. See
-[`docs/packaging-security.md`](docs/packaging-security.md) for the tested
+`npm run pack --workspace=@bastani/atomic-gui` produces a host-platform
+directory artifact and runs the packaged startup smoke. The explicit alias
+`npm run pack:directory --workspace=@bastani/atomic-gui` runs the same check.
+See [`docs/packaging-security.md`](docs/packaging-security.md) for the tested
 platform, installer limits, source-backed security review, and remaining risks.
 
 `test/engine-client.test.ts` uses a **fake** engine child (RPC shape only).

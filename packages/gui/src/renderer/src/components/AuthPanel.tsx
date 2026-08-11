@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { AuthCatalog } from "../../../shared/ipc";
+import { useModalFocus } from "../helpers/modal-focus";
 
 export function AuthPanel(props: {
 	catalog: AuthCatalog | null;
@@ -11,6 +12,7 @@ export function AuthPanel(props: {
 	onRefresh: () => void;
 }) {
 	const [filter, setFilter] = useState("");
+	const dialogRef = useModalFocus<HTMLDivElement>(undefined, props.onClose);
 	const catalog = props.catalog;
 	const providers = (catalog?.providers ?? []).filter((provider) =>
 		provider.toLowerCase().includes(filter.trim().toLowerCase()),
@@ -19,15 +21,16 @@ export function AuthPanel(props: {
 
 	return (
 		<div className="modal-backdrop">
-			<div className="modal modal-wide">
+			<div ref={dialogRef} className="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="auth-title">
 				<div className="modal-header">
-					<h2>Provider auth</h2>
+					<h2 id="auth-title">Provider auth</h2>
 					<button type="button" className="btn" onClick={props.onClose}>
 						Close
 					</button>
 				</div>
 				<input
 					className="modal-input"
+					aria-label="Filter providers"
 					placeholder="Filter providers…"
 					value={filter}
 					onChange={(e) => setFilter(e.target.value)}
