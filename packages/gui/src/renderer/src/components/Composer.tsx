@@ -9,8 +9,8 @@ import {
 	actionForKey,
 	collapseLargePaste,
 	expandPasteMarkers,
-	keyboardShortcut,
 	type KeybindingConfig,
+	keyboardShortcut,
 } from "../helpers/composer-parity";
 import type { QueueChip, WidgetItem } from "../store/session-store";
 import { Autocomplete, type AutocompleteItem } from "./Autocomplete";
@@ -129,6 +129,12 @@ export function Composer(props: {
 		return [];
 	}, [argumentItems, commandName, completion.kind, completion.query, fileItems, props.commands]);
 	const safeActiveIndex = items.length === 0 ? 0 : activeIndex % items.length;
+	const hasExactSlashCommand = useCallback((text: string): boolean => {
+		const completion = parseCompletionQuery(text);
+		if (completion.kind !== "slash-command") return false;
+		const trimmed = text.trim().toLowerCase();
+		return propsRef.current.commands.some((command) => trimmed === `/${command.name.toLowerCase()}`);
+	}, []);
 	const applyCompletion = useCallback((item: AutocompleteItem) => {
 		const text = propsRef.current.value;
 		const kind = parseCompletionQuery(text).kind;
@@ -189,6 +195,12 @@ export function Composer(props: {
 				return;
 			}
 			if (action === "tui.input.submit" && !current.disabled) {
+				if (items.length && !hasExactSlashCommand(current.value)) {
+					event.preventDefault();
+					const item = items[safeActiveIndex];
+					if (item) applyCompletion(item);
+					return;
+				}
 				event.preventDefault();
 				current.onSubmit(
 					current.working ? "steer" : undefined,
@@ -262,7 +274,7 @@ export function Composer(props: {
 		};
 		window.addEventListener("keydown", onKeyDown, true);
 		return () => window.removeEventListener("keydown", onKeyDown, true);
-	}, [applyCompletion, items, safeActiveIndex]);
+	}, [applyCompletion, hasExactSlashCommand, items, safeActiveIndex]);
 	return (
 		<section className="composer-region">
 			<Widgets widgets={props.widgets} placement="aboveEditor" />

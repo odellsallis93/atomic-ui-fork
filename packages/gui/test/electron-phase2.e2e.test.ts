@@ -70,11 +70,20 @@ process.stdin.on("data", (chunk) => {
     if (request.type === "extension_ui_response") {
       if (request.id === "fixture-dialog") {
         send({ type: "engine_custom_frame", componentId: "focus-frame", requestId: 100, lines: ["dialog response"] });
-      } else {
-        send({ type: "extension_ui_request", id: "search-details", method: "notify", message: "Stored search result details opened", notifyType: "info" });
+      } else if (request.id === "stored-searches" && typeof request.value === "string") {
+        send({ type: "extension_ui_request", id: "stored-search-action", method: "select", title: "Result abc123", options: ["View details", "Delete"] });
+      } else if (request.id === "stored-search-action" && request.value === "Delete") {
+        send({ type: "extension_ui_request", id: "stored-search-deleted", method: "notify", message: "Deleted abc123", notifyType: "info" });
+      } else if (request.id === "stored-search-action" && request.value === "View details") {
+        send({ type: "extension_ui_request", id: "stored-search-details", method: "notify", message: "ID: abc123\nType: search\nQueries: protocol docs", notifyType: "info" });
       }
       continue;
     }
+    if (request.type === "engine_tool_render") {
+      send({ type: "engine_custom_frame", componentId: request.componentId, requestId: request.requestId, lines: ["remote " + request.toolName + " frame"] });
+      continue;
+    }
+    if (request.type === "engine_custom_dispose") continue;
     if (!request.id || typeof request.type !== "string") continue;
     accept(request);
     if (request.type === "get_state") response(request, true, { sessionFile: current().file, sessionName: current().name, model: { provider: "fixture", id: "model" } });
@@ -83,14 +92,18 @@ process.stdin.on("data", (chunk) => {
     else if (request.type === "get_fork_messages") response(request, true, { messages: [{ entryId: "root", text: "fixture prompt" }] });
     else if (request.type === "list_sessions") response(request, true, { sessions: Object.entries(sessions).map(([id, session], index) => ({ path: session.file, id, cwd: "/tmp", name: session.name, modified: 10 + index, created: index, messageCount: session.entries.length, firstMessage: session.entries[0].message.content })) });
     else if (request.type === "get_commands") response(request, true, { commands: [
-      { name: "websearch", description: "Open web search curator", source: "extension" },
+      { name: "websearch", description: "Configure web search", source: "extension" },
       { name: "curator", description: "Configure web search curator", source: "extension" },
+      { name: "google-account", description: "Show the active Google account for Gemini Web", source: "extension" },
       { name: "search", description: "Browse stored web search results", source: "extension" },
     ] });
-    else if (request.type === "get_shortcuts") response(request, true, { shortcuts: [{ key: "ctrl+shift+w", description: "Open web search curator" }] });
+    else if (request.type === "get_shortcuts") response(request, true, { shortcuts: [
+      { key: "ctrl+shift+s", description: "Open web search curator" },
+      { key: "ctrl+shift+w", description: "Show web search activity" },
+    ] });
     else if (request.type === "get_available_models") response(request, true, { models: [] });
     else if (request.type === "invoke_shortcut") {
-      send({ type: "extension_ui_request", id: "curator-shortcut", method: "notify", message: "Opening web search curator...", notifyType: "info" });
+      if (request.key === "ctrl+shift+w") send({ type: "extension_ui_request", id: "activity-shortcut", method: "notify", message: "Web search activity toggled", notifyType: "info" });
       response(request, true);
     }
     else if (request.type === "get_session_stats") response(request, true, { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
@@ -115,6 +128,15 @@ process.stdin.on("data", (chunk) => {
         response(request, true);
       } else if (request.message === "open input dialog") {
         send({ type: "extension_ui_request", id: "fixture-dialog", method: "input", title: "Fixture input", placeholder: "Type here", timeout: 1000 });
+        response(request, true);
+      } else if (request.message === "web tool events") {
+        const tools = ["web_search", "code_search", "fetch_content", "get_search_content"];
+        for (const toolName of tools) {
+          const toolCallId = "fixture-" + toolName;
+          send({ type: "tool_execution_start", toolCallId, toolName, args: { query: toolName } });
+          send({ type: "tool_execution_update", toolCallId, toolName, args: { query: toolName }, partialResult: { progress: "partial " + toolName } });
+          send({ type: "tool_execution_end", toolCallId, toolName, result: { result: "complete " + toolName }, isError: toolName === "code_search" });
+        }
         response(request, true);
       } else {
         send({ type: "agent_start" });
@@ -276,20 +298,25 @@ test("Electron fixture E2E: native dialog owns focused-frame keys and restores f
 	await page.getByText("dialog response").waitFor();
 }, 30_000);
 
-test("Electron fixture E2E: runtime web curator and stored-search flows stay generic", async () => {
+test("Electron fixture E2E: runtime web curator, browse, shortcuts, and tools stay generic", async () => {
 	const page = await launchFixture();
 	const runtimeCommands = await page.evaluate(() => window.atomicGui.getCommands());
-	assert.equal(
-		runtimeCommands.data?.some((command) => command.name === "websearch"),
-		true,
-	);
-	/** Enter submits runtime commands; Tab alone accepts a highlighted completion. */
+	assert.deepEqual(runtimeCommands.data?.map((command) => command.name).sort(), [
+		"curator",
+		"google-account",
+		"search",
+		"websearch",
+	]);
+	const runtimeShortcuts = await page.evaluate(() => window.atomicGui.getShortcuts());
+	assert.deepEqual(runtimeShortcuts.data, [
+		{ key: "ctrl+shift+s", description: "Open web search curator" },
+		{ key: "ctrl+shift+w", description: "Show web search activity" },
+	]);
 	const submit = async (message: string): Promise<void> => {
 		await editor(page).click();
 		await page.keyboard.type(message);
 		await page.keyboard.press("Enter");
 	};
-	/** Notify toasts persist until dismissed, and the toast stack overlays the composer actions. */
 	const readToast = async (message: string): Promise<void> => {
 		const toast = page.locator(".toast").filter({ hasText: message });
 		await toast.waitFor();
@@ -297,18 +324,43 @@ test("Electron fixture E2E: runtime web curator and stored-search flows stay gen
 		await toast.waitFor({ state: "detached" });
 	};
 
-	await submit("/websearch protocol docs");
+	await editor(page).click();
+	await page.keyboard.type("/webs");
+	await page.getByRole("button", { name: /\/websearch/ }).waitFor();
+	await page.keyboard.press("Enter");
+	assert.equal((await editor(page).textContent())?.trim(), "/websearch");
+	await page.keyboard.press("Enter");
 	await readToast("Opening web search curator...");
 
 	await submit("/curator off");
 	await readToast("Curator disabled — web_search will return raw results");
 
+	for (const action of ["View details", "Delete"] as const) {
+		await submit("/search");
+		const resultsDialog = page.getByRole("dialog").filter({ hasText: "Stored Search Results" });
+		await resultsDialog.getByRole("button", { name: /protocol docs/ }).click();
+		const actionDialog = page.getByRole("dialog").filter({ hasText: "Result abc123" });
+		await actionDialog.getByRole("button", { name: action }).click();
+		await readToast(action === "Delete" ? "Deleted abc123" : "Queries: protocol docs");
+	}
 	await submit("/search");
-	const dialog = page.getByRole("dialog").filter({ hasText: "Stored Search Results" });
-	await dialog.getByRole("button", { name: /protocol docs/ }).click();
-	await readToast("Stored search result details opened");
+	await page
+		.getByRole("dialog")
+		.filter({ hasText: "Stored Search Results" })
+		.getByRole("button", { name: /protocol docs/ })
+		.click();
+	const cancelledAction = page.getByRole("dialog").filter({ hasText: "Result abc123" });
+	await cancelledAction.getByRole("button", { name: "Cancel" }).click();
+	await cancelledAction.waitFor({ state: "detached" });
 
-	// The fixture advertises "ctrl+shift+w"; ControlOrMeta would send super+shift+w on macOS.
-	await page.locator("body").press("Control+Shift+W");
-	await page.getByText("Opening web search curator...").waitFor();
+	await editor(page).click();
+	await page.keyboard.press("Control+Shift+W");
+	await readToast("Web search activity toggled");
+
+	await submit("web tool events");
+	for (const toolName of ["web_search", "code_search", "fetch_content", "get_search_content"]) {
+		await page.getByText(toolName, { exact: true }).waitFor();
+		await page.getByText(`remote ${toolName} frame`, { exact: true }).waitFor();
+	}
+	await page.getByText("Tool error", { exact: true }).waitFor();
 }, 30_000);
