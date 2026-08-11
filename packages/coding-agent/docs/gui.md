@@ -24,6 +24,28 @@ the engine child.
 | M5 Extension UI host | Partial — native dialogs/notify/status/widgets, extension shortcut dispatch, `engine_input_form_*`, `hostSessionPicker` (`engine_session_picker_*`), ANSI frame overlays with render loop + `overlayOptions` + control/invalidate + legacy key encoding + kitty key-release + mouse-scroll wheel + autowrap terminal mode; remote custom header/footer/editor slots and transcript-local engine tool renderer frames |
 | M6 | Partial — Workflows has a scripted Electron renderer-host walkthrough: Composer sends generic `/workflow …` prompts for dispatch/list/status/attach, runtime F2 opens the generic custom-frame graph, and generic input-form/session-picker/dialog/widget routes cover its host surfaces. This is fixture evidence only; no workflow RPC, GUI-only renderer, live DBOS workflow proof, or other bundled-extension walkthrough is claimed. |
 
+| M7 Release readiness | Partial — Phase 5.1 adds a changed-path Linux x64 GUI CI gate and Phase 5.6 documents scope and recovery. Packaging, security, accessibility, and performance are not covered by that gate. |
+
+## Supported scope and GUI-vs-CLI boundary
+
+The GUI is an optional Electron host for the existing interactive-engine child.
+Protocol v2 remains the boundary: the engine owns the agent loop, extensions,
+tools, sessions, models, configuration, and their semantics; the GUI replaces
+the terminal compositor. It does not add a GUI-only engine protocol or a second
+configuration authority.
+
+This release-readiness slice validates **Linux x64 only**. It makes no macOS or
+Windows support claim, even though the private package manifest lists desktop
+targets. It also does not cover packaging, signing, updates, security review,
+accessibility, performance, live provider behavior, or remote deployment.
+
+The terminal CLI remains the primary interface. Keep machine interfaces
+(`--print`, JSON/RPC modes, and pipes), launch flags, package administration,
+credential-print commands, and multi-window or remote deployment in the CLI or
+their existing exclusions. The GUI must not invent routes for protocol-v2 gaps;
+see the [capability ledger](../../gui/docs/capability-ledger.md) for evidence
+and exclusions.
+
 The authoritative plan lives at
 [`specs/2026-08-08-electron-gui-plan.md`](../../../specs/2026-08-08-electron-gui-plan.md).
 
@@ -32,12 +54,57 @@ Workflow route inventory and exclusions: [`packages/gui/docs/workflow-walkthroug
 ## Running locally
 
 ```sh
-# After `npm ci --ignore-scripts`, download the Electron binary once:
+# From the monorepo root:
+npm ci --ignore-scripts
 node node_modules/electron/install.js
-
-npm install --workspace=@bastani/atomic-gui
+npm run build --workspace=@bastani/atomic-natives
 npm run dev --workspace=@bastani/atomic-gui
 ```
+
+`npm ci --ignore-scripts` skips Electron's postinstall, so the explicit
+`install.js` step is required. The native binding build is needed by the
+real-engine smoke when bundled extensions load.
+
+## Phase 5.1 CI checks
+
+`.github/workflows/gui.yml` is a separate changed-path workflow. On pull
+requests it runs for GUI, engine-host, native-binding, manifest, or lockfile
+changes; pushes run only on `main`. It leaves the required root checks in
+`.github/workflows/test.yml` unchanged and runs only on a Linux x64 Blacksmith
+runner.
+
+The focused checks are:
+
+```sh
+npm ci --ignore-scripts
+node node_modules/electron/install.js
+npm run build --workspace=@bastani/atomic-natives
+xvfb-run --auto-servernum npm run test:gui
+npm run typecheck:gui
+npm run build --workspace=@bastani/atomic-gui
+```
+
+The workflow installs Electron's Linux runtime libraries and `xvfb` before
+launching the Playwright Electron fixture. It uses no secrets. This is test,
+typecheck, and build coverage only; it is not packaging or release coverage.
+
+## Phase 5 evidence and recovery
+
+On 2026-08-11, a clean local install on this branch passed the native binding
+build, `npm run test:gui` (24 files, 125 tests), GUI typecheck, and GUI build.
+The test result includes six real-engine lifecycle/session smoke tests and 13
+deterministic Electron renderer-host tests. The renderer-host tests use a
+protocol-shaped fixture, not a live provider; the evidence does not claim
+provider, packaging, or macOS/Windows parity. The remote Linux workflow result
+is the CI gate.
+
+To recover a failed local check, repeat `npm ci --ignore-scripts`, run
+`node node_modules/electron/install.js`, rebuild
+`@bastani/atomic-natives`, then run the three GUI checks in order. On headless
+Linux, prefix the test command with `xvfb-run --auto-servernum`. If the engine
+does not reach ready, verify `ATOMIC_GUI_CLI` or `ATOMIC_GUI_CLI_ENTRY`, the
+protocol-v2 version, and the native binding. Do not add credentials or a live
+model to CI while recovering this gate.
 
 Point the host at a specific Atomic CLI if needed:
 
