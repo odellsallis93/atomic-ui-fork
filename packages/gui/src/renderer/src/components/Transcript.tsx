@@ -4,8 +4,8 @@ import { renderMarkdown } from "../helpers/markdown";
 import {
 	DEFAULT_ENTRY_HEIGHT,
 	getEntryIndexAtOffset,
-	getVirtualWindow,
 	isNearTranscriptEnd,
+	VirtualWindowLayout,
 } from "../helpers/virtual-window";
 import type { TranscriptEntry } from "../store/session-store";
 
@@ -30,7 +30,7 @@ function withOccurrenceKeys<T>(items: readonly T[], keyFor: (item: T) => string)
 function ToolBody({ entry }: { entry: TranscriptEntry }) {
 	if (entry.remoteRenderLines) {
 		return (
-			<pre className="tool-body">
+			<pre id={`entry-body-${entry.id}`} className="tool-body">
 				{withOccurrenceKeys(entry.remoteRenderLines, (line) => line).map(({ item: line, key: lineKey }) => (
 					<div key={`${entry.id}-line-${lineKey}`} className="ansi-line">
 						{withOccurrenceKeys(ansiLineToSegments(line), (segment) => JSON.stringify(segment)).map(
@@ -55,7 +55,7 @@ function ToolBody({ entry }: { entry: TranscriptEntry }) {
 		);
 	}
 	return (
-		<pre className={`tool-body${entry.kind === "bash" ? " bash-body" : ""}`}>
+		<pre id={`entry-body-${entry.id}`} className={`tool-body${entry.kind === "bash" ? " bash-body" : ""}`}>
 			{entry.expanded ? entry.text : entry.text.slice(0, 400)}
 		</pre>
 	);
@@ -84,7 +84,6 @@ function EntryView({
 			</div>
 		);
 	}
-
 	const roleClass =
 		entry.kind === "user" || entry.kind === "skill"
 			? "role-user"
@@ -111,13 +110,19 @@ function EntryView({
 								: entry.streaming
 									? "atomic ▸"
 									: "atomic";
-
 	return (
-		<article className={`entry${entry.excludeFromContext ? " dimmed" : ""}`}>
+		<article className={`entry${entry.excludeFromContext ? " dimmed" : ""}`} aria-label={`${label} message`}>
 			<div className="entry-meta">
 				<span className={roleClass}>{label}</span>
 				{entry.kind === "tool" || entry.kind === "bash" ? (
-					<button type="button" className="btn" onClick={() => onToggle(entry.id)}>
+					<button
+						type="button"
+						className="btn"
+						aria-label={entry.expanded ? "Collapse details" : "Expand details"}
+						aria-expanded={entry.expanded}
+						aria-controls={`entry-body-${entry.id}`}
+						onClick={() => onToggle(entry.id)}
+					>
 						{entry.expanded ? "collapse" : "expand"}
 					</button>
 				) : null}
@@ -136,7 +141,7 @@ function EntryView({
 					open={disclosures.get(`${entry.id}:thinking`) ?? entry.streaming}
 					onToggle={(event) => onDisclosureToggle(`${entry.id}:thinking`, event.currentTarget.open)}
 				>
-					<summary>thinking</summary>
+					<summary>Thinking details</summary>
 					<pre>{entry.thinking}</pre>
 				</details>
 			) : null}
@@ -150,7 +155,7 @@ function EntryView({
 						open={disclosures.get(`${entry.id}:skill`) ?? false}
 						onToggle={(event) => onDisclosureToggle(`${entry.id}:skill`, event.currentTarget.open)}
 					>
-						<summary>{entry.skillLocation}</summary>
+						<summary>{entry.skillLocation ?? "Skill details"}</summary>
 						<pre>{entry.skillContent}</pre>
 					</details>
 					{entry.text ? <div>{entry.text}</div> : null}
@@ -227,6 +232,7 @@ export function Transcript({
 }) {
 	const scrollerRef = useRef<HTMLElement | null>(null);
 	const heights = useRef(new Map<string, number>());
+	const layoutRef = useRef<VirtualWindowLayout | null>(null);
 	const followRef = useRef(true);
 	const previousLeafId = useRef(leafId);
 	const disclosures = useRef(new Map<string, boolean>());
@@ -235,8 +241,11 @@ export function Transcript({
 	const [, setMeasurementVersion] = useState(0);
 	const [focusedEntryId, setFocusedEntryId] = useState<string>();
 	const ids = useMemo(() => entries.map((entry) => entry.id), [entries]);
-	const virtual = getVirtualWindow(entries.length, scrollTop, viewportHeight, heights.current, ids);
-	const anchorIndex = useMemo(() => getEntryIndexAtOffset(virtual.offsets, scrollTop), [scrollTop, virtual.offsets]);
+	if (!layoutRef.current?.matchesIds(ids)) {
+		layoutRef.current = new VirtualWindowLayout(ids, heights.current);
+	}
+	const virtual = layoutRef.current.getWindow(scrollTop, viewportHeight);
+	const anchorIndex = getEntryIndexAtOffset(virtual.offsets, scrollTop);
 	const anchorIndexRef = useRef(anchorIndex);
 	anchorIndexRef.current = anchorIndex;
 	const focusedIndex = focusedEntryId ? ids.indexOf(focusedEntryId) : -1;
@@ -256,6 +265,7 @@ export function Transcript({
 			setScrollTop(scroller.scrollTop);
 		}
 		heights.current.set(id, height);
+		layoutRef.current?.setHeight(id, height);
 		setMeasurementVersion((version) => version + 1);
 	}, []);
 	const onDisclosureToggle = useCallback((id: string, open: boolean) => {
@@ -294,7 +304,11 @@ export function Transcript({
 		<section
 			ref={scrollerRef}
 			className="transcript"
+			role="log"
 			aria-label="Transcript"
+			aria-live="polite"
+			aria-relevant="additions text"
+			aria-atomic="false"
 			onFocusCapture={(event) => {
 				const row =
 					event.target instanceof Element ? event.target.closest<HTMLElement>(".transcript-virtual-row") : null;

@@ -369,6 +369,11 @@ input {
 .composer-editor.bash-mode {
 	border-color: var(--peach);
 }
+.composer-editor:focus-within {
+	border-color: var(--blue);
+	outline: 2px solid var(--blue);
+	outline-offset: 2px;
+}
 
 .composer-actions {
 	display: flex;

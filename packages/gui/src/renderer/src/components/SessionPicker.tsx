@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ForkMessageInfo, SessionListItem } from "../../../shared/ipc";
+import { useModalFocus } from "../helpers/modal-focus";
 
 type SortKey = "modified" | "created" | "name" | "messages";
 
@@ -25,21 +26,8 @@ export function SessionPicker(props: {
 	const [renameValue, setRenameValue] = useState("");
 	const [forkEntryId, setForkEntryId] = useState("");
 	const [importPath, setImportPath] = useState("");
-	const dialogRef = useRef<HTMLDivElement>(null);
+	const dialogRef = useModalFocus<HTMLDivElement>('input[aria-label="Search sessions"]', props.onClose);
 	const searchRef = useRef<HTMLInputElement>(null);
-
-	useEffect(() => {
-		searchRef.current?.focus();
-		const onKeyDown = (event: KeyboardEvent): void => {
-			if (event.key === "Escape") {
-				event.preventDefault();
-				props.onClose();
-			}
-		};
-		const dialog = dialogRef.current;
-		dialog?.addEventListener("keydown", onKeyDown);
-		return () => dialog?.removeEventListener("keydown", onKeyDown);
-	}, [props.onClose]);
 
 	const filtered = useMemo(() => {
 		const needle = query.trim().toLowerCase();
@@ -81,6 +69,7 @@ export function SessionPicker(props: {
 					<input
 						ref={searchRef}
 						className="modal-input"
+						aria-label="Search sessions"
 						placeholder="Search sessions…"
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
@@ -119,6 +108,7 @@ export function SessionPicker(props: {
 									<div className="session-rename-row">
 										<input
 											className="modal-input"
+											aria-label={`Rename ${session.name || session.id}`}
 											value={renameValue}
 											onChange={(e) => setRenameValue(e.target.value)}
 											placeholder="Session name"

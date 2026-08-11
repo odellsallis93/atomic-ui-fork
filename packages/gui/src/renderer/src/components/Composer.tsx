@@ -191,6 +191,12 @@ export function Composer(props: {
 				extensions: [
 					history(),
 					markdown(),
+					EditorView.contentAttributes.of({
+						"aria-label": "Message Atomic",
+						"aria-describedby": "composer-hint",
+						"aria-autocomplete": "list",
+						"aria-expanded": "false",
+					}),
 					placeholder("Message Atomic — /commands · @files · !bash"),
 					keymap.of([...defaultKeymap, ...historyKeymap]),
 					EditorView.updateListener.of((update) => {
@@ -211,6 +217,19 @@ export function Composer(props: {
 		if (view && view.state.doc.toString() !== props.value)
 			view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: props.value } });
 	}, [props.value]);
+	useEffect(() => {
+		const content = viewRef.current?.contentDOM;
+		if (!content) return;
+		const expanded = items.length > 0;
+		content.setAttribute("aria-expanded", String(expanded));
+		if (!expanded) {
+			content.removeAttribute("aria-controls");
+			content.removeAttribute("aria-activedescendant");
+			return;
+		}
+		content.setAttribute("aria-controls", "composer-autocomplete");
+		content.setAttribute("aria-activedescendant", `composer-autocomplete-option-${safeActiveIndex}`);
+	}, [items.length, safeActiveIndex]);
 	useEffect(() => {
 		if (props.focusRequest) viewRef.current?.focus();
 	}, [props.focusRequest]);
@@ -320,7 +339,7 @@ export function Composer(props: {
 		return () => window.removeEventListener("keydown", onKeyDown, true);
 	}, [applyCompletion, hasExactSlashCommand, items, safeActiveIndex]);
 	return (
-		<section className="composer-region">
+		<section className="composer-region" aria-label="Message composer">
 			<Widgets widgets={props.widgets} placement="aboveEditor" />
 			{props.queue.length ? (
 				<div className="queue-row">
@@ -332,7 +351,8 @@ export function Composer(props: {
 				</div>
 			) : null}
 			<div className="composer">
-				<div
+				<section
+					aria-label="Attachment drop area"
 					className={`composer-main${draggingImages ? " composer-drop-target" : ""}`}
 					onDragEnter={(event) => {
 						if (isFileDrag(event.dataTransfer.types)) setDraggingImages(true);
@@ -356,6 +376,7 @@ export function Composer(props: {
 									key={`${image.mimeType}-${image.data.slice(0, 32)}`}
 									type="button"
 									className="attachment-chip"
+									aria-label={`Remove attached image ${index + 1}`}
 									onClick={() => props.onRemoveImage(index)}
 								>
 									image {index + 1} ×
@@ -384,7 +405,7 @@ export function Composer(props: {
 							}
 						}}
 					/>
-				</div>
+				</section>
 				<div className="composer-actions">
 					<button
 						type="button"
@@ -405,7 +426,7 @@ export function Composer(props: {
 				</div>
 			</div>
 			<Widgets widgets={props.widgets} placement="belowEditor" />
-			<div className="hint-row">
+			<div className="hint-row" id="composer-hint">
 				<span>{bashMode ? "bash mode (! / !!)" : "Configured keys · / @ complete · Tab paths"}</span>
 				<span>Queued messages stay paused until an ordinary submit.</span>
 			</div>

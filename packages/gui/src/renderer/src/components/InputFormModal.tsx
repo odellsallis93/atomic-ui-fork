@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { InputFormRequest } from "../../../shared/ipc";
+import { useModalFocus } from "../helpers/modal-focus";
 
 export function InputFormModal(props: {
 	request: InputFormRequest;
@@ -11,12 +12,13 @@ export function InputFormModal(props: {
 		for (const field of props.request.fields) initial[field.name] = field.initialValue;
 		return initial;
 	});
+	const dialogRef = useModalFocus<HTMLDivElement>(undefined, props.onCancel);
 
 	return (
 		<div className="modal-backdrop">
-			<div className="modal">
+			<div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-labelledby="input-form-title">
 				<div className="modal-header">
-					<h2>{props.request.heading ?? props.request.title}</h2>
+					<h2 id="input-form-title">{props.request.heading ?? props.request.title}</h2>
 				</div>
 				{props.request.heading ? <p className="settings-hint">{props.request.title}</p> : null}
 				{props.request.fields.map((field) => (

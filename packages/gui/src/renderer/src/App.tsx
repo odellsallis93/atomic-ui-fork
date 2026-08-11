@@ -19,8 +19,8 @@ import { Transcript } from "./components/Transcript";
 import { TreeNavigator } from "./components/TreeNavigator";
 import { TrustDialog } from "./components/TrustDialog";
 import { createSubmitGate, planSubmit, readFileAsDataUrl, readImageFiles } from "./helpers/attachments";
-import { formatUsage, useSessionStore } from "./store/session-store";
 import { actionForKey, keyboardShortcut, restoreFailedDraft } from "./helpers/composer-parity";
+import { formatUsage, useSessionStore } from "./store/session-store";
 
 function hasGuiApi(): boolean {
 	return typeof window !== "undefined" && typeof window.atomicGui !== "undefined";
@@ -571,8 +571,8 @@ export function App() {
 					<span className="brand-mark">∀ Atomic</span>
 					<span className="brand-sub">GUI host · {themeName}</span>
 				</div>
-				<div className="status-chip">
-					<span className={`status-dot ${status.state}`} />
+				<div className="status-chip" role="status" aria-label={`Engine status: ${status.state}`}>
+					<span className={`status-dot ${status.state}`} aria-hidden="true" />
 					<span>{status.state}</span>
 					{status.pid ? <span>pid {status.pid}</span> : null}
 				</div>
@@ -654,7 +654,11 @@ export function App() {
 				onToggle={toggleEntryExpanded}
 			/>
 
-			{showRawLog ? <pre className="raw-log">{rawLines.join("\n")}</pre> : null}
+			{showRawLog ? (
+				<pre className="raw-log" role="log" aria-label="Raw engine log">
+					{rawLines.join("\n")}
+				</pre>
+			) : null}
 
 			{customEditor ? (
 				<ChromeFrame

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { GuiSettingsSnapshot, ThemeSummary } from "../../../shared/ipc";
+import { useModalFocus } from "../helpers/modal-focus";
 
 type QueueMode = "all" | "one-at-a-time";
 
@@ -19,6 +20,7 @@ export function SettingsPanel(props: {
 	onSetAutoRetry: (enabled: boolean) => void;
 }) {
 	const [selected, setSelected] = useState(props.currentTheme);
+	const dialogRef = useModalFocus<HTMLDivElement>(undefined, props.onClose);
 
 	useEffect(() => {
 		setSelected(props.currentTheme);
@@ -26,9 +28,15 @@ export function SettingsPanel(props: {
 
 	return (
 		<div className="modal-backdrop">
-			<div className="modal modal-wide">
+			<div
+				ref={dialogRef}
+				className="modal modal-wide"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="settings-title"
+			>
 				<div className="modal-header">
-					<h2>Settings</h2>
+					<h2 id="settings-title">Settings</h2>
 					<button type="button" className="btn" onClick={props.onClose}>
 						Close
 					</button>
@@ -38,7 +46,12 @@ export function SettingsPanel(props: {
 					<label className="settings-label" htmlFor="theme-select">
 						Current effective theme
 					</label>
-					<select id="theme-select" className="modal-input" value={selected} onChange={(e) => setSelected(e.target.value)}>
+					<select
+						id="theme-select"
+						className="modal-input"
+						value={selected}
+						onChange={(e) => setSelected(e.target.value)}
+					>
 						{props.themes.map((theme) => (
 							<option key={`${theme.source}:${theme.path}`} value={theme.name}>
 								{theme.name} ({theme.source})
@@ -46,12 +59,17 @@ export function SettingsPanel(props: {
 						))}
 					</select>
 					<p className="settings-hint">
-						Reads the effective `theme` from engine config precedence (global, then project). Applying here reloads
-						CSS for this GUI session only; persistent theme mutation is intentionally excluded until protocol v2
-						exposes an engine-owned settings RPC.
+						Reads the effective `theme` from engine config precedence (global, then project). Applying here
+						reloads CSS for this GUI session only; persistent theme mutation is intentionally excluded until
+						protocol v2 exposes an engine-owned settings RPC.
 						{props.settings?.projectOverridesTheme ? " Project settings override the global theme." : ""}
 					</p>
-					<button type="button" className="btn btn-primary" onClick={() => props.onSelectTheme(selected)} disabled={!selected}>
+					<button
+						type="button"
+						className="btn btn-primary"
+						onClick={() => props.onSelectTheme(selected)}
+						disabled={!selected}
+					>
 						Apply theme live
 					</button>
 				</section>
@@ -101,8 +119,8 @@ export function SettingsPanel(props: {
 						</button>
 					</div>
 					<p className="settings-hint">
-						These controls call existing engine RPCs. Codex fast mode has engine settings accessors but no protocol v2
-						RPC, so it remains documented as unavailable in the GUI.
+						These controls call existing engine RPCs. Codex fast mode has engine settings accessors but no
+						protocol v2 RPC, so it remains documented as unavailable in the GUI.
 					</p>
 				</section>
 

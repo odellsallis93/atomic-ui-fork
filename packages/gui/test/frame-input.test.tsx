@@ -55,6 +55,11 @@ test("native modal state blocks focused frame keys and restores forwarding after
 		inputs.push(data);
 	};
 	await mount(true, recordInput);
+	const surface = container.querySelector<HTMLElement>('[role="dialog"]');
+	assert.equal(surface?.getAttribute("aria-modal"), null);
+	assert.equal(surface?.getAttribute("aria-hidden"), "true");
+	assert.equal(surface?.hasAttribute("inert"), true);
+	assert.equal(surface?.querySelector("button")?.tabIndex, -1);
 	window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
 	assert.deepEqual(inputs, []);
 
@@ -69,6 +74,14 @@ test("native modal state blocks focused frame keys and restores forwarding after
 			}),
 		);
 	});
+	const activeSurface = container.querySelector<HTMLElement>('[role="dialog"]');
+	assert.equal(activeSurface?.getAttribute("aria-modal"), "true");
+	assert.equal(activeSurface?.getAttribute("aria-hidden"), null);
+	assert.equal(activeSurface?.hasAttribute("inert"), false);
+	const closeButton = activeSurface?.querySelector<HTMLButtonElement>(".frame-chrome button");
+	assert.equal(document.activeElement, activeSurface);
+	activeSurface?.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+	assert.equal(document.activeElement, closeButton);
 	window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
 	assert.deepEqual(inputs, ["\x1b[D"]);
 });

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { HostSessionPickerRow } from "../../../shared/ipc";
+import { useModalFocus } from "../helpers/modal-focus";
 
 export function HostSessionPickerModal(props: {
 	sessions: HostSessionPickerRow[];
@@ -10,6 +11,7 @@ export function HostSessionPickerModal(props: {
 	onDelete: (path: string) => void;
 }) {
 	const [query, setQuery] = useState("");
+	const dialogRef = useModalFocus<HTMLDivElement>(undefined, props.onClose);
 
 	const filtered = useMemo(() => {
 		const needle = query.trim().toLowerCase();
@@ -22,9 +24,15 @@ export function HostSessionPickerModal(props: {
 
 	return (
 		<div className="modal-backdrop">
-			<div className="modal modal-wide">
+			<div
+				ref={dialogRef}
+				className="modal modal-wide"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="host-sessions-title"
+			>
 				<div className="modal-header">
-					<h2>Select session</h2>
+					<h2 id="host-sessions-title">Select session</h2>
 					<button type="button" className="btn" onClick={props.onClose}>
 						Cancel
 					</button>
@@ -37,6 +45,7 @@ export function HostSessionPickerModal(props: {
 				{props.errorMessage ? <p className="banner banner-error">{props.errorMessage}</p> : null}
 				<input
 					className="modal-input"
+					aria-label="Search sessions"
 					placeholder="Search sessions…"
 					value={query}
 					onChange={(e) => setQuery(e.target.value)}

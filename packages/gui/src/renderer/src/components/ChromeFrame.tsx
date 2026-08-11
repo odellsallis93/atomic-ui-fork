@@ -21,11 +21,18 @@ export function ChromeFrame(props: {
 			ref={ref}
 			className={`chrome-frame chrome-frame-${props.slot}`}
 			aria-label={`Extension ${props.slot}`}
-			tabIndex={props.onInput ? 0 : undefined}
+			aria-hidden={props.modalOpen || undefined}
+			tabIndex={props.onInput && !props.modalOpen ? 0 : undefined}
 			onKeyDown={(event) => {
 				const onInput = props.onInput;
 				if (!onInput || props.modalOpen) return;
-				if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "c" && !props.frame.handlesCtrlC)
+				if (
+					event.ctrlKey &&
+					!event.altKey &&
+					!event.metaKey &&
+					event.key.toLowerCase() === "c" &&
+					!props.frame.handlesCtrlC
+				)
 					return;
 				const data = encodeTerminalKey(event);
 				if (!data) return;
@@ -36,7 +43,13 @@ export function ChromeFrame(props: {
 			onKeyUp={(event) => {
 				const onInput = props.onInput;
 				if (!onInput || props.modalOpen) return;
-				if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "c" && !props.frame.handlesCtrlC)
+				if (
+					event.ctrlKey &&
+					!event.altKey &&
+					!event.metaKey &&
+					event.key.toLowerCase() === "c" &&
+					!props.frame.handlesCtrlC
+				)
 					return;
 				const data = encodeTerminalKeyRelease(event);
 				if (!data) return;
