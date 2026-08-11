@@ -604,7 +604,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			queue: [],
 			working: false,
 			workingLabel: "thinking",
-			widgets: [],
 			transcriptLeafId: activeLeafId,
 			treeLeafId: activeLeafId,
 		});

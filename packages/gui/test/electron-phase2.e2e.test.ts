@@ -17,7 +17,7 @@ function tempDir(prefix: string): string {
 }
 
 /** Stateful protocol-v2 stand-in. It rejects unknown RPCs so renderer flows must use real command shapes. */
-function writeProtocolFixture(): string {
+function writeProtocolFixture(delayInitialEntries = false): string {
 	const path = join(tempDir("atomic-gui-e2e-fixture-"), "engine.mjs");
 	writeFileSync(
 		path,
@@ -55,6 +55,8 @@ const appendPrompt = (text) => {
 };
 send({ type: "engine_ready", protocolVersion: 2, pid: process.pid });
 let subagentRenderCount = 0;
+let delayInitialEntries = ${delayInitialEntries};
+let pendingInitialEntries;
 let input = "";
 process.stdin.on("data", (chunk) => {
   input += chunk;
@@ -76,13 +78,20 @@ process.stdin.on("data", (chunk) => {
       subagentRenderCount += 1;
       const complete = subagentRenderCount > 1;
       send({ type: "engine_custom_frame", componentId: request.componentId, requestId: request.requestId, lines: complete ? ["○ Async agents · background", "└─ ✓ codebase-analyzer · complete", "   ⎿  inspected protocol"] : ["● Async agents · background", "└─ ◌ codebase-analyzer · running", "   ⎿  inspecting protocol"] });
+	  if (pendingInitialEntries) {
+	    response(pendingInitialEntries, true, { entries: current().entries, leafId: current().leaf });
+	    pendingInitialEntries = undefined;
+	  }
       if (!complete) setTimeout(() => send({ type: "engine_custom_invalidate", componentId: request.componentId }), 300);
       continue;
     }
     if (!request.id || typeof request.type !== "string") continue;
     accept(request);
     if (request.type === "get_state") response(request, true, { sessionFile: current().file, sessionName: current().name, model: { provider: "fixture", id: "model" } });
-    else if (request.type === "get_entries") response(request, true, { entries: current().entries, leafId: current().leaf });
+    else if (request.type === "get_entries") {
+      if (delayInitialEntries) { delayInitialEntries = false; pendingInitialEntries = request; }
+      else response(request, true, { entries: current().entries, leafId: current().leaf });
+    }
     else if (request.type === "get_tree") response(request, true, { tree: tree(), leafId: current().leaf });
     else if (request.type === "get_fork_messages") response(request, true, { messages: [{ entryId: "root", text: "fixture prompt" }] });
     else if (request.type === "list_sessions") response(request, true, { sessions: Object.entries(sessions).map(([id, session], index) => ({ path: session.file, id, cwd: "/tmp", name: session.name, modified: 10 + index, created: index, messageCount: session.entries.length, firstMessage: session.entries[0].message.content })) });
@@ -148,13 +157,13 @@ function editor(page: Page) {
 	return page.locator(".composer-editor .cm-content");
 }
 
-async function launchFixture(): Promise<Page> {
+async function launchFixture(delayInitialEntries = false): Promise<Page> {
 	assert.equal(
 		existsSync(electronMain),
 		true,
 		`Missing built Electron main: ${electronMain}. Run npm run build --workspace=@bastani/atomic-gui.`,
 	);
-	const fixture = writeProtocolFixture();
+	const fixture = writeProtocolFixture(delayInitialEntries);
 	const agentDir = tempDir("atomic-gui-e2e-agent-");
 	const cwd = tempDir("atomic-gui-e2e-cwd-");
 	const userDataDir = tempDir("atomic-gui-e2e-user-data-");
@@ -182,7 +191,7 @@ afterEach(async () => {
 });
 
 test("Electron fixture E2E: generic background-subagent widget shows runtime status updates", async () => {
-	const page = await launchFixture();
+	const page = await launchFixture(true);
 	await editor(page).click();
 	await page.keyboard.type("start background subagent");
 	await page.getByRole("button", { name: "Send" }).click();
@@ -197,7 +206,7 @@ test("Electron fixture E2E: generic background-subagent widget shows runtime sta
 }, 30_000);
 
 test("Electron fixture E2E: session switch removes a stale custom subagent widget without engine cleanup", async () => {
-	const page = await launchFixture();
+	const page = await launchFixture(true);
 	await editor(page).click();
 	await page.keyboard.type("start background subagent");
 	await page.getByRole("button", { name: "Send" }).click();

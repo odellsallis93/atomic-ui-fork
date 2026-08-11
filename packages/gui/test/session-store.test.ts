@@ -267,7 +267,7 @@ test("message lifecycle keeps streamed custom, skill, and system roles out of th
 });
 
 test("session switch hydration replaces prior transcript and clears session-scoped widgets", () => {
-	const { hydrateTranscript, resetTranscript, setTree, ingestExtensionUi } = useSessionStore.getState();
+	const { hydrateTranscript, resetTranscript, setTree, ingestEvent } = useSessionStore.getState();
 
 	hydrateTranscript(
 		[
@@ -295,13 +295,20 @@ test("session switch hydration replaces prior transcript and clears session-scop
 	);
 	assert.equal(useSessionStore.getState().transcriptLeafId, "old-assistant");
 	assert.equal(useSessionStore.getState().treeLeafId, "old-assistant");
-	ingestExtensionUi({
-		id: "session-A-widget",
-		method: "setWidget",
+	ingestEvent({
+		type: "engine_custom_open",
+		componentId: "session-A-widget",
+		overlay: false,
 		widgetKey: "subagents.async",
-		widgetLines: ["codebase-analyzer · running"],
 		widgetPlacement: "belowEditor",
 	});
+	ingestEvent({
+		type: "engine_custom_frame",
+		componentId: "session-A-widget",
+		requestId: 1,
+		lines: ["codebase-analyzer · running"],
+	});
+	assert.equal(useSessionStore.getState().frames.length, 1);
 	assert.equal(useSessionStore.getState().widgets.length, 1);
 
 	// App switch path: reset then hydrate the next session's get_entries payload.
@@ -314,6 +321,7 @@ test("session switch hydration replaces prior transcript and clears session-scop
 		0,
 		"prior session widgets must clear before async hydration",
 	);
+	assert.equal(useSessionStore.getState().frames.length, 0, "prior session frames must clear before async hydration");
 
 	hydrateTranscript(
 		[
@@ -353,6 +361,31 @@ test("session switch hydration replaces prior transcript and clears session-scop
 	assert.equal(state.treeLeafId, "new-assistant");
 	assert.equal(state.transcriptLeafId, state.treeLeafId, "hydrated leaf must match active tree leaf");
 	assert.equal(state.widgets.length, 0, "hydration must not retain a prior session widget");
+});
+
+test("same-session hydration retains a live custom widget frame", () => {
+	const { hydrateTranscript, ingestEvent } = useSessionStore.getState();
+	ingestEvent({
+		type: "engine_custom_open",
+		componentId: "live-subagent-widget",
+		overlay: false,
+		widgetKey: "subagents.async",
+		widgetPlacement: "belowEditor",
+	});
+	ingestEvent({
+		type: "engine_custom_frame",
+		componentId: "live-subagent-widget",
+		requestId: 1,
+		lines: ["codebase-analyzer · running"],
+	});
+
+	hydrateTranscript([], null);
+
+	const state = useSessionStore.getState();
+	assert.equal(state.frames[0]?.componentId, "live-subagent-widget");
+	assert.deepEqual(state.widgets, [
+		{ key: "subagents.async", lines: ["codebase-analyzer · running"], placement: "belowEditor" },
+	]);
 });
 
 test("engine keybinding updates expose extension shortcuts", () => {
