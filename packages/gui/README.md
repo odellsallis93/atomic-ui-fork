@@ -5,8 +5,13 @@ Electron desktop host for Atomic. Speaks the interactive-engine JSONL protocol
 engine child — this package replaces only the terminal compositor.
 
 See [`specs/2026-08-08-electron-gui-plan.md`](../../specs/2026-08-08-electron-gui-plan.md)
-for the full parity plan and milestone map. User-facing status table:
-[`packages/coding-agent/docs/gui.md`](../coding-agent/docs/gui.md).
+for the full parity plan and milestone map. Continuation plan:
+[`specs/2026-08-11-gui-parity-continuation-plan.md`](../../specs/2026-08-11-gui-parity-continuation-plan.md).
+User-facing status table: [`packages/coding-agent/docs/gui.md`](../coding-agent/docs/gui.md).
+
+**Capability ledger (parity evidence):** [`docs/capability-ledger.md`](docs/capability-ledger.md).
+Fake-engine unit tests prove host structure only; parity claims require
+`real-engine` or `e2e` rows in the ledger.
 
 ## Status (summary)
 
@@ -45,7 +50,11 @@ The host resolves the engine CLI as:
 ```sh
 npm run test --workspace=@bastani/atomic-gui
 npm run typecheck --workspace=@bastani/atomic-gui
+npm run build --workspace=@bastani/atomic-gui
 ```
+
+`test/engine-client.test.ts` uses a **fake** engine child (RPC shape only).
+`test/real-engine-smoke.test.ts` spawns the real workspace CLI for lifecycle smoke.
 
 ## Notes
 

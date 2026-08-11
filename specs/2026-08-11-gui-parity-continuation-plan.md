@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Draft — Phase 0 gates G1/G2/G4/G5 resolved |
+| Status | Phase 0 complete; **Phase 1 exit met** (2026-08-11) — real-engine smoke, session leaf integrity, capability ledger, fake-engine boundary |
 | Created | 2026-08-11 |
 | Repo | `atomic-ui-fork` |
 | Focus package | `packages/gui` (`@bastani/atomic-gui`) |
@@ -224,6 +224,15 @@ npm run dev --workspace=@bastani/atomic-gui
 
 ### Phase 1 — Stability and compatibility gates
 
+**Exit (2026-08-11):** met with documented gaps.
+
+| Step | Evidence |
+|---|---|
+| 1.1 Real-engine smoke | `packages/gui/test/real-engine-smoke.test.ts` — start, bash stream stand-in, abort, restart, version-mismatch. **Gap:** live LLM prompt/stream deferred (CI/provider); streaming proven via real bash events. |
+| 1.2 Session switch / reload | Store: `session-store.test.ts` replace+leaf; App passes `leafId` into `hydrateTranscript`; real-engine leaf alignment after `switch_session`. Bash-row durability across switch is best-effort assert when present. |
+| 1.3 Capability ledger | `packages/gui/docs/capability-ledger.md` |
+| 1.4 Fake-engine boundary | Ledger § + comments on `engine-client.test.ts` / `real-engine-smoke.test.ts` / README |
+
 | Step | Targets | User outcome | Compatibility | Validation | Done when |
 |---|---|---|---|---|---|
 | 1.1 Real-engine smoke | `engine-client`, supervisor | Reliable start/stream/abort/restart | Protocol v2 unchanged | Scripted smoke against real CLI entry | Version skew fails clearly; restart safe |
@@ -362,8 +371,8 @@ Only after Phase 0 exit, open Phase 1 stability smoke and the capability ledger.
 
 - [x] User approved parity boundary and exclusions (**G1**)
 - [ ] Phase 0 attachment checklist complete (§5.3)
-- [ ] GUI typecheck, tests, and build pass
-- [ ] Real engine confirms handshake, prompt, stream, abort, restart, version mismatch
+- [x] GUI typecheck, tests, and build pass (Phase 1 gate; re-verify on each change)
+- [x] Real engine confirms handshake, stream (bash stand-in), abort, restart, version mismatch (LLM prompt gap tracked in ledger)
 - [ ] Every documented interactive CLI command has a tested GUI route or approved exclusion
 - [ ] Composer matches TUI for text, images, completion, history, bash, queueing, abort, dequeue, external editor
 - [ ] Session actions preserve JSONL, active leaf, compaction, branch, export, internal-workflow filtering
