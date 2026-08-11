@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Phase 0 complete; **Phase 1 exit met** (2026-08-11) — real-engine smoke, session leaf integrity, capability ledger, fake-engine boundary |
+| Status | Phase 0–2 complete; **Phase 2 exit met** (2026-08-11) — core transcript, composer, session/tree, command-inventory, and Electron fixture-E2E evidence |
 | Created | 2026-08-11 |
 | Repo | `atomic-ui-fork` |
 | Focus package | `packages/gui` (`@bastani/atomic-gui`) |
@@ -241,6 +241,17 @@ npm run dev --workspace=@bastani/atomic-gui
 | 1.4 Fake-engine boundary | tests | Clear what unit tests prove | Do not overclaim | Test inventory | Parity claims require real-engine or E2E rows |
 
 ### Phase 2 — Core interactive parity (M1–M3 completion)
+
+**Exit (2026-08-11):** met with documented real-engine Electron gaps.
+
+| Evidence | Coverage |
+|---|---|
+| `packages/gui/test/electron-phase2.e2e.test.ts` | Electron renderer-host queue pause/resume/dequeue, fork/import active-leaf refresh, tree edit/resubmit focus, durable compaction boundary |
+| `packages/gui/test/transcript-virtualization.test.tsx` | Long-scroll measurement anchors, manual scrolling, expansion, leaf reset |
+| `packages/gui/test/composer-parity.test.ts`, `tree-navigator.test.ts`, `engine-client.test.ts` | Key/queue helpers, tree behavior, runtime inventory and RPC routes |
+| `npm run test/typecheck/build --workspace=@bastani/atomic-gui` | 97 tests, typecheck, production build green after `npm ci --ignore-scripts` |
+
+**Remaining evidence gap:** Electron fixture E2E proves host/renderer wiring; a live-provider or full real-engine Electron flow remains a later validation task. The ledger records that limit rather than claiming it as practical parity.
 
 | Step | Targets | User outcome | Compatibility | Validation | Done when |
 |---|---|---|---|---|---|
