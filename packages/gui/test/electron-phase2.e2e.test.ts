@@ -80,6 +80,12 @@ process.stdin.on("data", (chunk) => {
     const request = JSON.parse(line);
     if (request.type === "engine_custom_input") {
       if (typeof request.data === "string" && request.data.includes(":3u")) continue;
+      if (request.componentId === "mcp-auth-frame") {
+        if (request.data === "\u0003") {
+          send({ type: "engine_custom_frame", componentId: "mcp-auth-frame", requestId: 2, lines: ["MCP OAuth cancellation received", "No credential was sent to the host."] });
+        }
+        continue;
+      }
       if (request.componentId === "intercom-picker" && request.data === "\r") {
         send({ type: "engine_custom_close", componentId: "intercom-picker" });
         send({ type: "engine_custom_open", componentId: "intercom-compose", overlay: true });
@@ -96,6 +102,11 @@ process.stdin.on("data", (chunk) => {
       } else {
         send({ type: "engine_custom_frame", componentId: request.componentId, requestId: 99, lines: ["input: " + request.data] });
       }
+      continue;
+    }
+    if (request.type === "engine_tool_render") {
+      const valid = typeof request.componentId === "string" && typeof request.requestId === "number" && typeof request.width === "number" && typeof request.toolName === "string" && typeof request.toolCallId === "string" && typeof request.executionStarted === "boolean" && typeof request.argsComplete === "boolean" && typeof request.isPartial === "boolean" && typeof request.expanded === "boolean" && typeof request.showImages === "boolean" && typeof request.imageWidthCells === "number" && request.args !== undefined;
+      send({ type: "engine_custom_frame", componentId: request.componentId, requestId: request.requestId, lines: valid ? ["MCP tool · " + request.toolName, "MCP fixture result"] : ["Invalid engine_tool_render request"] });
       continue;
     }
     if (request.type === "engine_input_form_submit") {
@@ -147,7 +158,21 @@ process.stdin.on("data", (chunk) => {
     else if (request.type === "clear_queue") { const drained = queues; queues = { steering: [], followUp: [] }; response(request, true, drained); queueUpdate(); }
     else if (request.type === "abort") { send({ type: "agent_end" }); response(request, true); }
     else if (request.type === "prompt") {
-      if (request.message === "/workflow demo") {
+      if (request.message === "open MCP OAuth login") {
+        send({ type: "engine_custom_open", componentId: "mcp-auth-frame", overlay: true, handlesCtrlC: true });
+        send({ type: "engine_custom_frame", componentId: "mcp-auth-frame", requestId: 1, lines: ["MCP OAuth · fixture-mcp", "Complete sign-in in your browser, or press Ctrl+C to cancel."] });
+        response(request, true);
+      } else if (request.message === "use MCP tool") {
+        send({ type: "tool_execution_start", toolCallId: "fixture-mcp-tool", toolName: "mcp", args: { server: "fixture-mcp", tool: "lookup", query: "safe" } });
+        send({ type: "tool_execution_end", toolCallId: "fixture-mcp-tool", result: { content: "MCP fixture result" }, isError: false });
+        send({ type: "agent_end" });
+        response(request, true);
+      } else if (request.message === "use direct MCP tool") {
+        send({ type: "tool_execution_start", toolCallId: "fixture-direct-mcp-tool", toolName: "fixture_mcp_lookup", args: { query: "safe" } });
+        send({ type: "tool_execution_end", toolCallId: "fixture-direct-mcp-tool", result: { content: "MCP fixture result" }, isError: false });
+        send({ type: "agent_end" });
+        response(request, true);
+      } else if (request.message === "/workflow demo") {
         send({ type: "engine_input_form_open", componentId: "workflow-form", title: "Dispatch workflow", submitLabel: "Run", fields: [{ name: "goal", type: "string", initialValue: "", description: "Goal", required: true }] });
         response(request, true);
       } else if (request.message === "/workflow list") {
@@ -404,6 +429,33 @@ test("Electron fixture E2E: native dialog owns focused-frame keys and restores f
 	await page.keyboard.press("Escape");
 	await dialog.waitFor({ state: "detached" });
 	await page.getByText("dialog response").waitFor();
+}, 30_000);
+
+test("Electron fixture E2E: MCP OAuth uses the generic frame host and forwards Ctrl+C", async () => {
+	const page = await launchFixture();
+	await editor(page).click();
+	await page.keyboard.type("open MCP OAuth login");
+	await page.getByRole("button", { name: "Send" }).click();
+	const login = page.getByRole("dialog", { name: "Extension UI" });
+	await login.getByText("MCP OAuth · fixture-mcp").waitFor();
+	await page.keyboard.press("Control+c");
+	await login.getByText("MCP OAuth cancellation received").waitFor();
+}, 30_000);
+
+test("Electron fixture E2E: MCP proxy and direct tools use the generic transcript render host", async () => {
+	const page = await launchFixture();
+	await editor(page).click();
+	await page.keyboard.type("use MCP tool");
+	await page.getByRole("button", { name: "Send" }).click();
+	await page.locator(".role-tool").getByText("mcp").waitFor();
+	await page.getByText("MCP tool · mcp").waitFor();
+	await page.getByText("MCP fixture result").waitFor();
+
+	await editor(page).click();
+	await page.keyboard.type("use direct MCP tool");
+	await page.getByRole("button", { name: "Send" }).click();
+	await page.locator(".role-tool").getByText("fixture_mcp_lookup").waitFor();
+	await page.getByText("MCP tool · fixture_mcp_lookup").waitFor();
 }, 30_000);
 
 test("Electron fixture E2E: workflow routes stay on generic prompts and frames", async () => {

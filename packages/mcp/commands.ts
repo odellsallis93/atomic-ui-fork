@@ -15,7 +15,7 @@ import {
 import { lazyConnect, updateMetadataCache, updateStatusBar, getFailureAgeSeconds } from "./init.js";
 import { loadMetadataCache } from "./metadata-cache.js";
 import { buildToolMetadata } from "./tool-metadata.js";
-import { supportsOAuth, authenticate, removeAuth } from "./mcp-auth-flow.js";
+import { supportsOAuth, authenticate, cancelAuthentication, removeAuth } from "./mcp-auth-flow.js";
 import { getAuthForUrl } from "./mcp-auth.js";
 import { loadOnboardingState, markSetupCompleted as persistSetupCompleted, markSharedConfigHintShown } from "./onboarding-state.ts";
 import { openPath } from "./utils.js";
@@ -183,9 +183,9 @@ export async function authenticateServer(
     const message = `OAuth authentication failed for "${serverName}".`;
     ctx.ui.notify(message, "error");
     return { ok: false, message };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    ctx.ui.notify(`Failed to authenticate "${serverName}": ${message}`, "error");
+  } catch {
+    const message = `OAuth authentication could not be completed for "${serverName}".`;
+    ctx.ui.notify(message, "error");
     return { ok: false, message };
   } finally {
     ctx.ui.setStatus("mcp-auth", undefined);
@@ -311,6 +311,7 @@ function buildMcpPanelCallbacks(
       return definition ? supportsOAuth(definition) : false;
     },
     authenticate: (serverName: string) => authenticateServer(serverName, config, ctx),
+    cancelAuthentication: (serverName: string) => cancelAuthentication(serverName),
     getConnectionStatus: (serverName: string) => {
       const definition = config.mcpServers[serverName];
       const connection = state.manager.getConnection(serverName);

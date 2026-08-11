@@ -378,6 +378,7 @@ export interface McpPanelCallbacks {
   reconnect: (serverName: string) => Promise<boolean>;
   canAuthenticate: (serverName: string) => boolean;
   authenticate: (serverName: string) => Promise<McpAuthResult>;
+  cancelAuthentication: (serverName: string) => void;
   getConnectionStatus: (serverName: string) => "connected" | "idle" | "failed" | "needs-auth";
   refreshCacheAfterReconnect: (serverName: string) => import("./metadata-cache.js").ServerCacheEntry | null;
 }

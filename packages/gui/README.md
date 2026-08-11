@@ -23,7 +23,7 @@ Fake-engine unit tests prove host structure only; parity claims require
 | M3 | Mostly done — resume picker, tree folds/labels/edit-resubmit, clone/fork/import/export/compact. Share and legacy `/import`/`/atomic` remain explicit exclusions: no permitted runtime inventory route. |
 | M4 | Partial — model picker parses scoped engine models, thinking/settings controls use existing RPCs, theme loading follows JSON-name first-match precedence, auth/trust/onboarding route through engine-owned flows. Persistent settings/theme/fast-mode mutation remains excluded until protocol v2 adds RPCs. |
 | M5 | Partial — dialogs, input forms, ANSI frames + render loop + overlay geometry + kitty key-release + terminal-mode allowlist (chrome swap blocked on §5.3) |
-| M6 | Partial — Workflows, subagents, and Intercom walkthroughs are renderer-host E2E-proven through generic prompt/form/session-picker/custom-frame/widget routes. Live workflow/DBOS, subagent job controls, Intercom broker/peer, MCP/web, CI jobs, and packaging remain open or excluded by protocol v2. |
+| M6 | Partial — Workflows, subagents, and Intercom walkthroughs are renderer-host E2E-proven through generic prompt/form/session-picker/custom-frame/widget routes; MCP panels and proxy/direct tool rendering use the same generic host contracts. Live workflow/DBOS, subagent job controls, Intercom broker/peer, configured MCP OAuth/calls, web, CI jobs, and packaging remain open or excluded by protocol v2. |
 | M7 | Not started — CI jobs, packaging |
 
 ## Develop
@@ -81,6 +81,13 @@ npm run build --workspace=@bastani/atomic-gui
 ## Phase 4 Intercom boundary
 
 `/intercom` uses the engine-owned command and generic custom frames; a visible durable `intercom_message` renders in the generic transcript. The GUI has no direct Intercom RPC, broker, peer, group, attachment, or tool-action controls. See the source-backed inventory and exact exclusions in [`docs/capability-ledger.md`](docs/capability-ledger.md).
+
+## Phase 4 MCP boundary
+
+- `/mcp`, `/mcp setup`, and `/mcp-auth` expose only the existing generic custom-frame contract. The renderer has no MCP-specific IPC or extension fork.
+- MCP tools, including direct tools only when the runtime exposes them, arrive as generic `tool_execution_*` events and render through the engine-owned tool frame path.
+- MCP OAuth stays in the engine browser/callback flow. Ctrl+C reaches the MCP panel, which cancels its scoped engine-owned OAuth owner before close. The GUI never reads, logs, writes, or returns credentials or tokens.
+- Protocol v2 exposes no MCP server config, connection, token, or auth-state RPC. Those surfaces remain excluded from GUI authority.
 
 ## Notes
 

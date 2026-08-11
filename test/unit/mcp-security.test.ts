@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, test } from "vitest";
 import { escapeHtmlAttribute } from "../../packages/mcp/host-html-template.ts";
+import { saveAuthEntry } from "../../packages/mcp/mcp-auth.ts";
 import { handleRequest, renderCallbackErrorHtml, waitForCallback } from "../../packages/mcp/mcp-callback-server.ts";
 import { OAUTH_CALLBACK_PATH } from "../../packages/mcp/mcp-oauth-provider.ts";
 
@@ -51,4 +55,18 @@ describe("MCP HTML security helpers", () => {
 			"http://127.0.0.1/?q=&quot; onload=&quot;alert(1)&amp;x=&lt;tag&gt;",
 		);
 	});
+});
+
+test("OAuth storage rejects traversal server names", () => {
+	const root = mkdtempSync(join(tmpdir(), "atomic-mcp-oauth-root-"));
+	const previous = process.env.MCP_OAUTH_DIR;
+	process.env.MCP_OAUTH_DIR = root;
+	try {
+		assert.throws(() => saveAuthEntry("../escape", { tokens: { accessToken: "test" } }), /Invalid MCP server name/);
+		assert.equal(existsSync(join(root, "..", "escape", "tokens.json")), false);
+	} finally {
+		if (previous === undefined) delete process.env.MCP_OAUTH_DIR;
+		else process.env.MCP_OAUTH_DIR = previous;
+		rmSync(root, { recursive: true, force: true });
+	}
 });

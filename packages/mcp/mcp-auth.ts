@@ -10,7 +10,7 @@
  */
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'fs';
-import { join } from 'path';
+import { join, resolve, sep } from 'path';
 import { getAgentPath } from './agent-dir.ts';
 
 /** OAuth token storage format */
@@ -45,10 +45,16 @@ function getAuthBaseDir(): string {
 }
 
 /**
- * Get the server-specific directory path.
+ * Get the server-specific directory path. Server names are config keys, not paths.
  */
 function getServerDir(serverName: string): string {
-  return join(getAuthBaseDir(), serverName);
+  if (!serverName || serverName === "." || serverName === ".." || serverName.includes("\0") || serverName.includes("/") || serverName.includes("\\")) {
+    throw new Error("Invalid MCP server name for OAuth storage");
+  }
+  const base = resolve(getAuthBaseDir());
+  const directory = resolve(base, serverName);
+  if (!directory.startsWith(`${base}${sep}`)) throw new Error("Invalid MCP server name for OAuth storage");
+  return directory;
 }
 
 /**

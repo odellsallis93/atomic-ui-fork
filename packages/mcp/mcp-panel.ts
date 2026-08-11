@@ -72,6 +72,7 @@ class McpPanel {
       clearTimeout(this.inactivityTimeout);
       this.inactivityTimeout = null;
     }
+    if (this.authInFlight) this.callbacks.cancelAuthentication(this.authInFlight);
   }
 
   private rebuildVisibleItems(): void {
@@ -282,16 +283,17 @@ class McpPanel {
     this.tui.requestRender();
 
     this.callbacks.authenticate(server.name).then((result) => {
+      if (this.authInFlight !== server.name) return;
       server.connectionStatus = this.callbacks.getConnectionStatus(server.name);
       this.authNotice = result.ok
         ? `OAuth finished for ${server.name}. Run reconnect if it is still idle.`
-        : `OAuth failed for ${server.name}${result.message ? `: ${result.message}` : ". Check the notification for details."}`;
+        : `OAuth could not be completed for ${server.name}.`;
       this.authInFlight = null;
       this.tui.requestRender();
-    }).catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
+    }).catch(() => {
+      if (this.authInFlight !== server.name) return;
       server.connectionStatus = this.callbacks.getConnectionStatus(server.name);
-      this.authNotice = `OAuth failed for ${server.name}: ${message}`;
+      this.authNotice = `OAuth could not be completed for ${server.name}.`;
       this.authInFlight = null;
       this.tui.requestRender();
     });
