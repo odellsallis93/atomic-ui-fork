@@ -41,6 +41,9 @@ export interface RpcResult<T = unknown> {
 
 export type PromptResult = RpcResult;
 
+/** Result from an operation that can replace the active session. */
+export type SessionReplacementResult = RpcResult<{ cancelled: boolean }>;
+
 export interface GuiBashResult {
 	requestId: string;
 	output?: string;
@@ -301,10 +304,10 @@ export interface GuiHostApi {
 	prompt(request: PromptRequest): Promise<PromptResult>;
 	abort(): Promise<PromptResult>;
 	bash(command: string, excludeFromContext?: boolean, requestId?: string): Promise<RpcResult<GuiBashResult>>;
-	newSession(): Promise<PromptResult>;
-	switchSession(sessionPath: string): Promise<PromptResult>;
+	newSession(): Promise<SessionReplacementResult>;
+	switchSession(sessionPath: string): Promise<SessionReplacementResult>;
 	setSessionName(name: string): Promise<PromptResult>;
-	cloneSession(): Promise<PromptResult>;
+	cloneSession(): Promise<SessionReplacementResult>;
 	forkSession(entryId: string): Promise<RpcResult<{ text?: string; cancelled: boolean }>>;
 	getForkMessages(): Promise<RpcResult<ForkMessageInfo[]>>;
 	importSession(inputPath: string, cwdOverride?: string): Promise<RpcResult<{ cancelled: boolean }>>;

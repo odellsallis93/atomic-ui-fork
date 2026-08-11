@@ -590,6 +590,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			queue: [],
 			working: false,
 			frames: [],
+			widgets: [],
 			pendingTerminalControls: {},
 			transcriptLeafId: null,
 			treeLeafId: null,

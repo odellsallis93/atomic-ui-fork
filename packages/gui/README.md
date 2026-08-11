@@ -23,7 +23,8 @@ Fake-engine unit tests prove host structure only; parity claims require
 | M3 | Mostly done — resume picker, tree folds/labels/edit-resubmit, clone/fork/import/export/compact. Share and legacy `/import`/`/atomic` remain explicit exclusions: no permitted runtime inventory route. |
 | M4 | Partial — model picker parses scoped engine models, thinking/settings controls use existing RPCs, theme loading follows JSON-name first-match precedence, auth/trust/onboarding route through engine-owned flows. Persistent settings/theme/fast-mode mutation remains excluded until protocol v2 adds RPCs. |
 | M5 | Partial — dialogs, input forms, ANSI frames + render loop + overlay geometry + kitty key-release + terminal-mode allowlist (chrome swap blocked on §5.3) |
-| M6 | Partial — Workflows walkthrough proven with generic prompt/form/session-picker/custom-frame routes and a renderer-host Electron fixture. Live workflow/DBOS engine proof and other bundled extensions remain open. |
+| M6 | Partial — Workflows walkthrough plus [subagents walkthrough](docs/subagents-walkthrough.md) are renderer-host E2E-proven through generic prompt/form/session-picker/custom-frame/widget routes. Live workflow/DBOS engine proof, intercom/MCP/web, and per-subagent job controls remain open or excluded by protocol v2. |
+| M7 | Not started — CI jobs, packaging |
 
 ## Develop
 
@@ -47,7 +48,11 @@ The host resolves the engine CLI as:
 
 ## Test / typecheck
 
+`real-engine-smoke.test.ts` loads bundled extensions. After an
+`npm ci --ignore-scripts`, build the local native binding before GUI checks:
+
 ```sh
+npm run build --workspace=@bastani/atomic-natives
 npm run test --workspace=@bastani/atomic-gui
 npm run typecheck --workspace=@bastani/atomic-gui
 npm run build --workspace=@bastani/atomic-gui
@@ -68,6 +73,10 @@ npm run build --workspace=@bastani/atomic-gui
 ## Phase 4 Workflows boundary
 
 [`docs/workflow-walkthrough.md`](docs/workflow-walkthrough.md) records the generic `/workflow …` and F2 routes, fixture evidence, source inventory, and exact exclusions. The GUI does not add workflow RPCs or a workflow-specific renderer.
+
+## Phase 4 Subagents boundary
+
+[`docs/subagents-walkthrough.md`](docs/subagents-walkthrough.md) records the generic below-editor widget route, fixture evidence, source inventory, and exact exclusions. The GUI does not add subagent RPCs, per-job controls, or a subagent-specific renderer.
 
 ## Notes
 

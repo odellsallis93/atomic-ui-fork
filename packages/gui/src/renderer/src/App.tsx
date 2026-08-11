@@ -803,7 +803,7 @@ export function App() {
 					onNew={() => {
 						void window.atomicGui.newSession().then((result) => {
 							if (!result.ok) setErrorBanner(result.error);
-							else {
+							else if (!result.data?.cancelled) {
 								resetTranscript();
 								void refreshTranscript();
 								setModal("none");
@@ -838,7 +838,7 @@ export function App() {
 					onClone={() => {
 						void window.atomicGui.cloneSession().then((result) => {
 							if (!result.ok) setErrorBanner(result.error);
-							else {
+							else if (!result.data?.cancelled) {
 								resetTranscript();
 								void refreshTranscript();
 								setModal("none");
@@ -888,7 +888,7 @@ export function App() {
 							}
 							const result = await window.atomicGui.switchSession(session.path);
 							if (!result.ok) setErrorBanner(result.error);
-							else {
+							else if (!result.data?.cancelled) {
 								resetTranscript();
 								void refreshTranscript();
 								setModal("none");
