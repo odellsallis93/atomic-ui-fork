@@ -23,7 +23,8 @@ Fake-engine unit tests prove host structure only; parity claims require
 | M3 | Mostly done — resume picker, tree folds/labels/edit-resubmit, clone/fork/import/export/compact. Share and legacy `/import`/`/atomic` remain explicit exclusions: no permitted runtime inventory route. |
 | M4 | Partial — model picker parses scoped engine models, thinking/settings controls use existing RPCs, theme loading follows JSON-name first-match precedence, auth/trust/onboarding route through engine-owned flows. Persistent settings/theme/fast-mode mutation remains excluded until protocol v2 adds RPCs. |
 | M5 | Partial — dialogs, input forms, ANSI frames + render loop + overlay geometry + kitty key-release + terminal-mode allowlist (chrome swap blocked on §5.3) |
-| M6–M7 | Not started — bundled-extension walkthroughs, CI jobs, packaging |
+| M6 | Partial — MCP panels route through generic custom frames; MCP tool calls use generic transcript rendering. Real configured-server OAuth/calls remain engine-owned and unproven. |
+| M7 | Not started — CI jobs, packaging |
 
 ## Develop
 
@@ -64,6 +65,13 @@ npm run build --workspace=@bastani/atomic-gui
 - Codex fast mode is not exposed: engine settings accessors exist, but protocol v2 has no fast-mode RPC.
 - Themes resolve by JSON `name` with first-match builtin → user (`.atomic`, then legacy `.pi`) → project (`.atomic`, then `.pi`) order and support string plus numeric color tokens.
 - First-run onboarding links to project trust, provider auth, and model selection without displaying saved secrets.
+
+## Phase 4 MCP boundary
+
+- `/mcp`, `/mcp setup`, and `/mcp-auth` expose only the existing generic custom-frame contract. The renderer has no MCP-specific IPC or extension fork.
+- MCP tools, including optional direct tools, arrive only as generic `tool_execution_*` events and render through the engine-owned tool frame path.
+- MCP OAuth stays in the engine browser/callback flow. Ctrl+C reaches an MCP frame that owns it; cancellation clears engine-owned state. The GUI never reads, logs, writes, or returns credentials or tokens.
+- Protocol v2 exposes no MCP server config, connection, token, or auth-state RPC. Those surfaces remain excluded from GUI authority.
 
 ## Notes
 
