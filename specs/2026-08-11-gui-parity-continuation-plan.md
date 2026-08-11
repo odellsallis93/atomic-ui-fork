@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Phase 0–4 complete; **Phase 4 exit met** (2026-08-11) — bundled-extension renderer-host walkthroughs and documented engine-owned boundaries |
+| Status | Phase 0–5 complete; **Phase 5 exit met** (2026-08-11) — CI, host-platform packaging smoke, security review, accessibility/performance evidence, and release docs |
 | Created | 2026-08-11 |
 | Repo | `atomic-ui-fork` |
 | Focus package | `packages/gui` (`@bastani/atomic-gui`) |
@@ -309,6 +309,16 @@ Constraint: preserve generic frame contract; no extension-specific GUI fork that
 | 5.4 Accessibility | keyboard-only + labels + focus | Audit checklist green |
 | 5.5 Performance | long transcript + fast stream | Budget recorded and met |
 | 5.6 Docs | `packages/gui/README.md`, `packages/coding-agent/docs/gui.md` | Supported scope, exclusions, recovery, GUI-vs-CLI boundary current |
+
+**Exit (2026-08-11):** Phase 5 is complete on integrated `main` at `d1fda2ef`. Evidence includes Linux changed-path GUI CI, host-platform directory packaging/startup smoke, source-backed security fixes, keyboard/focus/ARIA checks, renderer budgets, and current GUI/CLI scope docs. Signed DMG/NSIS/AppImage installers, cross-platform packaging CI, update verification, screen-reader behavior, provider/network performance, and packaged-app performance remain unproven or excluded.
+
+| Evidence | Result |
+|---|---|
+| `npm run test --workspace=@bastani/atomic-gui` | 29 files / 141 tests passed |
+| `npm run typecheck --workspace=@bastani/atomic-gui` | Passed |
+| `npm run build --workspace=@bastani/atomic-gui` | Passed |
+| `npm run pack:directory --workspace=@bastani/atomic-gui` + packaged startup smoke | Passed on the host platform |
+| `.github/workflows/gui.yml`, `packages/gui/docs/packaging-security.md`, `packages/gui/docs/capability-ledger.md` | CI, packaging/security, accessibility/performance evidence and boundaries recorded |
 
 ## 8. Decision gates
 
