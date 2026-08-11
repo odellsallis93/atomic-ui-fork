@@ -1,12 +1,15 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
 import type { ExtensionUiResponse, PromptRequest } from "../shared/ipc.ts";
 import { IPC_CHANNELS } from "../shared/ipc.ts";
 import { EngineSupervisor } from "./engine-supervisor.ts";
+import { isAllowedAppNavigation, isSafeExternalUrl } from "./security.ts";
 
 const mainDir = dirname(fileURLToPath(import.meta.url));
+const rendererIndex = join(mainDir, "../renderer/index.html");
+const devRendererUrl = process.env.ELECTRON_RENDERER_URL;
 
 let mainWindow: BrowserWindow | null = null;
 let supervisor: EngineSupervisor | null = null;
@@ -37,6 +40,13 @@ function createWindow(): void {
 	});
 
 	supervisor = new EngineSupervisor(mainWindow);
+	mainWindow.webContents.on("will-navigate", (event, url) => {
+		if (!isAllowedAppNavigation(url, rendererIndex, devRendererUrl)) event.preventDefault();
+	});
+	mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+		if (isSafeExternalUrl(url)) void shell.openExternal(url);
+		return { action: "deny" };
+	});
 
 	mainWindow.on("ready-to-show", () => {
 		mainWindow?.show();
@@ -47,10 +57,10 @@ function createWindow(): void {
 		mainWindow = null;
 	});
 
-	if (process.env.ELECTRON_RENDERER_URL) {
-		void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
+	if (devRendererUrl && isAllowedAppNavigation(devRendererUrl, rendererIndex, devRendererUrl)) {
+		void mainWindow.loadURL(devRendererUrl);
 	} else {
-		void mainWindow.loadFile(join(mainDir, "../renderer/index.html"));
+		void mainWindow.loadFile(rendererIndex);
 	}
 }
 

@@ -12,6 +12,7 @@ import { EngineClient } from "./engine-client.ts";
 import { editExternally } from "./external-editor.ts";
 import { searchFiles } from "./file-search.ts";
 import { applyTrustDecision, getTrustOptions, getTrustStatus } from "./project-trust.ts";
+import { redactSensitiveProtocolLine } from "./security.ts";
 import { listSessions } from "./session-list.ts";
 import { deleteSessionFile, renameSessionFile } from "./session-ops.ts";
 import { readGuiSettings } from "./settings-store.ts";
@@ -45,7 +46,7 @@ export class EngineSupervisor {
 				: undefined,
 			onStatus: (status) => this.send(IPC_CHANNELS.status, status),
 			onEvent: (event) => this.send(IPC_CHANNELS.event, event),
-			onRawLine: (line) => this.send(IPC_CHANNELS.rawLine, line),
+			onRawLine: (line) => this.send(IPC_CHANNELS.rawLine, redactSensitiveProtocolLine(line)),
 			onExtensionUi: (request) => this.send(IPC_CHANNELS.extensionUi, request),
 		});
 		return await this.client.start();
