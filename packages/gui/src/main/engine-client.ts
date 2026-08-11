@@ -9,6 +9,7 @@ import type {
 	ExtensionShortcutInfo,
 	ExtensionUiRequest,
 	ExtensionUiResponse,
+	GuiBashResult,
 	GuiRpcEvent,
 	ModelInfo,
 	OAuthProviderInfo,
@@ -225,8 +226,17 @@ export class EngineClient {
 		return await this.command({ type: "abort" });
 	}
 
-	async bash(command: string, excludeFromContext = false): Promise<RpcResult> {
-		return await this.command({ type: "bash", command, excludeFromContext });
+	async bash(
+		command: string,
+		excludeFromContext = false,
+		requestId = `gui-${++this.requestId}`,
+	): Promise<RpcResult<GuiBashResult>> {
+		const result = await this.request({ type: "bash", command, excludeFromContext, id: requestId });
+		const data =
+			typeof result.data === "object" && result.data !== null
+				? (result.data as Omit<GuiBashResult, "requestId">)
+				: {};
+		return { ...result, data: { ...data, requestId } };
 	}
 
 	async newSession(): Promise<RpcResult> {

@@ -17,7 +17,7 @@ the engine child.
 | Milestone | Status |
 |---|---|
 | M0 Skeleton + engine bridge | Done |
-| M1 Core chat parity | Mostly done — user/assistant/tool/bash/compaction, thinking toggle, footer + usage meter, working indicator, engine-rendered live tool cards |
+| M1 Core chat parity | Mostly done — active-leaf-only durable transcript hydration, user/assistant/custom/skill/system/branch/compaction/tool/bash handling, thinking toggle, footer + usage meter, working indicator, and engine-rendered live/durable tool cards. The host reads engine-owned JSONL through `get_entries` and follows its `leafId`/`parentId` path; it does not treat history order as the active transcript. Durable-kind coverage is unit-tested from `SessionEntry` / `AgentMessage` shapes; extension-owned custom renderers and a real-engine transcript corpus remain open. |
 | M2 Input system | Mostly done — CodeMirror composer, `/` command and command-argument + `@` autocomplete, history, `!`/`!!` bash, steer/follow-up/abort, queue chips |
 | M3 Sessions | Mostly done — resume picker (search/sort/all-projects), persisted transcript hydration on start/switch/tree navigation, rename/delete, clone, export HTML, compact, session tree navigator, and engine-backed paged session listing (with an offline host fallback) |
 | M4 Models / settings | Partial — model picker, cycle model/thinking, theme loader, provider login/logout + OAuth UI, project trust prompt (full onboarding still open) |

@@ -104,11 +104,162 @@ test("hydrateTranscript restores durable messages and session boundaries", () =>
 		[
 			["u1", "user", "Hello"],
 			["a1", "assistant", "Hi"],
-			["c1", "compaction", "Kept tail"],
-			["b1", "branchSummary", "Old branch"],
 		],
 	);
 	assert.equal(state.transcriptLeafId, "a1");
+});
+
+test("hydrateTranscript renders durable protocol message and entry kinds without changing the engine leaf", () => {
+	useSessionStore.getState().hydrateTranscript(
+		[
+			{
+				type: "message",
+				id: "skill-1",
+				parentId: null,
+				timestamp: "2026-01-01T00:00:00Z",
+				message: {
+					role: "user",
+					content: '<skill name="tdd" location="/skills/tdd">\nTest first\n</skill>\n\nFix it',
+				},
+			},
+			{
+				type: "message",
+				id: "assistant-1",
+				parentId: "skill-1",
+				timestamp: "2026-01-01T00:00:01Z",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "pwd" } }],
+				},
+			},
+			{
+				type: "message",
+				id: "result-1",
+				parentId: "assistant-1",
+				timestamp: "2026-01-01T00:00:02Z",
+				message: {
+					role: "toolResult",
+					toolCallId: "call-1",
+					toolName: "bash",
+					content: [{ type: "text", text: "/work" }],
+					isError: false,
+				},
+			},
+			{
+				type: "message",
+				id: "bash-1",
+				parentId: "result-1",
+				timestamp: "2026-01-01T00:00:03Z",
+				message: {
+					role: "bashExecution",
+					command: "echo hi",
+					output: "hi\n",
+					exitCode: 0,
+					cancelled: false,
+					truncated: false,
+				},
+			},
+			{
+				type: "custom",
+				id: "custom-1",
+				parentId: "bash-1",
+				timestamp: "2026-01-01T00:00:04Z",
+				customType: "workflow",
+				data: { runId: "r1" },
+			},
+			{
+				type: "custom_message",
+				id: "custom-message-1",
+				parentId: "custom-1",
+				timestamp: "2026-01-01T00:00:05Z",
+				customType: "notice",
+				content: "Shown",
+				display: true,
+			},
+			{
+				type: "message",
+				id: "system-1",
+				parentId: "custom-message-1",
+				timestamp: "2026-01-01T00:00:06Z",
+				message: { role: "system", content: "Protocol notice" },
+			},
+			{
+				type: "branch_summary",
+				id: "branch-1",
+				parentId: "system-1",
+				timestamp: "2026-01-01T00:00:07Z",
+				fromId: "skill-1",
+				summary: "Other path",
+			},
+			{
+				type: "compaction",
+				id: "compact-1",
+				parentId: "branch-1",
+				timestamp: "2026-01-01T00:00:08Z",
+				summary: "Kept transcript",
+				firstKeptEntryId: null,
+				tokensBefore: 10,
+				details: { strategy: "verbatim-lines" },
+			},
+		],
+		"compact-1",
+	);
+	const state = useSessionStore.getState();
+	assert.deepEqual(
+		state.entries.map((entry) => [entry.id, entry.kind, entry.text]),
+		[
+			["skill-1", "skill", "Fix it"],
+			["assistant-1", "assistant", ""],
+			["call-1", "tool", "/work"],
+			["bash-1", "bash", "$ echo hi\nhi\n"],
+			["custom-1", "custom", '{\n  "runId": "r1"\n}'],
+			["custom-message-1", "custom", "Shown"],
+			["system-1", "system", "Protocol notice"],
+			["branch-1", "branchSummary", "Other path"],
+			["compact-1", "compaction", "Kept transcript"],
+		],
+	);
+	assert.equal(state.entries[0]?.skillName, "tdd");
+	assert.equal(state.entries[2]?.toolName, "bash");
+	assert.equal(state.transcriptLeafId, "compact-1");
+});
+
+test("message lifecycle keeps streamed custom, skill, and system roles out of the assistant renderer", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({
+		type: "message_start",
+		message: { id: "custom-live", role: "custom", customType: "notice", content: "Loading", display: true },
+	});
+	ingestEvent({
+		type: "message_end",
+		message: { id: "custom-live", role: "custom", customType: "notice", content: "Ready", display: true },
+	});
+	ingestEvent({
+		type: "message_start",
+		message: {
+			id: "skill-live",
+			role: "user",
+			content: '<skill name="tdd" location="/skills/tdd">\nTest first\n</skill>',
+		},
+	});
+	ingestEvent({
+		type: "message_end",
+		message: {
+			id: "skill-live",
+			role: "user",
+			content: '<skill name="tdd" location="/skills/tdd">\nTest first\n</skill>',
+		},
+	});
+	ingestEvent({ type: "message_start", message: { id: "system-live", role: "system", content: "Notice" } });
+	ingestEvent({ type: "message_end", message: { id: "system-live", role: "system", content: "Done" } });
+	assert.deepEqual(
+		useSessionStore.getState().entries.map((entry) => [entry.id, entry.kind, entry.text, entry.streaming]),
+		[
+			["custom-live", "custom", "Ready", false],
+			["skill-live", "skill", "", false],
+			["system-live", "system", "Done", false],
+		],
+	);
 });
 
 test("session switch hydration replaces prior transcript and tracks active leaf", () => {
@@ -447,4 +598,242 @@ test("oauth_prompt opens dialog modal", () => {
 	const state = useSessionStore.getState();
 	assert.equal(state.modal, "dialog");
 	assert.equal(state.activeDialog?.method, "oauth_prompt");
+});
+
+test("hydrateTranscript follows only the active leaf path and retains every durable tool card", () => {
+	useSessionStore.getState().hydrateTranscript(
+		[
+			{
+				type: "message",
+				id: "root",
+				parentId: null,
+				timestamp: "2026-01-01T00:00:00Z",
+				message: { role: "user", content: "root" },
+			},
+			{
+				type: "message",
+				id: "kept",
+				parentId: "root",
+				timestamp: "2026-01-01T00:00:01Z",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", id: "tool-1", name: "read", arguments: { path: "a" } },
+						{ type: "toolCall", id: "tool-2", name: "bash", arguments: { command: "pwd" } },
+					],
+				},
+			},
+			{
+				type: "message",
+				id: "result-1",
+				parentId: "kept",
+				timestamp: "2026-01-01T00:00:02Z",
+				message: {
+					role: "toolResult",
+					toolCallId: "tool-1",
+					toolName: "read",
+					content: [{ type: "text", text: "one" }],
+				},
+			},
+			{
+				type: "message",
+				id: "result-2",
+				parentId: "result-1",
+				timestamp: "2026-01-01T00:00:03Z",
+				message: {
+					role: "toolResult",
+					toolCallId: "tool-2",
+					toolName: "bash",
+					content: [{ type: "text", text: "two" }],
+				},
+			},
+			{
+				type: "message",
+				id: "abandoned",
+				parentId: "root",
+				timestamp: "2026-01-01T00:00:04Z",
+				message: { role: "assistant", content: "do not show" },
+			},
+		],
+		"result-2",
+	);
+	const entries = useSessionStore.getState().entries;
+	assert.deepEqual(
+		entries.map((entry) => entry.id),
+		["root", "kept", "tool-1", "tool-2"],
+	);
+	assert.deepEqual(
+		entries.filter((entry) => entry.kind === "tool").map((entry) => [entry.text, entry.remoteRenderId]),
+		[
+			["one", "gui-tool-render:tool-1"],
+			["two", "gui-tool-render:tool-2"],
+		],
+	);
+});
+
+test("live tool results merge with tool execution cards without duplicates", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({ type: "tool_execution_start", toolCallId: "tool-1", toolName: "bash", args: { command: "pwd" } });
+	ingestEvent({
+		type: "engine_custom_frame",
+		componentId: "gui-tool-render:tool-1",
+		requestId: 1,
+		lines: ["running bash"],
+	});
+	ingestEvent({
+		type: "message_start",
+		message: { role: "toolResult", toolCallId: "tool-1", toolName: "bash", content: [] },
+	});
+	ingestEvent({
+		type: "message_update",
+		message: { role: "toolResult", toolCallId: "tool-1", content: [{ type: "text", text: "/work" }] },
+	});
+	ingestEvent({
+		type: "message_end",
+		message: {
+			role: "toolResult",
+			toolCallId: "tool-1",
+			toolName: "bash",
+			content: [{ type: "text", text: "/work" }],
+		},
+	});
+	ingestEvent({ type: "tool_execution_end", toolCallId: "tool-1", result: { output: "/work" }, isError: false });
+	const entries = useSessionStore.getState().entries;
+	assert.equal(entries.length, 1);
+	const entry = entries[0];
+	assert.equal(entry?.id, "tool-1");
+	assert.equal(entry?.toolName, "bash");
+	assert.deepEqual(entry?.toolArgs, { command: "pwd" });
+	assert.deepEqual(entry?.remoteRenderLines, ["running bash"]);
+	assert.equal(entry?.remoteRenderId, "gui-tool-render:tool-1");
+	assert.equal(entry?.remoteRenderGeneration, 3);
+	assert.deepEqual(entry?.toolResult, { output: "/work" });
+});
+
+test("direct bash output and durable bash state remain visible", () => {
+	const { ingestEvent, hydrateTranscript } = useSessionStore.getState();
+	ingestEvent({ type: "bash_execution_start", id: "direct-bash", command: "echo hello" });
+	ingestEvent({ type: "bash_execution_update", id: "direct-bash", channel: "stdout", delta: "hello\n" });
+	ingestEvent({ type: "bash_execution_update", id: "other-bash", channel: "stderr", delta: "warn\n" });
+	ingestEvent({
+		type: "bash_execution_end",
+		id: "direct-bash",
+		output: "final\n",
+		exitCode: 0,
+		cancelled: false,
+		truncated: false,
+	});
+	ingestEvent({
+		type: "bash_execution_end",
+		id: "other-bash",
+		output: "warn\n",
+		exitCode: 130,
+		cancelled: true,
+		truncated: true,
+	});
+	assert.deepEqual(
+		useSessionStore
+			.getState()
+			.entries.map((entry) => [
+				entry.id,
+				entry.text,
+				entry.streaming,
+				entry.bashExitCode,
+				entry.bashCancelled,
+				entry.bashTruncated,
+			]),
+		[
+			["direct-bash", "$ echo hello\nfinal\n", false, 0, false, false],
+			["other-bash", "warn\n", false, 130, true, true],
+		],
+	);
+	hydrateTranscript(
+		[
+			{
+				type: "message",
+				id: "bash",
+				parentId: null,
+				timestamp: "2026-01-01T00:00:00Z",
+				message: {
+					role: "bashExecution",
+					command: "cat x",
+					output: "part",
+					exitCode: 2,
+					cancelled: true,
+					truncated: true,
+					fullOutputPath: "/tmp/out",
+				},
+			},
+		],
+		"bash",
+	);
+	assert.equal(useSessionStore.getState().treeLeafId, "bash");
+	const entry = useSessionStore.getState().entries[0];
+	assert.deepEqual(
+		[entry?.bashExitCode, entry?.bashCancelled, entry?.bashTruncated, entry?.bashFullOutputPath],
+		[2, true, true, "/tmp/out"],
+	);
+});
+
+test("thinking is separate from text and image content has a visible placeholder", () => {
+	useSessionStore.getState().hydrateTranscript(
+		[
+			{
+				type: "message",
+				id: "assistant",
+				parentId: null,
+				timestamp: "2026-01-01T00:00:00Z",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "thinking", thinking: "reason" },
+						{ type: "text", text: "answer" },
+						{ type: "image", data: "abc", mimeType: "image/png" },
+					],
+				},
+			},
+		],
+		"assistant",
+	);
+	const entry = useSessionStore.getState().entries[0];
+	assert.equal(entry?.text, "answer[image attachment]");
+	assert.equal(entry?.thinking, "reason");
+});
+
+test("compaction events retain durable summaries and render aborted and failed terminal states", () => {
+	const { ingestEvent } = useSessionStore.getState();
+	ingestEvent({ type: "compaction_end", result: { compactedText: "durable summary" }, aborted: false });
+	ingestEvent({
+		type: "compaction_end",
+		result: undefined,
+		aborted: false,
+		errorMessage: "Compaction failed: session too small",
+	});
+	ingestEvent({ type: "compaction_end", result: undefined, aborted: true, errorMessage: "cancelled" });
+	assert.deepEqual(
+		useSessionStore.getState().entries.map((entry) => [entry.kind, entry.text, entry.error]),
+		[
+			["compaction", "durable summary", undefined],
+			["compaction", "Context compaction failed", "Compaction failed: session too small"],
+			["compaction", "Context compaction aborted", "cancelled"],
+		],
+	);
+});
+
+test("entry_appended shows durable extension custom entries", () => {
+	useSessionStore.getState().ingestEvent({
+		type: "entry_appended",
+		entry: {
+			type: "custom",
+			id: "custom",
+			parentId: null,
+			timestamp: "2026-01-01T00:00:00Z",
+			customType: "workflow",
+			data: { runId: "r1" },
+		},
+	});
+	assert.deepEqual(
+		useSessionStore.getState().entries.map((entry) => [entry.id, entry.kind, entry.customType]),
+		[["custom", "custom", "workflow"]],
+	);
 });

@@ -64,9 +64,9 @@ export class EngineSupervisor {
 		return await this.client.abort();
 	}
 
-	async bash(command: string, excludeFromContext?: boolean): Promise<RpcResult> {
+	async bash(command: string, excludeFromContext?: boolean, requestId?: string): Promise<RpcResult> {
 		if (!this.client) return { ok: false, error: "Engine is not started" };
-		return await this.client.bash(command, excludeFromContext);
+		return await this.client.bash(command, excludeFromContext, requestId);
 	}
 
 	async newSession(): Promise<RpcResult> {

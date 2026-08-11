@@ -18,7 +18,17 @@ import type {
 } from "../../../shared/ipc.ts";
 import { type GuiOverlayOptions, parseOverlayOptions } from "../../../shared/overlay-options.ts";
 
-export type EntryKind = "user" | "assistant" | "tool" | "bash" | "system" | "compaction" | "branchSummary" | "raw";
+export type EntryKind =
+	| "user"
+	| "assistant"
+	| "tool"
+	| "bash"
+	| "custom"
+	| "skill"
+	| "system"
+	| "compaction"
+	| "branchSummary"
+	| "raw";
 
 export interface TranscriptEntry {
 	id: string;
@@ -28,6 +38,15 @@ export interface TranscriptEntry {
 	thinking?: string;
 	toolName?: string;
 	toolCallId?: string;
+	bashCommand?: string;
+	bashExitCode?: number;
+	bashCancelled?: boolean;
+	bashTruncated?: boolean;
+	bashFullOutputPath?: string;
+	customType?: string;
+	skillName?: string;
+	skillLocation?: string;
+	skillContent?: string;
 	/** Engine-owned component identity for a rendered live tool card. */
 	remoteRenderId?: string;
 	/** Inputs forwarded to the engine's ToolExecutionComponent renderer. */
@@ -178,9 +197,9 @@ function textFromContent(content: unknown): string {
 	const parts: string[] = [];
 	for (const block of content) {
 		if (typeof block === "object" && block !== null && "type" in block) {
-			const typed = block as { type: string; text?: string; thinking?: string };
+			const typed = block as { type: string; text?: string };
 			if (typed.type === "text" && typeof typed.text === "string") parts.push(typed.text);
-			if (typed.type === "thinking" && typeof typed.thinking === "string") parts.push(typed.thinking);
+			if (typed.type === "image") parts.push("[image attachment]");
 		}
 	}
 	return parts.join("");
@@ -204,57 +223,223 @@ function thinkingFromContent(content: unknown): string | undefined {
 	return parts.length > 0 ? parts.join("\n") : undefined;
 }
 
-function transcriptEntryFromSessionEntry(entry: unknown): TranscriptEntry | undefined {
-	if (typeof entry !== "object" || entry === null) return undefined;
-	const value = entry as Record<string, unknown>;
-	if (typeof value.id !== "string" || typeof value.type !== "string") return undefined;
+function stringify(value: unknown): string {
+	if (typeof value === "string") return value;
+	try {
+		return JSON.stringify(value, null, 2) ?? "";
+	} catch {
+		return String(value ?? "");
+	}
+}
 
-	if (value.type === "message" && typeof value.message === "object" && value.message !== null) {
-		const message = value.message as { role?: unknown; content?: unknown };
-		const role = typeof message.role === "string" ? message.role : "assistant";
+function skillFromText(
+	text: string,
+): Pick<TranscriptEntry, "skillName" | "skillLocation" | "skillContent" | "text"> | undefined {
+	const match = text.match(/^<skill name="([^"]+)" location="([^"]+)">\n([\s\S]*?)\n<\/skill>(?:\n\n([\s\S]+))?$/);
+	if (!match) return undefined;
+	return {
+		skillName: match[1],
+		skillLocation: match[2],
+		skillContent: match[3],
+		text: match[4]?.trim() ?? "",
+	};
+}
+
+function transcriptEntryFromMessage(
+	id: string,
+	message: Record<string, unknown>,
+	streaming: boolean,
+): TranscriptEntry | undefined {
+	const role = typeof message.role === "string" ? message.role : "system";
+	if (role === "bashExecution") {
+		const command = typeof message.command === "string" ? message.command : "";
+		const output = typeof message.output === "string" ? message.output : "";
 		return {
-			id: value.id,
-			kind: role === "user" ? "user" : role === "toolResult" ? "tool" : "assistant",
+			id,
+			kind: "bash",
 			role,
+			bashCommand: command || undefined,
+			text: `${command ? `$ ${command}\n` : ""}${output}`,
+			bashExitCode: typeof message.exitCode === "number" ? message.exitCode : undefined,
+			bashCancelled: message.cancelled === true,
+			bashTruncated: message.truncated === true,
+			bashFullOutputPath: typeof message.fullOutputPath === "string" ? message.fullOutputPath : undefined,
+			streaming,
+			expanded: true,
+			excludeFromContext: message.excludeFromContext === true,
+		};
+	}
+	if (role === "custom") {
+		if (message.display !== true) return undefined;
+		return {
+			id,
+			kind: "custom",
+			role,
+			customType: typeof message.customType === "string" ? message.customType : "custom",
 			text: textFromContent(message.content),
-			thinking: thinkingFromContent(message.content),
-			streaming: false,
+			streaming,
 			expanded: false,
 		};
 	}
-
-	if (value.type === "custom_message" && value.display === true) {
+	if (role === "branchSummary") {
 		return {
-			id: value.id,
-			kind: "system",
-			text: textFromContent(value.content),
-			streaming: false,
-			expanded: false,
-			excludeFromContext: value.excludeFromContext === true,
-		};
-	}
-
-	if (value.type === "compaction" || value.type === "context_compaction") {
-		return {
-			id: value.id,
-			kind: "compaction",
-			text: typeof value.summary === "string" ? value.summary : "Context compacted",
-			streaming: false,
-			expanded: false,
-		};
-	}
-
-	if (value.type === "branch_summary") {
-		return {
-			id: value.id,
+			id,
 			kind: "branchSummary",
-			text: typeof value.summary === "string" ? value.summary : "Branch summary",
-			streaming: false,
+			role,
+			text: typeof message.summary === "string" ? message.summary : "Branch summary",
+			streaming,
 			expanded: false,
 		};
 	}
+	if (role === "user") {
+		const text = textFromContent(message.content);
+		const skill = skillFromText(text);
+		return {
+			id,
+			kind: skill ? "skill" : "user",
+			role,
+			...(skill ?? { text }),
+			streaming,
+			expanded: false,
+		};
+	}
+	if (role === "assistant" || role === "toolResult") {
+		const toolCallId = typeof message.toolCallId === "string" ? message.toolCallId : undefined;
+		return {
+			id,
+			kind: role === "toolResult" ? "tool" : "assistant",
+			role,
+			toolName: typeof message.toolName === "string" ? message.toolName : undefined,
+			toolCallId,
+			remoteRenderId: toolCallId ? `gui-tool-render:${toolCallId}` : undefined,
+			text: textFromContent(message.content),
+			thinking: role === "assistant" ? thinkingFromContent(message.content) : undefined,
+			streaming,
+			expanded: role === "toolResult",
+			error: message.isError === true ? "Tool error" : undefined,
+		};
+	}
+	return {
+		id,
+		kind: "system",
+		role,
+		text: textFromContent(message.content) || role,
+		streaming,
+		expanded: false,
+	};
+}
 
-	return undefined;
+function activeLeafEntries(entries: unknown[], leafId: string | null | undefined): Record<string, unknown>[] {
+	if (leafId === null || leafId === undefined) return [];
+	const byId = new Map<string, Record<string, unknown>>();
+	for (const entry of entries) {
+		if (typeof entry !== "object" || entry === null) continue;
+		const value = entry as Record<string, unknown>;
+		if (typeof value.id === "string") byId.set(value.id, value);
+	}
+	const path: Record<string, unknown>[] = [];
+	const visited = new Set<string>();
+	let id: string | null = leafId;
+	while (id && !visited.has(id)) {
+		visited.add(id);
+		const entry = byId.get(id);
+		if (!entry) break;
+		path.push(entry);
+		id = typeof entry.parentId === "string" ? entry.parentId : null;
+	}
+	return path.reverse();
+}
+
+function transcriptEntriesFromSessionEntries(entries: unknown[], leafId: string | null | undefined): TranscriptEntry[] {
+	const hydrated: TranscriptEntry[] = [];
+	const tools = new Map<string, TranscriptEntry>();
+	for (const value of activeLeafEntries(entries, leafId)) {
+		if (typeof value.id !== "string" || typeof value.type !== "string") continue;
+		if (value.type === "message" && typeof value.message === "object" && value.message !== null) {
+			const message = value.message as Record<string, unknown>;
+			if (message.role === "toolResult" && typeof message.toolCallId === "string") {
+				const tool = tools.get(message.toolCallId);
+				if (tool) {
+					tool.toolResult = message;
+					tool.text = textFromContent(message.content) || tool.text;
+					tool.error = message.isError === true ? "Tool error" : undefined;
+					continue;
+				}
+			}
+			const rendered = transcriptEntryFromMessage(value.id, message, false);
+			if (rendered) hydrated.push(rendered);
+			if (message.role === "assistant" && Array.isArray(message.content)) {
+				for (const content of message.content) {
+					if (
+						typeof content !== "object" ||
+						content === null ||
+						(content as { type?: unknown }).type !== "toolCall"
+					)
+						continue;
+					const call = content as { id?: unknown; name?: unknown; arguments?: unknown };
+					if (typeof call.id !== "string") continue;
+					const tool: TranscriptEntry = {
+						id: call.id,
+						kind: "tool",
+						toolCallId: call.id,
+						toolName: typeof call.name === "string" ? call.name : "tool",
+						remoteRenderId: `gui-tool-render:${call.id}`,
+						toolArgs: call.arguments,
+						text: stringify(call.arguments),
+						streaming: false,
+						expanded: false,
+					};
+					tools.set(call.id, tool);
+					hydrated.push(tool);
+				}
+			}
+			continue;
+		}
+		if (value.type === "custom_message" && value.display === true) {
+			hydrated.push({
+				id: value.id,
+				kind: "custom",
+				customType: typeof value.customType === "string" ? value.customType : "custom",
+				text: textFromContent(value.content),
+				streaming: false,
+				expanded: false,
+				excludeFromContext: value.excludeFromContext === true,
+			});
+			continue;
+		}
+		if (value.type === "custom") {
+			hydrated.push({
+				id: value.id,
+				kind: "custom",
+				customType: typeof value.customType === "string" ? value.customType : "custom",
+				text: stringify(value.data),
+				streaming: false,
+				expanded: false,
+			});
+			continue;
+		}
+		if (value.type === "compaction") {
+			hydrated.push({
+				id: value.id,
+				kind: "compaction",
+				text: typeof value.summary === "string" ? value.summary : "Context compacted",
+				streaming: false,
+				expanded: false,
+			});
+			continue;
+		}
+		if (value.type === "context_compaction") continue;
+		if (value.type === "branch_summary") {
+			hydrated.push({
+				id: value.id,
+				kind: "branchSummary",
+				text: typeof value.summary === "string" ? value.summary : "Branch summary",
+				streaming: false,
+				expanded: false,
+			});
+		}
+	}
+	return hydrated;
 }
 
 function parseHostSessionPickerRows(value: unknown): HostSessionPickerRow[] {
@@ -379,15 +564,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			treeNodes: [],
 		}),
 	hydrateTranscript: (entries, leafId) => {
-		const hydrated = entries
-			.map(transcriptEntryFromSessionEntry)
-			.filter((entry): entry is TranscriptEntry => entry !== undefined);
+		const hydrated = transcriptEntriesFromSessionEntries(entries, leafId);
+		const activeLeafId = leafId === undefined ? null : leafId;
 		set({
 			entries: hydrated,
 			queue: [],
 			working: false,
 			workingLabel: "thinking",
-			transcriptLeafId: leafId === undefined ? null : leafId,
+			transcriptLeafId: activeLeafId,
+			treeLeafId: activeLeafId,
 		});
 	},
 	setErrorBanner: (message) => set({ errorBanner: message }),
@@ -832,6 +1017,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					{
 						id,
 						kind: "bash",
+						bashCommand: command || undefined,
 						text: command ? `$ ${command}\n` : "",
 						streaming: true,
 						expanded: true,
@@ -845,54 +1031,111 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			const id = typeof event.id === "string" ? event.id : undefined;
 			const delta = typeof event.delta === "string" ? event.delta : "";
 			if (!id || !delta) return;
-			set((state) => ({
-				entries: state.entries.map((entry) =>
-					entry.id === id ? { ...entry, text: `${entry.text}${delta}`, streaming: true } : entry,
-				),
-			}));
+			set((state) => {
+				const existing = state.entries.find((entry) => entry.id === id);
+				if (existing) {
+					return {
+						entries: state.entries.map((entry) =>
+							entry.id === id ? { ...entry, text: `${entry.text}${delta}`, streaming: true } : entry,
+						),
+					};
+				}
+				return {
+					working: true,
+					workingLabel: "bash",
+					entries: [...state.entries, { id, kind: "bash", text: delta, streaming: true, expanded: true }],
+				};
+			});
 			return;
 		}
 		if (type === "bash_execution_end" || type === "user_bash_end") {
 			const id = typeof event.id === "string" ? event.id : undefined;
 			if (!id) return;
-			set((state) => ({
-				working: false,
-				entries: state.entries.map((entry) => (entry.id === id ? { ...entry, streaming: false } : entry)),
-			}));
+			set((state) => {
+				const result = event;
+				return {
+					working: false,
+					entries: state.entries.map((entry) => {
+						if (entry.id !== id) return entry;
+						return {
+							...entry,
+							streaming: false,
+							text:
+								typeof result.output === "string"
+									? `${entry.bashCommand ? `$ ${entry.bashCommand}\n` : ""}${result.output}`
+									: entry.text,
+							bashExitCode: typeof result.exitCode === "number" ? result.exitCode : entry.bashExitCode,
+							bashCancelled: result.cancelled === true,
+							bashTruncated: result.truncated === true,
+							bashFullOutputPath:
+								typeof result.fullOutputPath === "string" ? result.fullOutputPath : entry.bashFullOutputPath,
+						};
+					}),
+				};
+			});
 			return;
 		}
 		if (type === "message_start") {
-			const message = event.message as { role?: string; content?: unknown; id?: string } | undefined;
-			const role = message?.role ?? "assistant";
-			const kind: EntryKind = role === "user" ? "user" : role === "toolResult" ? "tool" : "assistant";
+			const message = event.message as Record<string, unknown> | undefined;
 			const id =
 				typeof event.messageId === "string"
 					? event.messageId
 					: typeof message?.id === "string"
 						? message.id
-						: nextId(kind);
-			set((state) => ({
-				working: role !== "user",
-				entries: [
-					...state.entries.filter((entry) => entry.id !== id),
-					{
-						id,
-						kind,
-						role,
-						text: textFromContent(message?.content),
-						thinking: thinkingFromContent(message?.content),
-						streaming: true,
-						expanded: false,
-					},
-				],
-			}));
+						: nextId("message");
+			if (!message) return;
+			const entry = transcriptEntryFromMessage(id, message, true);
+			if (!entry) return;
+			const entryId = entry.kind === "tool" && entry.toolCallId ? entry.toolCallId : id;
+			set((state) => {
+				const existing = state.entries.find((item) => item.id === entryId);
+				return {
+					working: entry.kind !== "user" && entry.kind !== "skill",
+					entries: [
+						...state.entries.filter((item) => item.id !== entryId),
+						{
+							...existing,
+							...entry,
+							id: entryId,
+							toolName: entry.toolName ?? existing?.toolName,
+							toolCallId: entry.toolCallId ?? existing?.toolCallId,
+							toolArgs: existing?.toolArgs ?? entry.toolArgs,
+							remoteRenderId: existing?.remoteRenderId ?? entry.remoteRenderId,
+							remoteRenderLines: existing?.remoteRenderLines,
+							remoteRenderGeneration: existing?.remoteRenderGeneration ?? entry.remoteRenderGeneration,
+							remoteRenderAppliedRequestId: existing?.remoteRenderAppliedRequestId,
+							text: entry.text || existing?.text || "",
+							expanded: existing?.expanded ?? entry.expanded,
+							toolResult: entry.role === "toolResult" ? message : existing?.toolResult,
+						},
+					],
+				};
+			});
 			return;
 		}
 		if (type === "message_update") {
-			const message = event.message as { role?: string; content?: unknown; id?: string } | undefined;
-			const assistantMessageEvent = event.assistantMessageEvent as
-				| { type?: string; delta?: string; contentIndex?: number }
+			const message = event.message as
+				| { role?: string; content?: unknown; id?: string; toolCallId?: string }
 				| undefined;
+			const assistantMessageEvent = event.assistantMessageEvent as
+				| { type?: string; delta?: string; error?: unknown }
+				| undefined;
+			if (message?.role === "toolResult" && typeof message.toolCallId === "string") {
+				set((state) => ({
+					entries: state.entries.map((entry) =>
+						entry.id === message.toolCallId
+							? {
+									...entry,
+									text: textFromContent(message.content) || entry.text,
+									toolResult: message,
+									streaming: true,
+									remoteRenderGeneration: (entry.remoteRenderGeneration ?? 0) + 1,
+								}
+							: entry,
+					),
+				}));
+				return;
+			}
 			set((state) => {
 				const id =
 					(typeof message?.id === "string" && message.id) ||
@@ -901,49 +1144,68 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				const existing = state.entries.find((entry) => entry.id === id);
 				let text = existing?.text ?? textFromContent(message?.content);
 				let thinking = existing?.thinking ?? thinkingFromContent(message?.content);
-				if (assistantMessageEvent?.type === "text_delta" && typeof assistantMessageEvent.delta === "string") {
+				if (assistantMessageEvent?.type === "text_delta" && typeof assistantMessageEvent.delta === "string")
 					text = `${text}${assistantMessageEvent.delta}`;
-				}
-				if (assistantMessageEvent?.type === "thinking_delta" && typeof assistantMessageEvent.delta === "string") {
+				if (assistantMessageEvent?.type === "thinking_delta" && typeof assistantMessageEvent.delta === "string")
 					thinking = `${thinking ?? ""}${assistantMessageEvent.delta}`;
-				}
 				if (!assistantMessageEvent && message?.content !== undefined) {
 					text = textFromContent(message.content);
 					thinking = thinkingFromContent(message.content);
 				}
+				const error =
+					typeof assistantMessageEvent?.error === "string" ? assistantMessageEvent.error : existing?.error;
+				const streaming = assistantMessageEvent?.type !== "done" && assistantMessageEvent?.type !== "error";
 				const nextEntry: TranscriptEntry = {
 					id,
 					kind: "assistant",
 					role: message?.role ?? "assistant",
 					text,
 					thinking,
-					streaming: true,
+					streaming,
 					expanded: existing?.expanded ?? false,
+					error,
 				};
-				const without = state.entries.filter((entry) => entry.id !== id);
-				return { working: true, workingLabel: "streaming", entries: [...without, nextEntry] };
+				return {
+					working: streaming,
+					workingLabel: "streaming",
+					entries: [...state.entries.filter((entry) => entry.id !== id), nextEntry],
+				};
 			});
 			return;
 		}
 		if (type === "message_end") {
-			const message = event.message as { role?: string; content?: unknown; id?: string } | undefined;
+			const message = event.message as Record<string, unknown> | undefined;
+			if (!message) return;
 			set((state) => {
-				const id =
-					(typeof message?.id === "string" && message.id) ||
-					state.entries.find((entry) => entry.streaming)?.id ||
-					nextId("assistant");
+				const role = typeof message.role === "string" ? message.role : "system";
+				const baseId =
+					(typeof message.id === "string" && message.id) ||
+					state.entries.find((entry) => entry.streaming && entry.role === role)?.id ||
+					nextId("message");
+				const toolCallId = typeof message.toolCallId === "string" ? message.toolCallId : undefined;
+				const id = role === "toolResult" && toolCallId ? toolCallId : baseId;
 				const existing = state.entries.find((entry) => entry.id === id);
-				const nextEntry: TranscriptEntry = {
-					id,
-					kind: message?.role === "user" ? "user" : "assistant",
-					role: message?.role,
-					text: textFromContent(message?.content) || existing?.text || "",
-					thinking: thinkingFromContent(message?.content) ?? existing?.thinking,
-					streaming: false,
-					expanded: existing?.expanded ?? false,
-				};
+				const nextEntry = transcriptEntryFromMessage(id, message, false);
+				if (!nextEntry) return state;
 				return {
-					entries: [...state.entries.filter((entry) => entry.id !== id), nextEntry],
+					entries: [
+						...state.entries.filter((entry) => entry.id !== id),
+						{
+							...existing,
+							...nextEntry,
+							text: nextEntry.text || existing?.text || "",
+							thinking: nextEntry.thinking ?? existing?.thinking,
+							expanded: existing?.expanded ?? nextEntry.expanded,
+							toolName: nextEntry.toolName ?? existing?.toolName,
+							toolCallId: nextEntry.toolCallId ?? existing?.toolCallId,
+							toolArgs: existing?.toolArgs ?? nextEntry.toolArgs,
+							remoteRenderId: existing?.remoteRenderId ?? nextEntry.remoteRenderId,
+							remoteRenderLines: existing?.remoteRenderLines,
+							remoteRenderGeneration: existing?.remoteRenderGeneration ?? nextEntry.remoteRenderGeneration,
+							remoteRenderAppliedRequestId: existing?.remoteRenderAppliedRequestId,
+							toolResult: role === "toolResult" ? message : existing?.toolResult,
+						},
+					],
 				};
 			});
 			return;
@@ -1018,19 +1280,58 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 			set({ queue });
 			return;
 		}
-		if (type === "auto_compaction_end" || type === "compaction_end") {
+		if (type === "entry_appended") {
+			const entry = event.entry;
+			if (typeof entry !== "object" || entry === null) return;
+			const value = entry as Record<string, unknown>;
+			if (value.type !== "custom" || typeof value.id !== "string") return;
+			const entryId = value.id;
 			set((state) => ({
 				entries: [
-					...state.entries,
+					...state.entries.filter((item) => item.id !== entryId),
 					{
-						id: nextId("compaction"),
-						kind: "compaction",
-						text: "Context compacted",
+						id: entryId,
+						kind: "custom",
+						customType: typeof value.customType === "string" ? value.customType : "custom",
+						text: stringify(value.data),
 						streaming: false,
 						expanded: false,
 					},
 				],
 			}));
+			return;
+		}
+		if (type === "auto_compaction_end" || type === "compaction_end") {
+			const result = event.result;
+			const summary =
+				typeof result === "object" &&
+				result !== null &&
+				typeof (result as { compactedText?: unknown }).compactedText === "string"
+					? (result as { compactedText: string }).compactedText
+					: undefined;
+			if (summary) {
+				set((state) => ({
+					entries: [
+						...state.entries,
+						{ id: nextId("compaction"), kind: "compaction", text: summary, streaming: false, expanded: false },
+					],
+				}));
+			} else {
+				set((state) => ({
+					entries: [
+						...state.entries,
+						{
+							id: nextId("compaction"),
+							kind: "compaction",
+							text: event.aborted === true ? "Context compaction aborted" : "Context compaction failed",
+							streaming: false,
+							expanded: false,
+							error: typeof event.errorMessage === "string" ? event.errorMessage : undefined,
+						},
+					],
+				}));
+			}
+			return;
 		}
 		if (type === "session_stats" || type === "usage_update") {
 			const tokens = event.tokens as

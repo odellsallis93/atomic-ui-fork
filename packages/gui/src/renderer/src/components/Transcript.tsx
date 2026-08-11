@@ -55,11 +55,16 @@ function EntryView({
 	onToggle: (id: string) => void;
 }) {
 	if (entry.kind === "compaction" || entry.kind === "branchSummary") {
-		return <div className="compaction">{entry.text}</div>;
+		return (
+			<div className={`compaction ${entry.kind === "branchSummary" ? "branch-summary" : "context-compaction"}`}>
+				<strong>{entry.kind === "branchSummary" ? "Branch summary" : "Context compaction"}</strong>
+				<div>{entry.text}</div>
+			</div>
+		);
 	}
 
 	const roleClass =
-		entry.kind === "user"
+		entry.kind === "user" || entry.kind === "skill"
 			? "role-user"
 			: entry.kind === "tool"
 				? "role-tool"
@@ -73,11 +78,17 @@ function EntryView({
 				? entry.excludeFromContext
 					? "bash !!"
 					: "bash !"
-				: entry.kind === "user"
-					? "you"
-					: entry.streaming
-						? "atomic ▸"
-						: "atomic";
+				: entry.kind === "custom"
+					? (entry.customType ?? "custom")
+					: entry.kind === "skill"
+						? `skill: ${entry.skillName ?? "skill"}`
+						: entry.kind === "user"
+							? "you"
+							: entry.kind === "system"
+								? "system"
+								: entry.streaming
+									? "atomic ▸"
+									: "atomic";
 
 	return (
 		<article className={`entry${entry.excludeFromContext ? " dimmed" : ""}`}>
@@ -89,6 +100,12 @@ function EntryView({
 					</button>
 				) : null}
 				{entry.error ? <span style={{ color: "var(--red)" }}>{entry.error}</span> : null}
+				{entry.kind === "bash" && entry.bashCancelled ? <span>cancelled</span> : null}
+				{entry.kind === "bash" && entry.bashTruncated ? <span>truncated</span> : null}
+				{entry.kind === "bash" && entry.bashExitCode !== undefined ? <span>exit {entry.bashExitCode}</span> : null}
+				{entry.kind === "bash" && entry.bashFullOutputPath ? (
+					<span>full output: {entry.bashFullOutputPath}</span>
+				) : null}
 			</div>
 			{entry.thinking && hideThinking ? <div className="thinking-hidden">{hiddenThinkingLabel}</div> : null}
 			{entry.thinking && !hideThinking ? (
@@ -101,6 +118,14 @@ function EntryView({
 				<MarkdownBody source={entry.text || (entry.streaming ? "…" : "")} />
 			) : entry.kind === "tool" || entry.kind === "bash" ? (
 				<ToolBody entry={entry} />
+			) : entry.kind === "skill" ? (
+				<div className="entry-body">
+					<details>
+						<summary>{entry.skillLocation}</summary>
+						<pre>{entry.skillContent}</pre>
+					</details>
+					{entry.text ? <div>{entry.text}</div> : null}
+				</div>
 			) : (
 				<div className="entry-body">{entry.text}</div>
 			)}

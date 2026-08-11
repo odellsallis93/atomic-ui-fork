@@ -386,7 +386,23 @@ export function App() {
 			if (plan.kind === "bash") {
 				setAttached(plan.keepImages);
 				if (plan.warning) setErrorBanner(plan.warning);
-				const result = await window.atomicGui.bash(plan.command, plan.excludeFromContext);
+				const requestId = crypto.randomUUID();
+				ingestEvent({
+					type: "bash_execution_start",
+					id: requestId,
+					command: plan.command,
+					excludeFromContext: plan.excludeFromContext,
+				});
+				const result = await window.atomicGui.bash(plan.command, plan.excludeFromContext, requestId);
+				ingestEvent({
+					type: "bash_execution_end",
+					id: requestId,
+					output: result.data?.output,
+					exitCode: result.data?.exitCode,
+					cancelled: result.data?.cancelled,
+					truncated: result.data?.truncated,
+					fullOutputPath: result.data?.fullOutputPath,
+				});
 				if (!result.ok) setErrorBanner(result.error ?? "Bash failed");
 				return;
 			}

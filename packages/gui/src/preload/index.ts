@@ -15,7 +15,8 @@ const api: GuiHostApi = {
 	stopEngine: () => ipcRenderer.invoke(IPC_CHANNELS.stopEngine),
 	prompt: (request: PromptRequest) => ipcRenderer.invoke(IPC_CHANNELS.prompt, request),
 	abort: () => ipcRenderer.invoke(IPC_CHANNELS.abort),
-	bash: (command, excludeFromContext) => ipcRenderer.invoke(IPC_CHANNELS.bash, command, excludeFromContext),
+	bash: (command, excludeFromContext, requestId) =>
+		ipcRenderer.invoke(IPC_CHANNELS.bash, command, excludeFromContext, requestId),
 	newSession: () => ipcRenderer.invoke(IPC_CHANNELS.newSession),
 	switchSession: (sessionPath) => ipcRenderer.invoke(IPC_CHANNELS.switchSession, sessionPath),
 	setSessionName: (name) => ipcRenderer.invoke(IPC_CHANNELS.setSessionName, name),

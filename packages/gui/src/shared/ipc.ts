@@ -41,6 +41,15 @@ export interface RpcResult<T = unknown> {
 
 export type PromptResult = RpcResult;
 
+export interface GuiBashResult {
+	requestId: string;
+	output?: string;
+	exitCode?: number;
+	cancelled?: boolean;
+	truncated?: boolean;
+	fullOutputPath?: string;
+}
+
 export interface SlashCommandInfo {
 	name: string;
 	description?: string;
@@ -265,7 +274,7 @@ export interface GuiHostApi {
 	stopEngine(): Promise<void>;
 	prompt(request: PromptRequest): Promise<PromptResult>;
 	abort(): Promise<PromptResult>;
-	bash(command: string, excludeFromContext?: boolean): Promise<PromptResult>;
+	bash(command: string, excludeFromContext?: boolean, requestId?: string): Promise<RpcResult<GuiBashResult>>;
 	newSession(): Promise<PromptResult>;
 	switchSession(sessionPath: string): Promise<PromptResult>;
 	setSessionName(name: string): Promise<PromptResult>;

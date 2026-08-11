@@ -71,10 +71,13 @@ function registerIpc(): void {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.abort();
 	});
-	ipcMain.handle(IPC_CHANNELS.bash, async (_event, command: string, excludeFromContext?: boolean) => {
-		if (!supervisor) return { ok: false, error: "No window" };
-		return await supervisor.bash(command, excludeFromContext);
-	});
+	ipcMain.handle(
+		IPC_CHANNELS.bash,
+		async (_event, command: string, excludeFromContext?: boolean, requestId?: string) => {
+			if (!supervisor) return { ok: false, error: "No window" };
+			return await supervisor.bash(command, excludeFromContext, requestId);
+		},
+	);
 	ipcMain.handle(IPC_CHANNELS.newSession, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.newSession();
