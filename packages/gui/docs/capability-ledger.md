@@ -19,7 +19,7 @@ Parity tracker for `@bastani/atomic-gui`. **Do not claim parity from fake-engine
 | `test/engine-client.test.ts` | fake | JSONL handshake, RPC response shape, image payload echo | Real CLI bootstrap, provider delivery, session JSONL durability |
 | Most `test/*.test.ts` store/helpers | unit | Renderer/store pure behavior | Engine semantics, IPC round-trip, Electron chrome |
 | `test/real-engine-smoke.test.ts` | real-engine | Start/stream/abort/restart, version-mismatch clarity, session leaf alignment after switch | Full LLM prompt quality, Electron UI, OAuth, packaging |
-| `test/electron-phase2.e2e.test.ts` | fixture E2E | Electron renderer-host queue/session/tree, Phase 3 focused-frame/dialog routing, and Phase 4 generic workflow prompt/form/list/status/graph/attach routes plus custom-widget render/status/session-cleanup paths | Atomic CLI/provider semantics; this fixture is not a real-engine extension claim |
+| `test/electron-phase2.e2e.test.ts` | fixture E2E | Electron renderer-host queue/session/tree, Phase 3 focused-frame/dialog routing, and Phase 4 generic workflow, subagent, and Intercom prompt/form/list/status/graph/attach/widget/compose/receive routes | Atomic CLI/provider semantics; this fixture is not a real-engine extension claim |
 
 ## Interactive capabilities
 
@@ -43,8 +43,9 @@ Parity tracker for `@bastani/atomic-gui`. **Do not claim parity from fake-engine
 | Auth / trust / first run | Onboarding, auth + trust dialogs | `project-trust.test.ts`; `phase3-settings-ui.test.tsx`; Electron fixture host boundary | unit | partial — first-run panel routes users to trust, provider auth, and model selection without displaying saved credentials. Credentials stay in engine auth flows; no GUI reads, logs, writes, or returns them. |
 | Extension UI host (dialogs/forms/frames) | Generic modals + `ChromeFrame` | `session-store.test.ts`, `ansi` / overlay / key tests, fixture E2E | unit + fixture E2E | partial — select/confirm/input/editor, host forms/picker, working/status/widgets, chrome and frames route generically. `onTerminalInput`, `getEditorText`, autocomplete provider, and RPC theme APIs are engine-declared synchronous/protocol exclusions. |
 | Bundled extensions — Workflows | Composer `prompt` (`/workflow …`), runtime F2 shortcut, generic input form/session picker/custom frame routes | `docs/workflow-walkthrough.md`; `electron-phase2.e2e.test.ts` (“workflow routes stay on generic prompts and frames”) | fixture E2E + docs | proven — generic renderer-host workflow walkthrough only; no live DBOS/engine claim |
-| Bundled extensions — subagents | Generic below-editor custom widget; existing engine **Abort** remains global | `docs/subagents-walkthrough.md`; `electron-phase2.e2e.test.ts` (custom open → render → frame status updates and session-switch widget cleanup); source inventory in `packages/subagents/src/tui/render-widget.ts`, `packages/coding-agent/src/modes/rpc/rpc-extension-ui.ts`, and `modes/interactive-engine/engine-custom-ui.ts` | fixture E2E + docs | partial — background component-factory status updates render through generic `engine_custom_*` frames; widgets clear on session switch without awaiting engine cleanup. V2 exposes no subagent-job list/status/interrupt/resume RPC, so the GUI has no per-job controls. Intercom, MCP, and web remain open. |
-| Bundled extensions — intercom/MCP/web | Generic frames only | — | — | open (Phase 4 / M6) |
+| Bundled extensions — subagents | Generic below-editor custom widget; existing engine **Abort** remains global | `docs/subagents-walkthrough.md`; `electron-phase2.e2e.test.ts` (custom open → render → frame status updates and session-switch widget cleanup); source inventory in `packages/subagents/src/tui/render-widget.ts`, `packages/coding-agent/src/modes/rpc/rpc-extension-ui.ts`, and `modes/interactive-engine/engine-custom-ui.ts` | fixture E2E + docs | partial — background component-factory status updates render through generic `engine_custom_*` frames; widgets clear on session switch without awaiting engine cleanup. V2 exposes no subagent-job list/status/interrupt/resume RPC, so the GUI has no per-job controls. MCP and web remain open.
+| Bundled Intercom | Runtime `/intercom` command and `alt+m` shortcut → generic `engine_custom_*` session-picker/compose frames; incoming `intercom_message` custom card | `electron-phase2.e2e.test.ts` (“Intercom…”); `session-store.test.ts` visible custom-message entry; source inventory below | fixture E2E + unit + source | partial — renderer-host compose/receive wiring is proven. This does not prove a live broker, peer, or extension session. |
+| Other bundled extensions (MCP/web) | Generic frames only | — | — | open (Phase 4 / M6) |
 | CLI machine interfaces (`--print`, `--mode json/rpc`, pipes) | **Excluded** (§3.3) | plan exclusions | docs | excluded |
 | Package admin / credential print / multi-window tabs | **Excluded** or deferred (G11) | plan exclusions | docs | excluded |
 ## Phase 3 exit review (2026-08-11)
@@ -69,6 +70,18 @@ The corpus inventory is source-backed by `packages/coding-agent/src/core/extensi
 ## Phase 4 Workflows inventory (2026-08-11)
 
 The GUI routes workflow dispatch, list, status, graph, and stage attach only through runtime-discovered slash commands, shortcuts, and generic `ctx.ui.*` frames. See [`workflow-walkthrough.md`](workflow-walkthrough.md) for source-backed route mapping, fixture evidence, and exact exclusions. No `workflow_*` RPC or workflow-only renderer is permitted.
+
+## Phase 4 Intercom runtime inventory (2026-08-11)
+
+| Runtime surface | GUI disposition | Source evidence |
+|---|---|---|
+| `/intercom` | The engine owns activation. The GUI sends the runtime command through the existing composer and mounts its `ctx.ui.custom` picker and compose surfaces through generic `engine_custom_*` frames. | `packages/intercom/overlay.ts`; `packages/intercom/index.ts`; `packages/coding-agent/src/modes/interactive-engine/protocol.ts` |
+| `alt+m` | The GUI reads the existing runtime shortcut inventory and invokes it through `invoke_shortcut`, including while the generic composer is focused; the engine opens the same generic picker. | `packages/intercom/overlay.ts`; `packages/coding-agent/src/modes/rpc/rpc-command-handler.ts`; `src/renderer/src/App.tsx`; `src/renderer/src/components/Composer.tsx` |
+| Incoming message card | The GUI accepts the visible live `custom` message lifecycle emitted by `sendMessage`: `message_start` then `message_end`, with `customType: "intercom_message"`, and renders it with the generic transcript card. The engine persists the matching custom-message entry before those events. | `packages/intercom/incoming-message-delivery.ts`; `packages/coding-agent/src/core/agent-session-message-queue.ts`; `src/renderer/src/store/session-store.ts` |
+| Tool actions: `list`, `send`, `ask`, `reply`, `pending`, `status` | **Excluded from direct GUI controls.** Protocol v2 exposes no Intercom RPC or broker/session contract. They remain engine tool actions, visible through generic tool/transcript rendering when the engine invokes them. | `packages/intercom/index.ts`; `packages/coding-agent/src/modes/interactive-engine/protocol.ts` |
+| Attachments, group selection, peer presence, and live broker verification | **Excluded from this walkthrough.** No typed v2 host contract exposes these values; the GUI must not read broker state, infer peers, or add an Intercom-specific surface. | `packages/intercom/index.ts`; `packages/intercom/overlay.ts`; `packages/coding-agent/src/modes/rpc/rpc-extension-ui.ts` |
+
+The fixture proves only source-shaped renderer-host frames, shortcut invocation, and live incoming-message lifecycle. It does not claim a live Intercom broker or peer session.
 
 
 ## Open gates (do not silently close)

@@ -23,7 +23,7 @@ Fake-engine unit tests prove host structure only; parity claims require
 | M3 | Mostly done — resume picker, tree folds/labels/edit-resubmit, clone/fork/import/export/compact. Share and legacy `/import`/`/atomic` remain explicit exclusions: no permitted runtime inventory route. |
 | M4 | Partial — model picker parses scoped engine models, thinking/settings controls use existing RPCs, theme loading follows JSON-name first-match precedence, auth/trust/onboarding route through engine-owned flows. Persistent settings/theme/fast-mode mutation remains excluded until protocol v2 adds RPCs. |
 | M5 | Partial — dialogs, input forms, ANSI frames + render loop + overlay geometry + kitty key-release + terminal-mode allowlist (chrome swap blocked on §5.3) |
-| M6 | Partial — Workflows walkthrough plus [subagents walkthrough](docs/subagents-walkthrough.md) are renderer-host E2E-proven through generic prompt/form/session-picker/custom-frame/widget routes. Live workflow/DBOS engine proof, intercom/MCP/web, and per-subagent job controls remain open or excluded by protocol v2. |
+| M6 | Partial — Workflows, subagents, and Intercom walkthroughs are renderer-host E2E-proven through generic prompt/form/session-picker/custom-frame/widget routes. Live workflow/DBOS, subagent job controls, Intercom broker/peer, MCP/web, CI jobs, and packaging remain open or excluded by protocol v2. |
 | M7 | Not started — CI jobs, packaging |
 
 ## Develop
@@ -77,6 +77,10 @@ npm run build --workspace=@bastani/atomic-gui
 ## Phase 4 Subagents boundary
 
 [`docs/subagents-walkthrough.md`](docs/subagents-walkthrough.md) records the generic below-editor widget route, fixture evidence, source inventory, and exact exclusions. The GUI does not add subagent RPCs, per-job controls, or a subagent-specific renderer.
+
+## Phase 4 Intercom boundary
+
+`/intercom` uses the engine-owned command and generic custom frames; a visible durable `intercom_message` renders in the generic transcript. The GUI has no direct Intercom RPC, broker, peer, group, attachment, or tool-action controls. See the source-backed inventory and exact exclusions in [`docs/capability-ledger.md`](docs/capability-ledger.md).
 
 ## Notes
 

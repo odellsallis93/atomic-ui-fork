@@ -59,6 +59,12 @@ const openWorkflowGraph = () => {
   send({ type: "extension_ui_request", id: "workflow-dialog", method: "input", title: "Workflow note", placeholder: "Add a note" });
   send({ type: "extension_ui_request", id: "workflow-widget", method: "setWidget", widgetKey: "workflow.run", widgetLines: ["run-a · running"], widgetPlacement: "belowEditor" });
 };
+const emitIncomingIntercomMessage = () => {
+  const message = { role: "custom", customType: "intercom_message", content: "**📨 From fixture-peer**\n\nReceived through the generic host", display: true };
+  send({ type: "message_start", message });
+  send({ type: "message_end", message });
+};
+let incomingIntercomMessageDelivered = false;
 send({ type: "engine_ready", protocolVersion: 2, pid: process.pid });
 let subagentRenderCount = 0;
 let delayInitialEntries = ${delayInitialEntries};
@@ -73,7 +79,15 @@ process.stdin.on("data", (chunk) => {
     if (!line) continue;
     const request = JSON.parse(line);
     if (request.type === "engine_custom_input") {
-      if (request.componentId === "workflow-graph" && request.data === "\u001b") {
+      if (typeof request.data === "string" && request.data.includes(":3u")) continue;
+      if (request.componentId === "intercom-picker" && request.data === "\r") {
+        send({ type: "engine_custom_close", componentId: "intercom-picker" });
+        send({ type: "engine_custom_open", componentId: "intercom-compose", overlay: true });
+        send({ type: "engine_custom_frame", componentId: "intercom-compose", requestId: 99, lines: ["Compose message to fixture-peer", "Enter sends the message"] });
+      } else if (request.componentId === "intercom-compose" && request.data === "\r") {
+        send({ type: "engine_custom_frame", componentId: "intercom-compose", requestId: 100, lines: ["Message sent to fixture-peer"] });
+        send({ type: "engine_custom_close", componentId: "intercom-compose" });
+      } else if (request.componentId === "workflow-graph" && request.data === "\u001b") {
         send({ type: "engine_custom_control", componentId: "workflow-graph", action: "hide" });
       } else if (request.componentId === "workflow-graph") {
         send({ type: "engine_custom_frame", componentId: "workflow-graph", requestId: 101, lines: ["workflow graph input: " + request.data] });
@@ -100,6 +114,10 @@ process.stdin.on("data", (chunk) => {
 	  if (pendingInitialEntries) {
 	    response(pendingInitialEntries, true, { entries: current().entries, leafId: current().leaf });
 	    pendingInitialEntries = undefined;
+	    if (!incomingIntercomMessageDelivered) {
+	      incomingIntercomMessageDelivered = true;
+	      setTimeout(emitIncomingIntercomMessage, 0);
+	    }
 	  }
       if (!complete) setTimeout(() => send({ type: "engine_custom_invalidate", componentId: request.componentId }), 300);
       continue;
@@ -109,13 +127,19 @@ process.stdin.on("data", (chunk) => {
     if (request.type === "get_state") response(request, true, { sessionFile: current().file, sessionName: current().name, model: { provider: "fixture", id: "model" } });
     else if (request.type === "get_entries") {
       if (delayInitialEntries) { delayInitialEntries = false; pendingInitialEntries = request; }
-      else response(request, true, { entries: current().entries, leafId: current().leaf });
+      else {
+        response(request, true, { entries: current().entries, leafId: current().leaf });
+        if (!incomingIntercomMessageDelivered) {
+          incomingIntercomMessageDelivered = true;
+          setTimeout(emitIncomingIntercomMessage, 0);
+        }
+      }
     }
     else if (request.type === "get_tree") response(request, true, { tree: tree(), leafId: current().leaf });
     else if (request.type === "get_fork_messages") response(request, true, { messages: [{ entryId: "root", text: "fixture prompt" }] });
     else if (request.type === "list_sessions") response(request, true, { sessions: Object.entries(sessions).map(([id, session], index) => ({ path: session.file, id, cwd: "/tmp", name: session.name, modified: 10 + index, created: index, messageCount: session.entries.length, firstMessage: session.entries[0].message.content })) });
-    else if (request.type === "get_commands") response(request, true, { commands: [{ name: "workflow", description: "Workflow runtime command" }] });
-    else if (request.type === "get_shortcuts") response(request, true, { shortcuts: [{ key: "F2", description: "Open workflow graph" }] });
+    else if (request.type === "get_commands") response(request, true, { commands: [{ name: "workflow", description: "Workflow runtime command" }, { name: "intercom", source: "extension", description: "Open session intercom overlay" }] });
+    else if (request.type === "get_shortcuts") response(request, true, { shortcuts: [{ key: "F2", description: "Open workflow graph" }, { key: "alt+m", description: "Open session intercom" }] });
     else if (request.type === "get_available_models") response(request, true, { models: [] });
     else if (request.type === "get_session_stats") response(request, true, { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
     else if (request.type === "pause_queued_messages") response(request, true);
@@ -143,6 +167,10 @@ process.stdin.on("data", (chunk) => {
         response(request, true);
       } else if (request.message.startsWith("/workflow")) {
         response(request, false, undefined, "unsupported workflow prompt");
+      } else if (request.message === "/intercom") {
+        send({ type: "engine_custom_open", componentId: "intercom-picker", overlay: true });
+        send({ type: "engine_custom_frame", componentId: "intercom-picker", requestId: 98, lines: ["Select an intercom session: fixture-peer", "Enter opens compose"] });
+        response(request, true);
       } else if (request.message === "open focused frame") {
         send({ type: "engine_custom_open", componentId: "focus-frame", overlay: true, handlesCtrlC: true });
         send({ type: "engine_custom_frame", componentId: "focus-frame", requestId: 1, lines: ["focused frame"] });
@@ -164,7 +192,14 @@ process.stdin.on("data", (chunk) => {
         response(request, true);
       }
     }
-    else if (request.type === "invoke_shortcut" && request.key.toLowerCase() === "f2") { openWorkflowGraph(); response(request, true); }
+    else if (request.type === "invoke_shortcut") {
+      if (request.key.toLowerCase() === "f2") { openWorkflowGraph(); response(request, true); }
+      else if (request.key.toLowerCase() === "alt+m") {
+        send({ type: "engine_custom_open", componentId: "intercom-picker", overlay: true });
+        send({ type: "engine_custom_frame", componentId: "intercom-picker", requestId: 98, lines: ["Select an intercom session: fixture-peer", "Enter opens compose"] });
+        response(request, true);
+      } else response(request, false, undefined, "unsupported fixture shortcut: " + request.key);
+    }
     else if (request.type === "new_session") response(request, true, { cancelled: true });
     else if (request.type === "clone") response(request, true, { cancelled: true });
     else if (request.type === "switch_session") response(request, true, { cancelled: true });
@@ -409,4 +444,36 @@ test("Electron fixture E2E: workflow routes stay on generic prompts and frames",
 	await page.getByText("attach run-a stage-1").waitFor();
 	await page.keyboard.press("Enter");
 	await page.getByText(/stage attached/).waitFor();
+}, 30_000);
+
+test("Electron fixture E2E: Intercom compose frames and independent live receive card use generic contracts", async () => {
+	const page = await launchFixture();
+	await editor(page).click();
+	await page.keyboard.type("/intercom");
+	await page.getByRole("button", { name: "Send" }).click();
+	await page
+		.getByRole("dialog", { name: "Extension UI" })
+		.getByText("Select an intercom session: fixture-peer")
+		.waitFor();
+	await page.keyboard.press("Enter");
+	await page.getByRole("dialog", { name: "Extension UI" }).getByText("Compose message to fixture-peer").waitFor();
+	await page.keyboard.type("hello peer");
+	await page.keyboard.press("Enter");
+	await page.getByRole("dialog", { name: "Extension UI" }).waitFor({ state: "detached" });
+
+	const incomingCard = page.getByText("intercom_message", { exact: true });
+	await incomingCard.waitFor();
+	assert.equal(await incomingCard.count(), 1);
+	await page.getByText("**📨 From fixture-peer**").waitFor();
+	await page.getByText("Received through the generic host").waitFor();
+}, 30_000);
+
+test("Electron fixture E2E: Intercom alt+m opens the generic picker from the focused composer", async () => {
+	const page = await launchFixture();
+	await editor(page).click();
+	await page.keyboard.press("Alt+M");
+	await page
+		.getByRole("dialog", { name: "Extension UI" })
+		.getByText("Select an intercom session: fixture-peer")
+		.waitFor();
 }, 30_000);

@@ -3,7 +3,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FileMentionItem, PromptImage, SlashCommandInfo } from "../../../shared/ipc";
+import type { ExtensionShortcutInfo, FileMentionItem, PromptImage, SlashCommandInfo } from "../../../shared/ipc";
 import { canSubmit, filterImageFiles, isFileDrag } from "../helpers/attachments";
 import {
 	actionForKey,
@@ -32,6 +32,37 @@ function parseCompletionQuery(text: string): CompletionQuery {
 	if (path) return { kind: "path", query: path[0].trim() };
 	return { kind: null, query: "" };
 }
+
+function shortcutKeyId(event: KeyboardEvent): string | undefined {
+	if (event.key === "Control" || event.key === "Alt" || event.key === "Shift" || event.key === "Meta")
+		return undefined;
+	const specialKeys: Record<string, string> = { Enter: "enter", Escape: "escape", Tab: "tab", " ": "space" };
+	const base = specialKeys[event.key] ?? event.key.toLowerCase();
+	const modifiers = [
+		event.ctrlKey ? "ctrl" : undefined,
+		event.shiftKey ? "shift" : undefined,
+		event.altKey ? "alt" : undefined,
+		event.metaKey ? "super" : undefined,
+	].filter((modifier): modifier is string => modifier !== undefined);
+	return [...modifiers, base].join("+");
+}
+
+function normalizedShortcutKey(key: string): string {
+	const parts = key.toLowerCase().split("+");
+	const modifiers = new Set<string>(
+		parts.filter((part) => part === "ctrl" || part === "shift" || part === "alt" || part === "super"),
+	);
+	const base = parts.filter((part) => !modifiers.has(part)).join("+");
+	return [
+		modifiers.has("ctrl") ? "ctrl" : undefined,
+		modifiers.has("shift") ? "shift" : undefined,
+		modifiers.has("alt") ? "alt" : undefined,
+		modifiers.has("super") ? "super" : undefined,
+		base,
+	]
+		.filter((part): part is string => part !== undefined)
+		.join("+");
+}
 export function Composer(props: {
 	value: string;
 	disabled: boolean;
@@ -41,6 +72,7 @@ export function Composer(props: {
 	widgets: WidgetItem[];
 	images: PromptImage[];
 	keybindings: KeybindingConfig;
+	extensionShortcuts: ExtensionShortcutInfo[];
 	focusRequest?: number;
 	onChange: (value: string) => void;
 	onSubmit: (behavior?: "steer" | "followUp", message?: string) => void;
@@ -53,6 +85,7 @@ export function Composer(props: {
 	onThinkingCycle: () => void;
 	onThinkingToggle: () => void;
 	onToolsExpand: () => void;
+	onExtensionShortcut: (key: string) => void;
 	onHistoryUp: () => void;
 	onHistoryDown: () => void;
 	onSearchFiles: (query: string) => Promise<FileMentionItem[]>;
@@ -249,6 +282,17 @@ export function Composer(props: {
 			if (action === "app.tools.expand") {
 				event.preventDefault();
 				current.onToolsExpand();
+				return;
+			}
+			const shortcutKey = shortcutKeyId(event);
+			const extensionShortcut = shortcutKey
+				? current.extensionShortcuts.find(
+						(candidate) => normalizedShortcutKey(candidate.key) === normalizedShortcutKey(shortcutKey),
+					)
+				: undefined;
+			if (extensionShortcut) {
+				event.preventDefault();
+				current.onExtensionShortcut(extensionShortcut.key);
 				return;
 			}
 			if (!items.length) return;
