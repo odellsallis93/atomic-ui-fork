@@ -54,6 +54,7 @@ const appendPrompt = (text) => {
   session.leaf = assistantId;
 };
 send({ type: "engine_ready", protocolVersion: 2, pid: process.pid });
+let subagentRenderCount = 0;
 let input = "";
 process.stdin.on("data", (chunk) => {
   input += chunk;
@@ -69,6 +70,13 @@ process.stdin.on("data", (chunk) => {
     }
     if (request.type === "extension_ui_response") {
       send({ type: "engine_custom_frame", componentId: "focus-frame", requestId: 100, lines: ["dialog response"] });
+      continue;
+    }
+    if (request.type === "engine_custom_render" && request.componentId === "subagent-widget-frame") {
+      subagentRenderCount += 1;
+      const complete = subagentRenderCount > 1;
+      send({ type: "engine_custom_frame", componentId: request.componentId, requestId: request.requestId, lines: complete ? ["○ Async agents · background", "└─ ✓ codebase-analyzer · complete", "   ⎿  inspected protocol"] : ["● Async agents · background", "└─ ◌ codebase-analyzer · running", "   ⎿  inspecting protocol"] });
+      if (!complete) setTimeout(() => send({ type: "engine_custom_invalidate", componentId: request.componentId }), 300);
       continue;
     }
     if (!request.id || typeof request.type !== "string") continue;
@@ -94,6 +102,9 @@ process.stdin.on("data", (chunk) => {
         response(request, true);
       } else if (request.message === "open input dialog") {
         send({ type: "extension_ui_request", id: "fixture-dialog", method: "input", title: "Fixture input", placeholder: "Type here", timeout: 1000 });
+        response(request, true);
+      } else if (request.message === "start background subagent") {
+        send({ type: "engine_custom_open", componentId: "subagent-widget-frame", overlay: false, widgetKey: "subagents.async", widgetPlacement: "belowEditor" });
         response(request, true);
       } else {
         send({ type: "agent_start" });
@@ -169,6 +180,36 @@ afterEach(async () => {
 	app = undefined;
 	for (const path of tempPaths.splice(0)) rmSync(path, { recursive: true, force: true });
 });
+
+test("Electron fixture E2E: generic background-subagent widget shows runtime status updates", async () => {
+	const page = await launchFixture();
+	await editor(page).click();
+	await page.keyboard.type("start background subagent");
+	await page.getByRole("button", { name: "Send" }).click();
+
+	const widget = page.locator(".widget-block");
+	await widget.getByText("Async agents · background").waitFor();
+	await widget.getByText("codebase-analyzer · running").waitFor();
+	await widget.getByText("inspecting protocol").waitFor();
+	await widget.getByText("codebase-analyzer · complete").waitFor();
+	await widget.getByText("inspected protocol").waitFor();
+	assert.equal(await page.locator(".widget-block").count(), 1);
+}, 30_000);
+
+test("Electron fixture E2E: session switch removes a stale custom subagent widget without engine cleanup", async () => {
+	const page = await launchFixture();
+	await editor(page).click();
+	await page.keyboard.type("start background subagent");
+	await page.getByRole("button", { name: "Send" }).click();
+	await page.locator(".widget-block").getByText("codebase-analyzer · running").waitFor();
+
+	await page.getByRole("button", { name: "Sessions" }).click();
+	const dialog = page.getByRole("dialog", { name: "Resume session" });
+	await dialog.locator(".session-disposition select").selectOption("root");
+	await dialog.getByRole("button", { name: "Fork", exact: true }).click();
+	await page.getByText("fork durable prompt").waitFor();
+	await page.locator(".widget-block").waitFor({ state: "detached" });
+}, 30_000);
 
 test("Electron fixture E2E: queue pause, resume, and dequeue render protocol-v2 queues", async () => {
 	const page = await launchFixture();

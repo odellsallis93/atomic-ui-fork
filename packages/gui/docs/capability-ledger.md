@@ -19,7 +19,7 @@ Parity tracker for `@bastani/atomic-gui`. **Do not claim parity from fake-engine
 | `test/engine-client.test.ts` | fake | JSONL handshake, RPC response shape, image payload echo | Real CLI bootstrap, provider delivery, session JSONL durability |
 | Most `test/*.test.ts` store/helpers | unit | Renderer/store pure behavior | Engine semantics, IPC round-trip, Electron chrome |
 | `test/real-engine-smoke.test.ts` | real-engine | Start/stream/abort/restart, version-mismatch clarity, session leaf alignment after switch | Full LLM prompt quality, Electron UI, OAuth, packaging |
-| `test/electron-phase2.e2e.test.ts` | fixture E2E | Electron renderer-host queue/session/tree plus Phase 3 focused-frame/dialog keyboard routing and focus recovery | Atomic CLI/provider semantics; this fixture is not a real-engine extension claim |
+| `test/electron-phase2.e2e.test.ts` | fixture E2E | Electron renderer-host queue/session/tree, Phase 3 focused-frame/dialog routing, and Phase 4 custom-widget render/status path | Atomic CLI/provider semantics; this fixture is not a real-engine extension claim |
 
 ## Interactive capabilities
 
@@ -42,7 +42,8 @@ Parity tracker for `@bastani/atomic-gui`. **Do not claim parity from fake-engine
 | Themes | Settings panel | `theme-loader.test.ts` (JSON names, first-match builtin→user→project, `.pi` project dir, string+numeric colors, next-read reload) | unit | partial — host can inspect builtin/user/project theme JSON that matches engine directory order and de-dupe. Persistent theme mutation and configured theme paths require an engine settings/resource RPC, which v2 does not expose. |
 | Auth / trust / first run | Onboarding, auth + trust dialogs | `project-trust.test.ts`; `phase3-settings-ui.test.tsx`; Electron fixture host boundary | unit | partial — first-run panel routes users to trust, provider auth, and model selection without displaying saved credentials. Credentials stay in engine auth flows; no GUI reads, logs, writes, or returns them. |
 | Extension UI host (dialogs/forms/frames) | Generic modals + `ChromeFrame` | `session-store.test.ts`, `ansi` / overlay / key tests, fixture E2E | unit + fixture E2E | partial — select/confirm/input/editor, host forms/picker, working/status/widgets, chrome and frames route generically. `onTerminalInput`, `getEditorText`, autocomplete provider, and RPC theme APIs are engine-declared synchronous/protocol exclusions. |
-| Bundled extensions (workflows/subagents/intercom/MCP/web) | Generic frames only | — | — | open (Phase 4 / M6) |
+| Bundled extensions — subagents | Generic below-editor custom widget; existing engine **Abort** remains global | `docs/subagents-walkthrough.md`; `electron-phase2.e2e.test.ts` (custom open → render → frame status updates and session-switch widget cleanup); source inventory in `packages/subagents/src/tui/render-widget.ts`, `packages/coding-agent/src/modes/rpc/rpc-extension-ui.ts`, and `modes/interactive-engine/engine-custom-ui.ts` | fixture E2E + docs | partial — background component-factory status updates render through generic `engine_custom_*` frames; widgets clear on session switch without awaiting engine cleanup. V2 exposes no subagent-job list/status/interrupt/resume RPC, so the GUI has no per-job controls. Workflows, intercom, MCP, and web remain open. |
+| Bundled extensions — workflows/intercom/MCP/web | Generic frames only | — | — | open (Phase 4 / M6) |
 | CLI machine interfaces (`--print`, `--mode json/rpc`, pipes) | **Excluded** (§3.3) | plan exclusions | docs | excluded |
 | Package admin / credential print / multi-window tabs | **Excluded** or deferred (G11) | plan exclusions | docs | excluded |
 ## Phase 3 exit review (2026-08-11)

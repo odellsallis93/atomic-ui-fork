@@ -23,7 +23,8 @@ Fake-engine unit tests prove host structure only; parity claims require
 | M3 | Mostly done — resume picker, tree folds/labels/edit-resubmit, clone/fork/import/export/compact. Share and legacy `/import`/`/atomic` remain explicit exclusions: no permitted runtime inventory route. |
 | M4 | Partial — model picker parses scoped engine models, thinking/settings controls use existing RPCs, theme loading follows JSON-name first-match precedence, auth/trust/onboarding route through engine-owned flows. Persistent settings/theme/fast-mode mutation remains excluded until protocol v2 adds RPCs. |
 | M5 | Partial — dialogs, input forms, ANSI frames + render loop + overlay geometry + kitty key-release + terminal-mode allowlist (chrome swap blocked on §5.3) |
-| M6–M7 | Not started — bundled-extension walkthroughs, CI jobs, packaging |
+| M6 | Partial — [subagents walkthrough](docs/subagents-walkthrough.md): generic below-editor background status updates are renderer-host E2E-proven. Per-job status/interrupt/resume controls remain excluded because protocol v2 has no job-control RPC. Workflows, intercom, MCP, and web remain open. |
+| M7 | Not started — CI jobs, packaging |
 
 ## Develop
 
@@ -47,7 +48,11 @@ The host resolves the engine CLI as:
 
 ## Test / typecheck
 
+`real-engine-smoke.test.ts` loads bundled extensions. After an
+`npm ci --ignore-scripts`, build the local native binding before GUI checks:
+
 ```sh
+npm run build --workspace=@bastani/atomic-natives
 npm run test --workspace=@bastani/atomic-gui
 npm run typecheck --workspace=@bastani/atomic-gui
 npm run build --workspace=@bastani/atomic-gui

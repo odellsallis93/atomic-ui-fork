@@ -266,8 +266,8 @@ test("message lifecycle keeps streamed custom, skill, and system roles out of th
 	);
 });
 
-test("session switch hydration replaces prior transcript and tracks active leaf", () => {
-	const { hydrateTranscript, resetTranscript, setTree } = useSessionStore.getState();
+test("session switch hydration replaces prior transcript and clears session-scoped widgets", () => {
+	const { hydrateTranscript, resetTranscript, setTree, ingestExtensionUi } = useSessionStore.getState();
 
 	hydrateTranscript(
 		[
@@ -295,12 +295,25 @@ test("session switch hydration replaces prior transcript and tracks active leaf"
 	);
 	assert.equal(useSessionStore.getState().transcriptLeafId, "old-assistant");
 	assert.equal(useSessionStore.getState().treeLeafId, "old-assistant");
+	ingestExtensionUi({
+		id: "session-A-widget",
+		method: "setWidget",
+		widgetKey: "subagents.async",
+		widgetLines: ["codebase-analyzer · running"],
+		widgetPlacement: "belowEditor",
+	});
+	assert.equal(useSessionStore.getState().widgets.length, 1);
 
 	// App switch path: reset then hydrate the next session's get_entries payload.
 	resetTranscript();
 	assert.equal(useSessionStore.getState().entries.length, 0);
 	assert.equal(useSessionStore.getState().transcriptLeafId, null);
 	assert.equal(useSessionStore.getState().treeLeafId, null);
+	assert.equal(
+		useSessionStore.getState().widgets.length,
+		0,
+		"prior session widgets must clear before async hydration",
+	);
 
 	hydrateTranscript(
 		[
@@ -339,6 +352,7 @@ test("session switch hydration replaces prior transcript and tracks active leaf"
 	assert.equal(state.transcriptLeafId, "new-assistant");
 	assert.equal(state.treeLeafId, "new-assistant");
 	assert.equal(state.transcriptLeafId, state.treeLeafId, "hydrated leaf must match active tree leaf");
+	assert.equal(state.widgets.length, 0, "hydration must not retain a prior session widget");
 });
 
 test("engine keybinding updates expose extension shortcuts", () => {
