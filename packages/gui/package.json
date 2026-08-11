@@ -11,7 +11,8 @@
 		"preview": "electron-vite preview",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"test": "npm run build && vitest --run --config vitest.config.ts",
-		"pack": "npm run build && electron-builder --dir",
+		"pack": "npm run build && electron-builder --dir && node scripts/packaged-smoke.mjs",
+		"pack:directory": "npm run pack",
 		"dist": "npm run build && electron-builder"
 	},
 	"dependencies": {

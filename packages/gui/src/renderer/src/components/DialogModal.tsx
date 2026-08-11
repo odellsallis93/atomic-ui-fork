@@ -319,6 +319,7 @@ export function DialogModal(props: {
 					) : (
 						<input
 							className="modal-input"
+							type={request.method === "oauth_prompt" || request.method === "oauth_manual_code" ? "password" : "text"}
 							placeholder={placeholder}
 							value={value}
 							onChange={(e) => setValue(e.target.value)}

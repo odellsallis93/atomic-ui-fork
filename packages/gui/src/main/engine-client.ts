@@ -44,7 +44,6 @@ export interface EngineClientOptions {
 	cwd?: string;
 	sessionPath?: string;
 	cli?: ResolvedAtomicCli;
-	apiKey?: string;
 	extraArgs?: string[];
 	onStatus?: (status: EngineStatus) => void;
 	onEvent?: (event: GuiRpcEvent) => void;
@@ -86,7 +85,6 @@ export class EngineClient {
 		this.bootstrap = writeInteractiveEngineBootstrap({
 			hostPid: process.pid,
 			guardFile: this.guardianFile,
-			...(this.options.apiKey ? { apiKey: this.options.apiKey } : {}),
 		});
 
 		const sessionArgs = this.options.sessionPath ? ["--session", this.options.sessionPath] : ["--no-session"];

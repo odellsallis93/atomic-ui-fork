@@ -40,7 +40,10 @@ export function InputFormModal(props: {
 								id={`field-${field.name}`}
 								className="modal-input"
 								type={
-									field.type === "string" && /key|token|secret|password/i.test(field.name)
+									field.type === "string" &&
+									/(?:api[-_]?key|access[-_]?token|auth(?:entication|orization)?|bearer|client[-_]?secret|credential|passphrase|password|private[-_]?key|refresh[-_]?token|secret|token|verification[-_]?code|user[-_]?code|key|code)/i.test(
+										field.name,
+									)
 										? "password"
 										: "text"
 								}

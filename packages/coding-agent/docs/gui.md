@@ -184,8 +184,7 @@ through the active engine session.
 
 - `contextIsolation: true`, `nodeIntegration: false`, sandboxed renderer
 - Preload exposes a narrow typed `window.atomicGui` API over `contextBridge`
-- Engine credentials (when supplied) travel through the interactive-engine
-  bootstrap file, never argv/env of descendant processes
+- Provider credentials stay in the engine-owned auth flow; the GUI does not read, persist, or pass API keys through its bootstrap path. The bootstrap file carries only private engine lifecycle coordination (host PID and guard file).
 - ANSI frames are parsed into styled React text spans; no raw frame HTML is inserted
 
 ## Relation to the TUI
