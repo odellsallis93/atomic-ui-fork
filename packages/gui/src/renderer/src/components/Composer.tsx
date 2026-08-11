@@ -4,6 +4,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FileMentionItem, PromptImage, SlashCommandInfo } from "../../../shared/ipc";
+import { canSubmit, filterImageFiles, isFileDrag } from "../helpers/attachments";
 import type { QueueChip, WidgetItem } from "../store/session-store";
 import { Autocomplete, type AutocompleteItem } from "./Autocomplete";
 import { Widgets } from "./Widgets";
@@ -54,6 +55,7 @@ export function Composer(props: {
 	const [argumentItems, setArgumentItems] = useState<Array<{ value: string; label: string; description?: string }>>(
 		[],
 	);
+	const [draggingImages, setDraggingImages] = useState(false);
 
 	const bashMode = props.value.startsWith("!") || props.value.startsWith("!!");
 	const completion = parseCompletionQuery(props.value);
@@ -261,7 +263,22 @@ export function Composer(props: {
 				</div>
 			) : null}
 			<div className="composer">
-				<div className="composer-main">
+				<div
+					className={`composer-main${draggingImages ? " composer-drop-target" : ""}`}
+					onDragEnter={(event) => {
+						if (isFileDrag(event.dataTransfer.types)) setDraggingImages(true);
+					}}
+					onDragOver={(event) => {
+						if (isFileDrag(event.dataTransfer.types)) event.preventDefault();
+					}}
+					onDragLeave={() => setDraggingImages(false)}
+					onDrop={(event) => {
+						event.preventDefault();
+						setDraggingImages(false);
+						const files = filterImageFiles(event.dataTransfer.files);
+						if (files.length > 0) props.onPasteImages(files);
+					}}
+				>
 					{props.images.length > 0 ? (
 						<div className="attachment-row" aria-label="Attached images">
 							{props.images.map((image, index) => (
@@ -283,9 +300,7 @@ export function Composer(props: {
 						className={`composer-editor${bashMode ? " bash-mode" : ""}`}
 						aria-disabled={props.disabled}
 						onPaste={(event) => {
-							const files = Array.from(event.clipboardData.files).filter((file) =>
-								file.type.startsWith("image/"),
-							);
+							const files = filterImageFiles(event.clipboardData.files);
 							if (files.length === 0) return;
 							event.preventDefault();
 							props.onPasteImages(files);
@@ -296,7 +311,7 @@ export function Composer(props: {
 					<button
 						type="button"
 						className="btn btn-primary"
-						disabled={props.disabled || props.value.trim().length === 0}
+						disabled={!canSubmit(props.value, props.images.length, props.disabled)}
 						onClick={() => props.onSubmit(props.working ? "steer" : undefined)}
 					>
 						{props.working ? "Steer" : "Send"}

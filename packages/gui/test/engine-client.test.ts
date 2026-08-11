@@ -99,6 +99,9 @@ rl.on("line", (line) => {
     return;
   }
   if (msg.type === "prompt") {
+		if (Array.isArray(msg.images) && msg.images.length > 0) {
+			process.stdout.write(JSON.stringify({ type: "prompt_image_received", image: msg.images[0] }) + "\\n");
+		}
     process.stdout.write(JSON.stringify({
       type: "message_start",
       message: { id: "a1", role: "assistant", content: [] },
@@ -167,9 +170,19 @@ rl.on("line", (line) => {
 		});
 		assert.deepEqual(await client.invokeShortcut("ctrl+k"), { ok: true, data: undefined });
 
-		const result = await client.prompt({ message: "ping" });
+		const result = await client.prompt({
+			message: "ping",
+			images: [{ type: "image", data: "cGl4ZWw=", mimeType: "image/png" }],
+		});
 		assert.equal(result.ok, true);
 		assert.ok(events.some((event) => event.type === "message_update"));
+		assert.deepEqual(
+			events.find((event) => event.type === "prompt_image_received"),
+			{
+				type: "prompt_image_received",
+				image: { type: "image", data: "cGl4ZWw=", mimeType: "image/png" },
+			},
+		);
 
 		await client.stop();
 	},

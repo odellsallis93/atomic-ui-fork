@@ -26,8 +26,9 @@ export interface PromptRequest {
 	images?: PromptImage[];
 }
 
-/** Serializable image payload accepted by Atomic's RPC prompt command. */
+/** Serializable image payload accepted by Atomic's RPC prompt command (engine `ImageContent`). */
 export interface PromptImage {
+	type: "image";
 	data: string;
 	mimeType: string;
 }

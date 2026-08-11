@@ -21,16 +21,20 @@ export function ChromeFrame(props: {
 			aria-label={`Extension ${props.slot}`}
 			tabIndex={props.onInput ? 0 : undefined}
 			onKeyDown={(event) => {
-				const data = props.onInput ? encodeTerminalKey(event) : undefined;
+				const onInput = props.onInput;
+				if (!onInput) return;
+				const data = encodeTerminalKey(event);
 				if (!data) return;
 				event.preventDefault();
-				props.onInput(data);
+				onInput(data);
 			}}
 			onKeyUp={(event) => {
-				const data = props.onInput ? encodeTerminalKeyRelease(event) : undefined;
+				const onInput = props.onInput;
+				if (!onInput) return;
+				const data = encodeTerminalKeyRelease(event);
 				if (!data) return;
 				event.preventDefault();
-				props.onInput(data);
+				onInput(data);
 			}}
 		>
 			{props.frame.lines.map((line) => (

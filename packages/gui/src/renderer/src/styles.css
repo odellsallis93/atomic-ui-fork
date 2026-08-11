@@ -262,6 +262,12 @@ input {
 	color: var(--text);
 }
 
+.composer-main.composer-drop-target {
+	outline: 2px dashed var(--accent);
+	outline-offset: 3px;
+	border-radius: 0.4rem;
+}
+
 .compaction {
 	color: var(--overlay1);
 	font-style: italic;

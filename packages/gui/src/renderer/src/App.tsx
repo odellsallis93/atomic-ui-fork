@@ -17,6 +17,7 @@ import { ToolRenderHost } from "./components/ToolRenderHost";
 import { Transcript } from "./components/Transcript";
 import { TreeNavigator } from "./components/TreeNavigator";
 import { TrustDialog } from "./components/TrustDialog";
+import { planSubmit, readFileAsDataUrl, readImageFiles } from "./helpers/attachments";
 import { formatUsage, useSessionStore } from "./store/session-store";
 
 function hasGuiApi(): boolean {
@@ -149,6 +150,14 @@ export function App() {
 	const setExtensionShortcuts = useSessionStore((s) => s.setExtensionShortcuts);
 	const pendingSessionPath = useRef<string | undefined>(undefined);
 	const [attachedImages, setAttachedImages] = useState<PromptImage[]>([]);
+	const attachedImagesRef = useRef<PromptImage[]>(attachedImages);
+	const pendingImageReads = useRef<Set<Promise<void>>>(new Set());
+	/** Mirrors attachment state into a ref so async submit paths never read a stale snapshot. */
+	const setAttached = useCallback((next: PromptImage[] | ((current: PromptImage[]) => PromptImage[])): void => {
+		const value = typeof next === "function" ? next(attachedImagesRef.current) : next;
+		attachedImagesRef.current = value;
+		setAttachedImages(value);
+	}, []);
 
 	const refreshMetadata = useCallback(async (): Promise<void> => {
 		if (!hasGuiApi()) return;
@@ -357,47 +366,54 @@ export function App() {
 	};
 
 	const submit = async (behavior?: "steer" | "followUp"): Promise<void> => {
-		const message = composerText.trim();
-		if ((!message && attachedImages.length === 0) || !hasGuiApi()) return;
-		pushPromptHistory(message);
+		if (!hasGuiApi()) return;
+		// Wait out in-flight image reads so an early submit cannot drop or leak attachments.
+		while (pendingImageReads.current.size > 0) {
+			await Promise.all([...pendingImageReads.current]);
+		}
+		const plan = planSubmit(composerText, attachedImagesRef.current);
+		if (plan.kind === "none") return;
+		pushPromptHistory(plan.message);
 		setComposerText("");
-		const images = attachedImages;
-		setAttachedImages([]);
 
-		if (message.startsWith("!!")) {
-			const result = await window.atomicGui.bash(message.slice(2).trim(), true);
-			if (!result.ok) setErrorBanner(result.error ?? "Bash failed");
-			return;
-		}
-		if (message.startsWith("!")) {
-			const result = await window.atomicGui.bash(message.slice(1).trim(), false);
+		if (plan.kind === "bash") {
+			setAttached(plan.keepImages);
+			if (plan.warning) setErrorBanner(plan.warning);
+			const result = await window.atomicGui.bash(plan.command, plan.excludeFromContext);
 			if (!result.ok) setErrorBanner(result.error ?? "Bash failed");
 			return;
 		}
 
+		setAttached([]);
 		const result = await window.atomicGui.prompt({
-			message,
+			message: plan.message,
 			...(behavior ? { streamingBehavior: behavior } : {}),
-			...(images.length > 0 ? { images } : {}),
+			...(plan.images.length > 0 ? { images: plan.images } : {}),
 		});
 		if (!result.ok) {
-			setAttachedImages(images);
+			setAttached(plan.images);
 			setErrorBanner(result.error ?? "Prompt failed");
 		}
 	};
 
-	const addPastedImages = useCallback((files: File[]): void => {
-		for (const file of files) {
-			const reader = new FileReader();
-			reader.onload = () => {
-				if (typeof reader.result !== "string") return;
-				const comma = reader.result.indexOf(",");
-				if (comma === -1) return;
-				setAttachedImages((images) => [...images, { data: reader.result.slice(comma + 1), mimeType: file.type }]);
-			};
-			reader.readAsDataURL(file);
-		}
-	}, []);
+	const addPastedImages = useCallback(
+		(files: File[]): void => {
+			if (files.length === 0) return;
+			const tracked: Promise<void> = readImageFiles(files, {
+				readDataUrl: readFileAsDataUrl,
+				onError: setErrorBanner,
+			})
+				.then((images) => {
+					if (images.length > 0) setAttached((current) => [...current, ...images]);
+				})
+				.catch(() => undefined)
+				.finally(() => {
+					pendingImageReads.current.delete(tracked);
+				});
+			pendingImageReads.current.add(tracked);
+		},
+		[setAttached, setErrorBanner],
+	);
 
 	const abort = async (): Promise<void> => {
 		if (!hasGuiApi()) return;
@@ -536,7 +552,7 @@ export function App() {
 					onSearchCommandCompletions={searchCommandCompletions}
 					onPasteImages={addPastedImages}
 					onRemoveImage={(index) =>
-						setAttachedImages((images) => images.filter((_image, itemIndex) => itemIndex !== index))
+						setAttached((images) => images.filter((_image, itemIndex) => itemIndex !== index))
 					}
 				/>
 			)}

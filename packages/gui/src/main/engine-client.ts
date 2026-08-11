@@ -14,6 +14,7 @@ import type {
 	OAuthProviderInfo,
 	PromptRequest,
 	RpcResult,
+	SessionListItem,
 	SessionStatsSummary,
 	SessionTreeNodeInfo,
 	SlashCommandInfo,
@@ -472,7 +473,7 @@ export class EngineClient {
 		};
 	}
 
-	async listSessions(options: { cwd?: string; all?: boolean }): Promise<RpcResult<SessionListItem[]>> {
+	async listSessions(options: { cwd?: string; all?: boolean } = {}): Promise<RpcResult<SessionListItem[]>> {
 		const result = await this.command<{ sessions?: unknown }>({ type: "list_sessions", ...options });
 		if (!result.ok) return { ok: false, error: result.error };
 		const sessions = Array.isArray(result.data?.sessions)
