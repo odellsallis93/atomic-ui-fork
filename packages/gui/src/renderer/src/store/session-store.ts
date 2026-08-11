@@ -118,7 +118,10 @@ export interface SessionState {
 	models: ModelInfo[];
 	sessions: SessionListItem[];
 	treeNodes: SessionTreeNodeInfo[];
+	/** Active leaf from the last tree fetch (engine-owned). */
 	treeLeafId: string | null;
+	/** Active leaf from the last transcript hydration (`get_entries`). */
+	transcriptLeafId: string | null;
 	themes: ThemeSummary[];
 	themeName: string;
 	frames: CustomFrame[];
@@ -144,7 +147,7 @@ export interface SessionState {
 	dismissToast: (id: string) => void;
 	dismissFrame: (componentId: string) => void;
 	resetTranscript: () => void;
-	hydrateTranscript: (entries: unknown[]) => void;
+	hydrateTranscript: (entries: unknown[], leafId?: string | null) => void;
 	setErrorBanner: (message: string | undefined) => void;
 	toggleEntryExpanded: (id: string) => void;
 	setCommands: (commands: SlashCommandInfo[]) => void;
@@ -327,6 +330,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	sessions: [],
 	treeNodes: [],
 	treeLeafId: null,
+	transcriptLeafId: null,
 	themes: [],
 	themeName: "dark",
 	frames: [],
@@ -364,12 +368,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 		set((state) => ({
 			rawLines: [...state.rawLines.slice(-400), line],
 		})),
-	resetTranscript: () => set({ entries: [], queue: [], working: false, frames: [] }),
-	hydrateTranscript: (entries) => {
+	resetTranscript: () =>
+		set({
+			entries: [],
+			queue: [],
+			working: false,
+			frames: [],
+			transcriptLeafId: null,
+			treeLeafId: null,
+			treeNodes: [],
+		}),
+	hydrateTranscript: (entries, leafId) => {
 		const hydrated = entries
 			.map(transcriptEntryFromSessionEntry)
 			.filter((entry): entry is TranscriptEntry => entry !== undefined);
-		set({ entries: hydrated, queue: [], working: false, workingLabel: "thinking" });
+		set({
+			entries: hydrated,
+			queue: [],
+			working: false,
+			workingLabel: "thinking",
+			transcriptLeafId: leafId === undefined ? null : leafId,
+		});
 	},
 	setErrorBanner: (message) => set({ errorBanner: message }),
 	toggleEntryExpanded: (id) =>

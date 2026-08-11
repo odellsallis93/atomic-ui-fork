@@ -185,7 +185,7 @@ export function App() {
 			setErrorBanner(result.error ?? "Failed to load session transcript");
 			return;
 		}
-		hydrateTranscript(result.data.entries);
+		hydrateTranscript(result.data.entries, result.data.leafId);
 	}, [hydrateTranscript, setErrorBanner]);
 
 	useEffect(() => {

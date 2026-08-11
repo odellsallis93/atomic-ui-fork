@@ -25,10 +25,12 @@ beforeEach(() => {
 		widgets: [],
 		toasts: [],
 		commands: [],
+		extensionShortcuts: [],
 		models: [],
 		sessions: [],
 		treeNodes: [],
 		treeLeafId: null,
+		transcriptLeafId: null,
 		themes: [],
 		themeName: "dark",
 		frames: [],
@@ -73,29 +75,32 @@ test("ingestEvent streams assistant text deltas into one entry", () => {
 
 test("hydrateTranscript restores durable messages and session boundaries", () => {
 	const { hydrateTranscript } = useSessionStore.getState();
-	hydrateTranscript([
-		{ type: "session_info", id: "ignore", parentId: null, timestamp: "2026-01-01T00:00:00Z", name: "Demo" },
-		{
-			type: "message",
-			id: "u1",
-			parentId: null,
-			timestamp: "2026-01-01T00:00:01Z",
-			message: { role: "user", content: "Hello" },
-		},
-		{
-			type: "message",
-			id: "a1",
-			parentId: "u1",
-			timestamp: "2026-01-01T00:00:02Z",
-			message: { role: "assistant", content: [{ type: "text", text: "Hi" }] },
-		},
-		{ type: "compaction", id: "c1", parentId: "a1", timestamp: "2026-01-01T00:00:03Z", summary: "Kept tail" },
-		{ type: "branch_summary", id: "b1", parentId: "c1", timestamp: "2026-01-01T00:00:04Z", summary: "Old branch" },
-	]);
+	hydrateTranscript(
+		[
+			{ type: "session_info", id: "ignore", parentId: null, timestamp: "2026-01-01T00:00:00Z", name: "Demo" },
+			{
+				type: "message",
+				id: "u1",
+				parentId: null,
+				timestamp: "2026-01-01T00:00:01Z",
+				message: { role: "user", content: "Hello" },
+			},
+			{
+				type: "message",
+				id: "a1",
+				parentId: "u1",
+				timestamp: "2026-01-01T00:00:02Z",
+				message: { role: "assistant", content: [{ type: "text", text: "Hi" }] },
+			},
+			{ type: "compaction", id: "c1", parentId: "a1", timestamp: "2026-01-01T00:00:03Z", summary: "Kept tail" },
+			{ type: "branch_summary", id: "b1", parentId: "c1", timestamp: "2026-01-01T00:00:04Z", summary: "Old branch" },
+		],
+		"a1",
+	);
 
-	const entries = useSessionStore.getState().entries;
+	const state = useSessionStore.getState();
 	assert.deepEqual(
-		entries.map((entry) => [entry.id, entry.kind, entry.text]),
+		state.entries.map((entry) => [entry.id, entry.kind, entry.text]),
 		[
 			["u1", "user", "Hello"],
 			["a1", "assistant", "Hi"],
@@ -103,6 +108,82 @@ test("hydrateTranscript restores durable messages and session boundaries", () =>
 			["b1", "branchSummary", "Old branch"],
 		],
 	);
+	assert.equal(state.transcriptLeafId, "a1");
+});
+
+test("session switch hydration replaces prior transcript and tracks active leaf", () => {
+	const { hydrateTranscript, resetTranscript, setTree } = useSessionStore.getState();
+
+	hydrateTranscript(
+		[
+			{
+				type: "message",
+				id: "old-user",
+				parentId: null,
+				timestamp: "2026-01-01T00:00:01Z",
+				message: { role: "user", content: "session-A" },
+			},
+			{
+				type: "message",
+				id: "old-assistant",
+				parentId: "old-user",
+				timestamp: "2026-01-01T00:00:02Z",
+				message: { role: "assistant", content: [{ type: "text", text: "from-A" }] },
+			},
+		],
+		"old-assistant",
+	);
+	setTree([{ id: "old-assistant", kind: "message", summary: "from-A", children: [] }], "old-assistant");
+	assert.equal(
+		useSessionStore.getState().entries.some((entry) => entry.text === "session-A"),
+		true,
+	);
+	assert.equal(useSessionStore.getState().transcriptLeafId, "old-assistant");
+	assert.equal(useSessionStore.getState().treeLeafId, "old-assistant");
+
+	// App switch path: reset then hydrate the next session's get_entries payload.
+	resetTranscript();
+	assert.equal(useSessionStore.getState().entries.length, 0);
+	assert.equal(useSessionStore.getState().transcriptLeafId, null);
+	assert.equal(useSessionStore.getState().treeLeafId, null);
+
+	hydrateTranscript(
+		[
+			{
+				type: "message",
+				id: "new-user",
+				parentId: null,
+				timestamp: "2026-01-02T00:00:01Z",
+				message: { role: "user", content: "session-B" },
+			},
+			{
+				type: "message",
+				id: "new-assistant",
+				parentId: "new-user",
+				timestamp: "2026-01-02T00:00:02Z",
+				message: { role: "assistant", content: [{ type: "text", text: "from-B" }] },
+			},
+		],
+		"new-assistant",
+	);
+	setTree([{ id: "new-assistant", kind: "message", summary: "from-B", children: [] }], "new-assistant");
+
+	const state = useSessionStore.getState();
+	assert.deepEqual(
+		state.entries.map((entry) => [entry.id, entry.text]),
+		[
+			["new-user", "session-B"],
+			["new-assistant", "from-B"],
+		],
+	);
+	assert.equal(
+		state.entries.some((entry) => entry.id === "old-user" || entry.text === "session-A" || entry.text === "from-A"),
+		false,
+		"prior session transcript must not leak after switch hydration",
+	);
+	assert.equal(state.transcriptLeafId, "new-assistant");
+	assert.equal(state.treeLeafId, "new-assistant");
+	assert.equal(state.transcriptLeafId, state.treeLeafId, "hydrated leaf must match active tree leaf");
 });
 
 test("engine keybinding updates expose extension shortcuts", () => {

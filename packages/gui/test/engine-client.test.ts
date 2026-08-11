@@ -8,8 +8,11 @@ import { INTERACTIVE_ENGINE_PROTOCOL_VERSION } from "../src/main/jsonl.ts";
 import { ENGINE_CLIENT_SPAWN_TIMEOUT_MS } from "../vitest.config.ts";
 
 /**
- * Structural timeout: spawns a real child process that speaks a minimal
- * interactive-engine handshake over stdio.
+ * Fake-engine boundary (Phase 1.4):
+ * Spawns a minimal child that speaks a synthetic interactive-engine handshake over
+ * stdio. Proves EngineClient framing/RPC shape only — **not** parity with the real
+ * Atomic engine. Real-engine lifecycle evidence: `real-engine-smoke.test.ts`.
+ * Parity claims require real-engine or E2E rows in `docs/capability-ledger.md`.
  */
 test(
 	"EngineClient completes protocol handshake and prompt round-trip against a fake engine",
