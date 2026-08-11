@@ -537,6 +537,7 @@ export function App() {
 
 			<Transcript
 				entries={entries}
+				leafId={treeLeafId}
 				hideThinking={hideThinking}
 				hiddenThinkingLabel={hiddenThinkingLabel}
 				onToggle={toggleEntryExpanded}

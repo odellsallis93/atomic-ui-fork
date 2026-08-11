@@ -1,6 +1,7 @@
-import { useLayoutEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ansiLineToSegments } from "../helpers/ansi";
 import { renderMarkdown } from "../helpers/markdown";
+import { getVirtualWindow, isNearTranscriptEnd } from "../helpers/virtual-window";
 import type { TranscriptEntry } from "../store/session-store";
 
 function MarkdownBody({ source }: { source: string }) {
@@ -133,19 +134,90 @@ function EntryView({
 	);
 }
 
+function MeasuredEntry({
+	entry,
+	top,
+	hideThinking,
+	hiddenThinkingLabel,
+	onToggle,
+	onMeasure,
+}: {
+	entry: TranscriptEntry;
+	top: number;
+	hideThinking: boolean;
+	hiddenThinkingLabel: string;
+	onToggle: (id: string) => void;
+	onMeasure: (id: string, height: number) => void;
+}) {
+	const ref = useRef<HTMLDivElement | null>(null);
+	useLayoutEffect(() => {
+		const node = ref.current;
+		if (!node) return;
+		const measure = () => onMeasure(entry.id, node.getBoundingClientRect().height);
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(node);
+		return () => observer.disconnect();
+	}, [entry.id, onMeasure]);
+	return (
+		<div ref={ref} className="transcript-virtual-row" style={{ transform: `translateY(${top}px)` }}>
+			<EntryView entry={entry} hideThinking={hideThinking} hiddenThinkingLabel={hiddenThinkingLabel} onToggle={onToggle} />
+		</div>
+	);
+}
+
 export function Transcript({
 	entries,
+	leafId,
 	hideThinking,
 	hiddenThinkingLabel,
 	onToggle,
 }: {
 	entries: TranscriptEntry[];
+	leafId: string | null;
 	hideThinking: boolean;
 	hiddenThinkingLabel: string;
 	onToggle: (id: string) => void;
 }) {
+	const scrollerRef = useRef<HTMLElement | null>(null);
+	const heights = useRef(new Map<string, number>());
+	const followRef = useRef(true);
+	const previousLeafId = useRef(leafId);
+	const [scrollTop, setScrollTop] = useState(0);
+	const [viewportHeight, setViewportHeight] = useState(0);
+	const [measurementVersion, setMeasurementVersion] = useState(0);
+	const ids = useMemo(() => entries.map((entry) => entry.id), [entries]);
+	const virtual = useMemo(
+		() => getVirtualWindow(entries.length, scrollTop, viewportHeight, heights.current, ids),
+		[entries.length, ids, measurementVersion, scrollTop, viewportHeight],
+	);
 	const lastEntry = entries.at(-1);
 	const scrollKey = `${entries.length}:${lastEntry?.id ?? ""}:${lastEntry?.text.length ?? 0}:${lastEntry?.streaming ? 1 : 0}`;
+	const onMeasure = useCallback((id: string, height: number) => {
+		if (height <= 0 || heights.current.get(id) === height) return;
+		heights.current.set(id, height);
+		setMeasurementVersion((version) => version + 1);
+	}, []);
+
+	useLayoutEffect(() => {
+		if (previousLeafId.current === leafId) return;
+		previousLeafId.current = leafId;
+		heights.current.clear();
+		followRef.current = true;
+		setScrollTop(0);
+	}, [leafId]);
+	useLayoutEffect(() => {
+		const scroller = scrollerRef.current;
+		if (!scroller) return;
+		const observer = new ResizeObserver(() => setViewportHeight(scroller.clientHeight));
+		setViewportHeight(scroller.clientHeight);
+		observer.observe(scroller);
+		return () => observer.disconnect();
+	}, []);
+	useLayoutEffect(() => {
+		const scroller = scrollerRef.current;
+		if (scroller && followRef.current) scroller.scrollTop = scroller.scrollHeight;
+	}, [scrollKey, virtual.totalHeight]);
 
 	if (entries.length === 0) {
 		return (
@@ -159,22 +231,29 @@ export function Transcript({
 	}
 
 	return (
-		<section className="transcript" aria-label="Transcript">
-			{entries.map((entry) => (
-				<EntryView
-					key={entry.id}
-					entry={entry}
-					hideThinking={hideThinking}
-					hiddenThinkingLabel={hiddenThinkingLabel}
-					onToggle={onToggle}
-				/>
-			))}
-			<div
-				key={scrollKey}
-				ref={(node) => {
-					node?.scrollIntoView({ block: "end" });
-				}}
-			/>
+		<section
+			ref={scrollerRef}
+			className="transcript"
+			aria-label="Transcript"
+			onScroll={(event) => {
+				const node = event.currentTarget;
+				followRef.current = isNearTranscriptEnd(node.scrollTop, node.clientHeight, node.scrollHeight);
+				setScrollTop(node.scrollTop);
+			}}
+		>
+			<div className="transcript-virtualizer" style={{ height: virtual.totalHeight }}>
+				{entries.slice(virtual.start, virtual.end).map((entry, index) => (
+					<MeasuredEntry
+						key={entry.id}
+						entry={entry}
+						top={virtual.offsets[virtual.start + index] ?? 0}
+						hideThinking={hideThinking}
+						hiddenThinkingLabel={hiddenThinkingLabel}
+						onToggle={onToggle}
+						onMeasure={onMeasure}
+					/>
+				))}
+			</div>
 		</section>
 	);
 }
