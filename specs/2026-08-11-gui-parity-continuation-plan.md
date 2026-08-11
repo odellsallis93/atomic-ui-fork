@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Phase 0–2 complete; **Phase 2 exit met** (2026-08-11) — core transcript, composer, session/tree, command-inventory, and Electron fixture-E2E evidence |
+| Status | Phase 0–4 complete; **Phase 4 exit met** (2026-08-11) — bundled-extension renderer-host walkthroughs and documented engine-owned boundaries |
 | Created | 2026-08-11 |
 | Repo | `atomic-ui-fork` |
 | Focus package | `packages/gui` (`@bastani/atomic-gui`) |
@@ -290,6 +290,14 @@ npm run dev --workspace=@bastani/atomic-gui
 | Web access | Curator / browse flows | Scripted E2E | No secret leakage |
 
 Constraint: preserve generic frame contract; no extension-specific GUI fork that bypasses protocol.
+
+**Exit (2026-08-11):** met for generic renderer-host coverage. Live DBOS workflow execution, real subagent job controls, broker peers, configured MCP servers/OAuth, provider-backed web access, browser windows, cookies, and PII-sensitive account output remain explicitly engine-owned or excluded in the capability ledger.
+
+| Evidence | Coverage |
+|---|---|
+| `packages/gui/test/electron-phase2.e2e.test.ts` | 13 Phase 4 renderer-host tests for workflow prompts/frames, subagent widgets, Intercom compose/receive, MCP OAuth/tool frames, and web command/dialog/tool routes |
+| `packages/gui/docs/capability-ledger.md` | Runtime inventories and exact exclusions for all five Phase 4 areas |
+| `npm run test/typecheck/build --workspace=@bastani/atomic-gui` | 125 GUI tests, typecheck, and production build green on integrated `main` |
 
 ### Phase 5 — Release readiness (M7)
 
