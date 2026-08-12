@@ -30,6 +30,15 @@ test("RPC extension UI keeps tool expansion and chat render settings in sync", (
 	assert.equal(ui.getChatRenderSettings().toolOutputExpanded, true);
 });
 
+test("isolated GUI extensions receive an opt-in host descriptor while retaining TUI mode", () => {
+	const ui = createRpcExtensionUIContext({
+		output: () => {},
+		pendingExtensionRequests: new Map(),
+		hostInfo: { kind: "gui" },
+	});
+	assert.deepEqual(ui.hostInfo, { kind: "gui" });
+});
+
 test("isolated extension UI exposes live footer status and cached git data", () => {
 	const provider = new FooterDataProvider(process.cwd());
 	const ui = createRpcExtensionUIContext({

@@ -124,6 +124,11 @@ export class EngineSupervisor {
 		return await this.client.getTree();
 	}
 
+	async shareSession() {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.shareSession();
+	}
+
 	async navigateTree(
 		targetId: string,
 		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },

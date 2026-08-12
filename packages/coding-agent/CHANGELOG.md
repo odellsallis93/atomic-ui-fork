@@ -5,6 +5,8 @@
 ### Added
 
 - Documented the optional Electron GUI host (`packages/gui` / `@bastani/atomic-gui`) and how it speaks the interactive-engine protocol alongside the TUI, including sessions/themes/auth/trust coverage, extension frame render loop, and shortcuts (`docs/gui.md`).
+- Interactive-engine protocol v3 now identifies the presentation host. GUI sessions retain `ctx.mode === "tui"` for compatibility, while extensions may opt into GUI behavior through `ctx.ui.hostInfo`.
+- Added the `share_session` RPC command, allowing GUI hosts to create a secret GitHub gist through the engine-owned `gh` flow without receiving credentials or tokens.
 
 ### Fixed
 

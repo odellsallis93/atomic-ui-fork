@@ -17,6 +17,7 @@ export interface InteractiveEngineBootstrapHandle {
 export function writeInteractiveEngineBootstrap(record: {
 	hostPid: number;
 	guardFile: string;
+	hostKind?: "terminal" | "gui";
 }): InteractiveEngineBootstrapHandle {
 	const directory = mkdtempSync(join(tmpdir(), "atomic-gui-engine-bootstrap-"));
 	const path = join(directory, "bootstrap.json");
@@ -25,6 +26,7 @@ export function writeInteractiveEngineBootstrap(record: {
 		version: INTERACTIVE_ENGINE_BOOTSTRAP_VERSION,
 		hostPid: record.hostPid,
 		guardFile: record.guardFile,
+		...(record.hostKind ? { hostKind: record.hostKind } : {}),
 	};
 	try {
 		writeFileSync(tempPath, JSON.stringify(payload), { encoding: "utf8", mode: 0o600 });

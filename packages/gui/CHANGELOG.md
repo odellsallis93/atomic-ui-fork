@@ -39,6 +39,8 @@
 - Engine-rendered live tool cards that reuse Atomic's `ToolExecutionComponent`, including
   partial output, expansion state, ANSI styling, and safe renderer disposal when the
   transcript changes.
+- Protocol-v3 GUI host identity and a **Share session** action. Sharing stays inside the
+  engine's GitHub CLI flow and returns only the safe viewer URL to the renderer.
 
 ### Fixed
 

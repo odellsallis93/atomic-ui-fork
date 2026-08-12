@@ -1,6 +1,6 @@
 # Atomic Electron GUI — Implementation Plan
 
-Status: **In progress** — M0–M3 largely done; M4 theme/settings + provider auth/OAuth + project trust started; M5 dialogs/input-forms/host session picker + ANSI frames with render loop, overlayOptions, control/invalidate, legacy + kitty key encoding, and terminal-mode allowlist started in `packages/gui`
+Status: **In progress** — M0 is complete. M1–M3 are substantially implemented and now being closed with strict real-engine/Electron evidence; M4–M5 remain open for engine-owned settings/theme and complete `ctx.ui.*` parity. Protocol v3 adds GUI host identity while preserving TUI-compatible extension mode.
 
 ## Summary
 

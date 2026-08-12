@@ -18,6 +18,7 @@ export function SessionPicker(props: {
 	onFork: (entryId: string) => void;
 	onImport: (inputPath: string) => void;
 	onExport: () => void;
+	onShare: () => void;
 }) {
 	const [query, setQuery] = useState("");
 	const [sort, setSort] = useState<SortKey>("modified");
@@ -208,6 +209,9 @@ export function SessionPicker(props: {
 					</button>
 					<button type="button" className="btn" onClick={props.onExport}>
 						Export HTML
+					</button>
+					<button type="button" className="btn" onClick={props.onShare}>
+						Share session
 					</button>
 				</div>
 			</div>

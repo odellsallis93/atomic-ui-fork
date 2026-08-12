@@ -17,6 +17,7 @@ import type {
 	PromptRequest,
 	RpcResult,
 	SessionListItem,
+	SessionShareResult,
 	SessionStatsSummary,
 	SessionTreeNodeInfo,
 	SlashCommandInfo,
@@ -85,6 +86,7 @@ export class EngineClient {
 		this.bootstrap = writeInteractiveEngineBootstrap({
 			hostPid: process.pid,
 			guardFile: this.guardianFile,
+			hostKind: "gui",
 		});
 
 		const sessionArgs = this.options.sessionPath ? ["--session", this.options.sessionPath] : ["--no-session"];
@@ -165,6 +167,7 @@ export class EngineClient {
 						state: "ready",
 						pid: readyMsg.pid,
 						protocolVersion: readyMsg.protocolVersion,
+						hostKind: readyMsg.hostInfo?.kind,
 						cliPath: cli.cliPath || cli.runtimeExecutable,
 						cwd: this.options.cwd ?? process.cwd(),
 						sessionFile: this.options.sessionPath,
@@ -303,6 +306,15 @@ export class EngineClient {
 			type: "export_html",
 			...(outputPath ? { outputPath } : {}),
 		});
+	}
+
+	async shareSession(): Promise<RpcResult<SessionShareResult>> {
+		const result = await this.command<{ gistUrl?: unknown; shareUrl?: unknown }>({ type: "share_session" }, 120_000);
+		if (!result.ok) return { ok: false, error: result.error };
+		if (typeof result.data?.gistUrl !== "string" || typeof result.data.shareUrl !== "string") {
+			return { ok: false, error: "Engine returned an invalid share response" };
+		}
+		return { ok: true, data: { gistUrl: result.data.gistUrl, shareUrl: result.data.shareUrl } };
 	}
 
 	async compact(): Promise<RpcResult> {

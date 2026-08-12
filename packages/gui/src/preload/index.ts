@@ -25,6 +25,7 @@ const api: GuiHostApi = {
 	getForkMessages: () => ipcRenderer.invoke(IPC_CHANNELS.getForkMessages),
 	importSession: (inputPath, cwdOverride) => ipcRenderer.invoke(IPC_CHANNELS.importSession, inputPath, cwdOverride),
 	exportHtml: (outputPath) => ipcRenderer.invoke(IPC_CHANNELS.exportHtml, outputPath),
+	shareSession: () => ipcRenderer.invoke(IPC_CHANNELS.shareSession),
 	compact: () => ipcRenderer.invoke(IPC_CHANNELS.compact),
 	getTree: () => ipcRenderer.invoke(IPC_CHANNELS.getTree),
 	navigateTree: (targetId, options) => ipcRenderer.invoke(IPC_CHANNELS.navigateTree, targetId, options),

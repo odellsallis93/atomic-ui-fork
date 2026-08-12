@@ -33,6 +33,10 @@ engine remains the authority for the agent loop, extensions, tools, sessions,
 models, configuration, and protocol semantics. The GUI replaces the terminal
 compositor; it does not fork CLI behavior or add a second configuration system.
 
+Protocol v3 identifies this host as `gui` while retaining `ctx.mode === "tui"`
+for extension compatibility. Extensions can opt into GUI-specific behavior via
+`ctx.ui.hostInfo`.
+
 This Phase 5 slice has **Linux x64 CI coverage only**. The Electron manifest
 contains macOS and Windows targets, but this workflow does not test or promise
 support for those operating systems. Focused accessibility checks cover named

@@ -5,6 +5,7 @@ import { runCallback } from "../../core/callback-activity.ts";
 import { KeybindingsManager } from "../../core/keybindings.ts";
 import { SessionManager } from "../../core/session-manager.ts";
 import { RpcBashRequestOwners } from "./rpc-bash-request-owners.ts";
+import { shareSessionAsSecretGist } from "./rpc-session-share.ts";
 import type { RpcPendingExtensionRequests } from "./rpc-extension-ui.ts";
 import type { KeybindingsReloadCoordinator } from "./rpc-keybindings-reload.ts";
 import { rejectUnsupportedProviderPrompt } from "./rpc-model-fallback-prompt.ts";
@@ -371,6 +372,11 @@ export function createRpcCommandHandler({
 			case "export_html": {
 				const path = await session.exportToHtml(command.outputPath);
 				return createRpcSuccessResponse(id, "export_html", { path });
+			}
+
+			case "share_session": {
+				const result = await shareSessionAsSecretGist(session);
+				return createRpcSuccessResponse(id, "share_session", result);
 			}
 
 			case "switch_session": {

@@ -37,7 +37,12 @@ export function startInteractiveEngineLiveness(write: (line: string) => void): I
 		ready: () => {
 			if (readySent) return;
 			readySent = true;
-			send({ type: "engine_ready", protocolVersion: INTERACTIVE_ENGINE_PROTOCOL_VERSION, pid: process.pid });
+			send({
+				type: "engine_ready",
+				protocolVersion: INTERACTIVE_ENGINE_PROTOCOL_VERSION,
+				pid: process.pid,
+				hostInfo: { kind: engineEnv.hostKind === "gui" ? "gui" : "terminal" },
+			});
 		},
 		bound: () => {
 			if (boundSent) return;

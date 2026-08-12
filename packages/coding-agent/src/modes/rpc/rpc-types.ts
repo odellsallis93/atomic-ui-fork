@@ -116,6 +116,7 @@ export type RpcCommand =
 			limit?: number;
 	  }
 	| { id?: string; type: "export_html"; outputPath?: string }
+	| { id?: string; type: "share_session" }
 	| { id?: string; type: "switch_session"; sessionPath: string }
 	| { id?: string; type: "import_session"; inputPath: string; cwdOverride?: string }
 	| { id?: string; type: "fork"; entryId: string }
@@ -337,6 +338,13 @@ export type RpcResponse =
 	  }
 	| { id?: string; type: "response"; command: "import_session"; success: true; data: { cancelled: boolean } }
 	| { id?: string; type: "response"; command: "export_html"; success: true; data: { path: string } }
+	| {
+			id?: string;
+			type: "response";
+			command: "share_session";
+			success: true;
+			data: { gistUrl: string; shareUrl: string };
+	  }
 	| { id?: string; type: "response"; command: "switch_session"; success: true; data: { cancelled: boolean } }
 	| { id?: string; type: "response"; command: "fork"; success: true; data: { text: string; cancelled: boolean } }
 	| { id?: string; type: "response"; command: "clone"; success: true; data: { cancelled: boolean } }

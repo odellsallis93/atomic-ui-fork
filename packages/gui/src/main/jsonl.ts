@@ -27,9 +27,13 @@ export function attachJsonlLineReader(stream: Readable, onLine: (line: string) =
 	};
 }
 
-export const INTERACTIVE_ENGINE_PROTOCOL_VERSION = 2;
+export const INTERACTIVE_ENGINE_PROTOCOL_VERSION = 3;
 
-export function parseEngineReady(line: string): { protocolVersion: number; pid: number } | undefined {
+export function parseEngineReady(line: string): {
+	protocolVersion: number;
+	pid: number;
+	hostInfo?: { kind: "terminal" | "gui" };
+} | undefined {
 	let value: unknown;
 	try {
 		value = JSON.parse(line);
@@ -46,9 +50,13 @@ export function parseEngineReady(line: string): { protocolVersion: number; pid: 
 		typeof (value as { protocolVersion: unknown }).protocolVersion === "number" &&
 		typeof (value as { pid: unknown }).pid === "number"
 	) {
+		const hostInfo = "hostInfo" in value ? value.hostInfo : undefined;
+		const hostKind =
+			typeof hostInfo === "object" && hostInfo !== null && "kind" in hostInfo ? hostInfo.kind : undefined;
 		return {
 			protocolVersion: (value as { protocolVersion: number }).protocolVersion,
 			pid: (value as { pid: number }).pid,
+			...(hostKind === "terminal" || hostKind === "gui" ? { hostInfo: { kind: hostKind } } : {}),
 		};
 	}
 	return undefined;

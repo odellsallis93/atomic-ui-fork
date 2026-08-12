@@ -15,11 +15,16 @@ test("serializeJsonLine emits LF-delimited JSON", () => {
 	assert.equal(serializeJsonLine({ type: "prompt", message: "hi" }), '{"type":"prompt","message":"hi"}\n');
 });
 
-test("parseEngineReady accepts protocol v2 frames", () => {
+test("parseEngineReady accepts protocol v3 frames and GUI host identity", () => {
 	const ready = parseEngineReady(
-		JSON.stringify({ type: "engine_ready", protocolVersion: INTERACTIVE_ENGINE_PROTOCOL_VERSION, pid: 42 }),
+		JSON.stringify({
+			type: "engine_ready",
+			protocolVersion: INTERACTIVE_ENGINE_PROTOCOL_VERSION,
+			pid: 42,
+			hostInfo: { kind: "gui" },
+		}),
 	);
-	assert.deepEqual(ready, { protocolVersion: 2, pid: 42 });
+	assert.deepEqual(ready, { protocolVersion: 3, pid: 42, hostInfo: { kind: "gui" } });
 	assert.equal(parseEngineReady('{"type":"message_start"}'), undefined);
 });
 

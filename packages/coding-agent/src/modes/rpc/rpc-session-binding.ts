@@ -2,6 +2,7 @@ import type { AgentSession } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { FooterDataProvider } from "../../core/footer-data-provider.ts";
 import { waitForRawStdoutBackpressure } from "../../core/output-guard.ts";
+import { interactiveEngineStartupEnv } from "../../utils/interactive-engine-env.ts";
 import type { EngineCustomUiService } from "../interactive-engine/engine-custom-ui.ts";
 import type { EngineInputFormService } from "../interactive-engine/engine-input-form.ts";
 import type { EngineRenderService } from "../interactive-engine/engine-render-service.ts";
@@ -100,6 +101,9 @@ export class RpcSessionBinding {
 							}),
 						);
 					},
+					...(this.customUi
+						? { hostInfo: { kind: interactiveEngineStartupEnv().hostKind === "gui" ? "gui" : "terminal" } as const }
+						: {}),
 				}),
 				mode: this.customUi ? "tui" : "rpc",
 				commandContextActions: {

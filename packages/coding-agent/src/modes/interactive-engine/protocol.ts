@@ -3,12 +3,11 @@ import type { HostInputFormField, HostSessionPickerRow } from "../../core/extens
 import type { KeyId } from "../../core/keybindings.ts";
 
 /**
- * Version 2 added `engine_request_accepted`. The host uses that frame to decide
- * whether a submission may be returned to the editor after a transport failure,
- * so a child that cannot send it must not be treated as compatible: without the
- * frame the host would restore work the child had already started.
+ * Version 3 adds a presentation-host descriptor to the ready handshake. The
+ * descriptor lets extensions opt into GUI behavior without changing their
+ * established `ctx.mode === "tui"` compatibility contract.
  */
-export const INTERACTIVE_ENGINE_PROTOCOL_VERSION = 2;
+export const INTERACTIVE_ENGINE_PROTOCOL_VERSION = 3;
 
 export interface JsonObject {
 	[key: string]: JsonValue;
@@ -45,6 +44,10 @@ export interface EngineExtensionShortcut {
 	description?: string;
 }
 
+export interface EngineHostInfo {
+	kind: "terminal" | "gui";
+}
+
 /** A remote component replacing a host-owned chrome region. */
 export type RemoteChromeSlot = "header" | "footer" | "editor";
 
@@ -57,7 +60,12 @@ export interface EngineKeybindingState {
 }
 
 export type InteractiveEngineMessage =
-	| { type: "engine_ready"; protocolVersion: typeof INTERACTIVE_ENGINE_PROTOCOL_VERSION; pid: number }
+	| {
+			type: "engine_ready";
+			protocolVersion: typeof INTERACTIVE_ENGINE_PROTOCOL_VERSION;
+			pid: number;
+			hostInfo?: EngineHostInfo;
+	  }
 	| { type: "engine_bound" }
 	| { type: "engine_keybindings_reloaded"; state: EngineKeybindingState }
 	| { type: "engine_heartbeat"; at: number }
@@ -316,13 +324,22 @@ function parseJsonObject(line: string): JsonObject | undefined {
 	return isJsonObject(value) ? value : undefined;
 }
 
+function isHostInfo(value: JsonValue): value is JsonObject & EngineHostInfo {
+	return isJsonObject(value) && (value.kind === "terminal" || value.kind === "gui");
+}
+
 export function parseInteractiveEngineMessage(line: string): InteractiveEngineMessage | undefined {
 	const value = parseJsonObject(line);
 	if (!value || typeof value.type !== "string") return undefined;
 	switch (value.type) {
 		case "engine_ready":
 			return value.protocolVersion === INTERACTIVE_ENGINE_PROTOCOL_VERSION && typeof value.pid === "number"
-				? { type: value.type, protocolVersion: INTERACTIVE_ENGINE_PROTOCOL_VERSION, pid: value.pid }
+				? {
+						type: value.type,
+						protocolVersion: INTERACTIVE_ENGINE_PROTOCOL_VERSION,
+						pid: value.pid,
+						...(value.hostInfo !== undefined && isHostInfo(value.hostInfo) ? { hostInfo: value.hostInfo } : {}),
+					}
 				: undefined;
 		case "engine_bound":
 			return { type: value.type };

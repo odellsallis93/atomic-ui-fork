@@ -24,6 +24,12 @@ export interface ExtensionUIDialogOptions {
 /** Placement for extension widgets. */
 export type WidgetPlacement = "aboveEditor" | "belowEditor";
 
+/** Presentation host metadata for UI-capable extensions. `ctx.mode` remains the
+ * compatibility mode; use this only for an opt-in GUI-specific enhancement. */
+export interface ExtensionHostInfo {
+	kind: "terminal" | "gui";
+}
+
 /** Options for extension widgets. */
 export interface ExtensionWidgetOptions {
 	/** Where the widget is rendered. Defaults to "aboveEditor". */
@@ -143,6 +149,8 @@ export interface HostSessionPickerHandle {
  * Each mode (interactive, RPC, print) provides its own implementation.
  */
 export interface ExtensionUIContext {
+	/** Optional presentation-host identity. Absent on non-isolated legacy hosts. */
+	readonly hostInfo?: ExtensionHostInfo;
 	/** Show a selector and return the user's choice. */
 	select(title: string, options: string[], opts?: ExtensionUIDialogOptions): Promise<string | undefined>;
 

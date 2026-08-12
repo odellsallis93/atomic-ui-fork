@@ -65,7 +65,7 @@ const emitIncomingIntercomMessage = () => {
   send({ type: "message_end", message });
 };
 let incomingIntercomMessageDelivered = false;
-send({ type: "engine_ready", protocolVersion: 2, pid: process.pid });
+send({ type: "engine_ready", protocolVersion: 3, pid: process.pid, hostInfo: { kind: "gui" } });
 let subagentRenderCount = 0;
 let delayInitialEntries = ${delayInitialEntries};
 let pendingInitialEntries;

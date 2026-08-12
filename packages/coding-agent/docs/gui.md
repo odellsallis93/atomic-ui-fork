@@ -7,10 +7,14 @@ Atomic ships an optional desktop GUI host in the monorepo package
 ## What it is
 
 A new *host* for the existing interactive-engine child. The GUI speaks the same
-JSONL protocol the terminal host uses (`INTERACTIVE_ENGINE_PROTOCOL_VERSION = 2`):
+JSONL protocol the terminal host uses (`INTERACTIVE_ENGINE_PROTOCOL_VERSION = 3`):
 RPC commands for prompts/abort/session control plus `engine_*` frames for
 extension UI. The agent loop, extensions, tools, sessions, and models stay in
 the engine child.
+
+The v3 handshake identifies Electron as `hostInfo.kind = "gui"`, while extension
+`ctx.mode` stays `"tui"` so existing UI-capable extensions continue to work unchanged.
+Extensions can opt into GUI behavior through `ctx.ui.hostInfo`.
 
 ## Current milestone status
 
@@ -19,7 +23,7 @@ the engine child.
 | M0 Skeleton + engine bridge | Done |
 | M1 Core chat parity | Mostly done — active-leaf-only durable transcript hydration, virtualized variable-height long transcripts with bottom-only auto-follow, user/assistant/custom/skill/system/branch/compaction/tool/bash handling, thinking toggle, footer + usage meter, working indicator, and engine-rendered live/durable tool cards. The host reads engine-owned JSONL through `get_entries` and follows its `leafId`/`parentId` path; it does not treat history order as the active transcript. Durable-kind and 10,000-row window coverage are unit-tested; extension-owned custom renderers, Electron long-scroll walkthrough, and a real-engine transcript corpus remain open |
 | M2 Input system | Mostly done — CodeMirror composer, `/` command and command-argument + `@` autocomplete, history, `!`/`!!` bash, steer/follow-up/abort, queue chips |
-| M3 Sessions | Mostly done — resume picker (search/sort/all-projects), persisted transcript hydration on start/switch/tree navigation, rename/delete, clone/fork/import/export/compact, and tree folds/labels/edit-resubmit. Share and legacy composer `/import` or `/atomic` are excluded: protocol v2 exposes no share RPC and runtime `get_commands` inventories extension/prompt/skill commands only. |
+| M3 Sessions | Mostly done — resume picker (search/sort/all-projects), persisted transcript hydration on start/switch/tree navigation, rename/delete, clone/fork/import/export/**share**/compact, and tree folds/labels/edit-resubmit. `share_session` keeps the GitHub CLI credential flow engine-owned. Legacy composer `/import` or `/atomic` remain excluded because runtime `get_commands` inventories extension/prompt/skill commands only. |
 | M4 Models / settings | Partial — model picker, cycle model/thinking, theme loader, provider login/logout + OAuth UI, project trust prompt (full onboarding still open) |
 | M5 Extension UI host | Partial — native dialogs/notify/status/widgets, extension shortcut dispatch, `engine_input_form_*`, `hostSessionPicker` (`engine_session_picker_*`), ANSI frame overlays with render loop + `overlayOptions` + control/invalidate + legacy key encoding + kitty key-release + mouse-scroll wheel + autowrap terminal mode; remote custom header/footer/editor slots and transcript-local engine tool renderer frames |
 | M6 | Partial — Workflows has a scripted Electron renderer-host walkthrough: Composer sends generic `/workflow …` prompts for dispatch/list/status/attach, runtime F2 opens the generic custom-frame graph, and generic input-form/session-picker/dialog/widget routes cover its host surfaces. This is fixture evidence only; no workflow RPC, GUI-only renderer, live DBOS workflow proof, or other bundled-extension walkthrough is claimed. |
@@ -29,7 +33,7 @@ the engine child.
 ## Supported scope and GUI-vs-CLI boundary
 
 The GUI is an optional Electron host for the existing interactive-engine child.
-Protocol v2 remains the boundary: the engine owns the agent loop, extensions,
+Protocol v3 remains the boundary: the engine owns the agent loop, extensions,
 tools, sessions, models, configuration, and their semantics; the GUI replaces
 the terminal compositor. It does not add a GUI-only engine protocol or a second
 configuration authority.
@@ -171,7 +175,7 @@ engine's `list_sessions` RPC while it is running, with a host-side fallback befo
 engine starts. From there you can:
 
 - Resume / new session / rename / delete
-- Clone the current leaf (`clone` RPC), fork from an engine-supplied user message (`get_fork_messages` → `fork`), import JSONL (`import_session`), and export HTML (`export_html`)
+- Clone the current leaf (`clone` RPC), fork from an engine-supplied user message (`get_fork_messages` → `fork`), import JSONL (`import_session`), export HTML (`export_html`), and share through the engine-owned `share_session` GitHub CLI flow
 - Open **Tree** for `get_tree` / `navigate_tree`; local folds do not change the engine tree, while labels use `set_label` and selecting a user turn restores engine-supplied editor text for edit/resubmit
 - **Excluded:** share has no protocol-v2 RPC; legacy `/import` and `/atomic` do not appear in runtime `get_commands`, so the GUI does not invent composer routes
 

@@ -31,6 +31,11 @@ export interface InteractiveEngineBootstrap {
 	hostPid: number;
 	guardFile: string;
 	apiKey?: string;
+	/**
+	 * Presentation host identity. This is deliberately metadata, not a mode
+	 * switch: extensions retain their TUI-compatible mode contract.
+	 */
+	hostKind?: "terminal" | "gui";
 }
 
 /**
@@ -129,6 +134,7 @@ export function readInteractiveEngineBootstrap(path: string): InteractiveEngineB
 			hostPid: parsed.hostPid,
 			guardFile: parsed.guardFile,
 			...(typeof parsed.apiKey === "string" ? { apiKey: parsed.apiKey } : {}),
+			...(parsed.hostKind === "gui" || parsed.hostKind === "terminal" ? { hostKind: parsed.hostKind } : {}),
 		};
 	} catch {
 		return undefined;

@@ -151,6 +151,9 @@ export abstract class RpcClientApi {
 	async exportHtml(outputPath?: string): Promise<{ path: string }> {
 		return this.data(await this.request({ type: "export_html", outputPath }));
 	}
+	async shareSession(): Promise<{ gistUrl: string; shareUrl: string }> {
+		return this.data(await this.request({ type: "share_session" }));
+	}
 	async switchSession(sessionPath: string): Promise<{ cancelled: boolean }> {
 		return this.data(await this.request({ type: "switch_session", sessionPath }));
 	}

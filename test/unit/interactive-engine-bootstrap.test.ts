@@ -58,6 +58,20 @@ test("a bootstrap record round-trips and the reader consumes only the named file
 	assert.equal(existsSync(handle.directory), false, "the owner's handle removes the directory it created");
 });
 
+test("a bootstrap record preserves GUI host identity without changing engine mode", () => {
+	const handle = writeInteractiveEngineBootstrap({ hostPid: 4242, guardFile: "/tmp/atomic-gui-guardian", hostKind: "gui" });
+	try {
+		assert.deepEqual(readInteractiveEngineBootstrap(handle.path), {
+			version: INTERACTIVE_ENGINE_BOOTSTRAP_VERSION,
+			hostPid: 4242,
+			guardFile: "/tmp/atomic-gui-guardian",
+			hostKind: "gui",
+		});
+	} finally {
+		removeOwnedInteractiveEngineBootstrap(handle);
+	}
+});
+
 test("a bootstrap record is owner-only and its filename carries no secret", () => {
 	const handle = writeInteractiveEngineBootstrap({
 		hostPid: 1,

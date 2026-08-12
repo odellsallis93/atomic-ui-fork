@@ -8,6 +8,7 @@ import type {
 	HostSessionPickerRequest,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
+import type { ExtensionHostInfo } from "../../core/extensions/ui-types.ts";
 import type { FooterDataProvider } from "../../core/footer-data-provider.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import type { EngineCustomUiService } from "../interactive-engine/engine-custom-ui.ts";
@@ -31,6 +32,7 @@ interface CreateRpcExtensionUIContextOptions {
 	inputForm?: EngineInputFormService;
 	footerDataProvider?: FooterDataProvider;
 	onEditorSubmit?: (text: string) => void;
+	hostInfo?: ExtensionHostInfo;
 }
 
 interface DialogPromiseOptions<T> extends CreateRpcExtensionUIContextOptions {
@@ -96,6 +98,7 @@ export function createRpcExtensionUIContext({
 	inputForm,
 	footerDataProvider,
 	onEditorSubmit,
+	hostInfo,
 }: CreateRpcExtensionUIContextOptions): ExtensionUIContext {
 	const unsupportedWarnings = new Set<string>();
 	let toolsExpanded = false;
@@ -109,6 +112,7 @@ export function createRpcExtensionUIContext({
 		});
 	};
 	return {
+		...(hostInfo ? { hostInfo } : {}),
 		select: (title, options, opts) =>
 			createDialogPromise({
 				output,

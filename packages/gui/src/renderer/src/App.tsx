@@ -879,6 +879,20 @@ export function App() {
 							}
 						});
 					}}
+					onShare={() => {
+						void window.atomicGui.shareSession().then((result) => {
+							if (!result.ok) {
+								setErrorBanner(result.error ?? "Could not share this session");
+								return;
+							}
+							useSessionStore.getState().ingestExtensionUi({
+								id: `share-${Date.now()}`,
+								method: "notify",
+								message: `Share URL: ${result.data?.shareUrl ?? "(unknown URL)"}`,
+								notifyType: "info",
+							});
+						});
+					}}
 					onRename={(session, name) => {
 						void window.atomicGui.renameSession(session.path, name).then(async (result) => {
 							if (!result.ok) setErrorBanner(result.error);

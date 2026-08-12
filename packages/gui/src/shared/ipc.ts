@@ -6,6 +6,7 @@ export interface EngineStatus {
 	state: EngineConnectionState;
 	pid?: number;
 	protocolVersion?: number;
+	hostKind?: "terminal" | "gui";
 	error?: string;
 	cliPath?: string;
 	cwd?: string;
@@ -97,6 +98,11 @@ export interface SessionListItem {
 	created: number;
 	messageCount: number;
 	firstMessage: string;
+}
+
+export interface SessionShareResult {
+	gistUrl: string;
+	shareUrl: string;
 }
 
 /** Row shape for `ctx.ui.hostSessionPicker` over the engine protocol. */
@@ -314,6 +320,7 @@ export interface GuiHostApi {
 	getForkMessages(): Promise<RpcResult<ForkMessageInfo[]>>;
 	importSession(inputPath: string, cwdOverride?: string): Promise<RpcResult<{ cancelled: boolean }>>;
 	exportHtml(outputPath?: string): Promise<RpcResult<{ path: string }>>;
+	shareSession(): Promise<RpcResult<SessionShareResult>>;
 	compact(): Promise<PromptResult>;
 	getTree(): Promise<RpcResult<{ nodes: SessionTreeNodeInfo[]; leafId: string | null }>>;
 	navigateTree(
@@ -383,6 +390,7 @@ export const IPC_CHANNELS = {
 	getForkMessages: "gui:get-fork-messages",
 	importSession: "gui:import-session",
 	exportHtml: "gui:export-html",
+	shareSession: "gui:share-session",
 	compact: "gui:compact",
 	getTree: "gui:get-tree",
 	navigateTree: "gui:navigate-tree",

@@ -160,6 +160,10 @@ function registerIpc(): void {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.exportHtml(outputPath);
 	});
+	registerIpcHandler(IPC_CHANNELS.shareSession, async () => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.shareSession();
+	});
 	registerIpcHandler(IPC_CHANNELS.compact, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.compact();

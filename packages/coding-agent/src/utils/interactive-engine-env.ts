@@ -22,6 +22,7 @@ export interface InteractiveEngineStartupEnv {
 	readonly hostPid: string | undefined;
 	readonly guardFile: string | undefined;
 	readonly apiKey: string | undefined;
+	readonly hostKind: "terminal" | "gui" | undefined;
 }
 
 let snapshot: InteractiveEngineStartupEnv | undefined;
@@ -59,12 +60,14 @@ export function captureInteractiveEngineStartupEnv(
 					hostPid: String(bootstrap.hostPid),
 					guardFile: bootstrap.guardFile,
 					apiKey: bootstrap.apiKey,
+					hostKind: bootstrap.hostKind,
 				}
 			: {
 					child: process.env.ATOMIC_INTERACTIVE_ENGINE_CHILD,
 					hostPid: process.env.ATOMIC_INTERACTIVE_ENGINE_HOST_PID,
 					guardFile: process.env.ATOMIC_INTERACTIVE_ENGINE_GUARD_FILE,
 					apiKey: process.env.ATOMIC_INTERACTIVE_ENGINE_API_KEY,
+					hostKind: undefined,
 				},
 	);
 	for (const name of INTERACTIVE_ENGINE_ENV_VARS) delete process.env[name];

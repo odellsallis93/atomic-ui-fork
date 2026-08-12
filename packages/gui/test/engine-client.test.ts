@@ -25,6 +25,7 @@ process.stdout.write(JSON.stringify({
   type: "engine_ready",
   protocolVersion: ${INTERACTIVE_ENGINE_PROTOCOL_VERSION},
   pid: process.pid,
+	  hostInfo: { kind: "gui" },
 }) + "\\n");
 const rl = createInterface({ input: process.stdin });
 let stateCalls = 0;
@@ -118,6 +119,16 @@ rl.on("line", (line) => {
     }) + "\\n");
     return;
   }
+  if (msg.type === "share_session") {
+    process.stdout.write(JSON.stringify({
+      id: msg.id,
+      type: "response",
+      command: "share_session",
+      success: true,
+      data: { gistUrl: "https://gist.github.com/test/abc123", shareUrl: "https://atomic.example/s/abc123" },
+    }) + "\\n");
+    return;
+  }
   if (["get_fork_messages", "fork", "import_session", "set_label", "navigate_tree"].includes(msg.type)) {
     const data = msg.type === "get_fork_messages" ? { messages: [{ entryId: "u1", text: "fork here" }] }
       : msg.type === "fork" ? { text: "fork here", cancelled: false }
@@ -187,8 +198,9 @@ rl.on("line", (line) => {
 			onEvent: (event) => events.push(event),
 		});
 
-		const status = await client.start();
-		assert.equal(status.state, "ready");
+			const status = await client.start();
+			assert.equal(status.state, "ready");
+			assert.equal(status.hostKind, "gui");
 		assert.equal(status.protocolVersion, INTERACTIVE_ENGINE_PROTOCOL_VERSION);
 		assert.equal(status.modelLabel, "test/tiny");
 		const cleared = await client.refreshState();
@@ -245,6 +257,10 @@ rl.on("line", (line) => {
 			data: { cancelled: false, editorText: "edit me" },
 		});
 		assert.deepEqual(await client.setTreeLabel("u1", "kept"), { ok: true, data: undefined });
+		assert.deepEqual(await client.shareSession(), {
+			ok: true,
+			data: { gistUrl: "https://gist.github.com/test/abc123", shareUrl: "https://atomic.example/s/abc123" },
+		});
 
 		assert.deepEqual(await client.getAuthCatalog(), {
 			ok: true,
