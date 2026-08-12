@@ -1,12 +1,11 @@
 # @bastani/atomic-gui
 
 Electron desktop host for Atomic. Speaks the interactive-engine JSONL protocol
-(v2) so the agent loop, extensions, tools, and sessions stay in the `atomic`
+(v3) so the agent loop, extensions, tools, and sessions stay in the `atomic`
 engine child — this package replaces only the terminal compositor.
 
 See [`specs/2026-08-08-electron-gui-plan.md`](../../specs/2026-08-08-electron-gui-plan.md)
-for the full parity plan and milestone map. Continuation plan:
-[`specs/2026-08-11-gui-parity-continuation-plan.md`](../../specs/2026-08-11-gui-parity-continuation-plan.md).
+for the full parity plan and milestone map.
 User-facing status table: [`packages/coding-agent/docs/gui.md`](../coding-agent/docs/gui.md).
 
 **Capability ledger (parity evidence):** [`docs/capability-ledger.md`](docs/capability-ledger.md).
@@ -18,12 +17,12 @@ Fake-engine unit tests prove host structure only; parity claims require
 | Milestone | Coverage |
 |---|---|
 | M0 | Done — engine bridge, IPC, event log |
-| M1 | Mostly done — core transcript kinds, footer/usage, working indicator |
-| M2 | Mostly done — composer, `/` + `@`, bash, queue/steer/abort (attachments, full keymap still open) |
-| M3 | Mostly done — resume picker, tree folds/labels/edit-resubmit, clone/fork/import/export/compact. Share and legacy `/import`/`/atomic` remain explicit exclusions: no permitted runtime inventory route. |
-| M4 | Partial — model picker parses scoped engine models, thinking/settings controls use existing RPCs, theme loading follows JSON-name first-match precedence, auth/trust/onboarding route through engine-owned flows. Persistent settings/theme/fast-mode mutation remains excluded until protocol v2 adds RPCs. |
-| M5 | Partial — dialogs, input forms, ANSI frames + render loop + overlay geometry + kitty key-release + terminal-mode allowlist (chrome swap blocked on §5.3) |
-| M6 | Partial — Workflows, subagents, and Intercom walkthroughs are renderer-host E2E-proven through generic prompt/form/session-picker/custom-frame/widget routes; MCP panels and proxy/direct tool rendering use the same generic host contracts; web-access uses the engine-discovered command/shortcut catalog and generic dialogs for `/websearch`, `/curator`, and `/search`. Live workflow/DBOS, subagent job controls, Intercom broker/peer, configured MCP OAuth/calls, curator browser/Glimpse, provider config, cookies, stored-result RPCs, secrets, and other protocol-v2 exclusions remain open or excluded by protocol v2. |
+| M1 | Mostly done — core transcript kinds, footer/usage, working indicator; real-engine durable transcript corpus coverage now complements renderer tests |
+| M2 | Mostly done — composer with configurable submit/newline bindings, empty-editor Up/Down prompt history, cancellable engine-evaluated `/` + `@`/path autocomplete (including extension providers), bash, queue/steer/abort (attachments and desktop keymap acceptance still open) |
+| M3 | Mostly done — resume picker, tree folds/labels/edit-resubmit, clone/fork/import/export/share/compact. Durable import/list/resume/new-session/active-delete replacement/fork/rename/delete/export/clone and extension-backed compaction are real-engine covered; credentialed share still needs a manual desktop check. Legacy `/import`/`/atomic` remain explicit exclusions: no permitted runtime inventory route. |
+| M4 | Partial — model picker parses scoped engine models; typed engine settings cover model-cycle scope, theme, thinking, queues, compaction/retry, Codex fast mode, and project trust without exposing settings or trust-store files to Electron. The Settings panel can reload effective settings, apply the resolved theme live, and persist its supported controls through validated engine settings operations. Auth actions are derived from engine-reported API-key/OAuth/logout capabilities, never from credentials; real-provider and first-run desktop acceptance plus broader settings coverage remain open. |
+| M5 | Partial — dialogs, input forms, ANSI frames + render loop + overlay geometry + kitty key-release + terminal-mode allowlist, native-composer text mirrored for synchronous `ctx.ui.getEditorText`, engine-owned extension theme accessors, engine-dispatched autocomplete providers, and ordered terminal input interception. Real-engine extension coverage proves custom overlay and header/footer/editor chrome render paths, title/widget/status, `setEditorText`, mirrored `getEditorText`, engine theme accessors, and `hostInfo.kind = gui` while `ctx.mode` remains `tui`. Browser-level extension acceptance remains open. |
+| M6 | Partial — Workflows, subagents, and Intercom walkthroughs are renderer-host E2E-proven through generic prompt/form/session-picker/custom-frame/widget routes; MCP panels and proxy/direct tool rendering use the same generic host contracts; web-access uses the engine-discovered command/shortcut catalog and generic dialogs for `/websearch`, `/curator`, and `/search`. Live workflow/DBOS, subagent job controls, Intercom broker/peer, configured MCP OAuth/calls, curator browser/Glimpse, provider config, cookies, stored-result RPCs, secrets, and other protocol exclusions remain open. |
 | M7 | Partial — changed-path Linux x64 CI, host-platform directory packaging/startup smoke, source security review, and focused accessibility/performance evidence are documented. Signed DMG/NSIS/AppImage installers, packaging CI, and updates remain open or unproven. |
 
 ## Supported scope and host boundary
@@ -32,6 +31,10 @@ This package is an optional Electron host for Atomic's interactive engine. The
 engine remains the authority for the agent loop, extensions, tools, sessions,
 models, configuration, and protocol semantics. The GUI replaces the terminal
 compositor; it does not fork CLI behavior or add a second configuration system.
+The normal `atomic` TUI neither starts nor requires this package; its input loop
+and extension contract remain the upstream-compatible default.
+GUI windows use Atomic's normal durable session behavior unless explicitly
+launched against a supplied session path; they do not force `--no-session`.
 
 Protocol v3 identifies this host as `gui` while retaining `ctx.mode === "tui"`
 for extension compatibility. Extensions can opt into GUI-specific behavior via
@@ -164,11 +167,17 @@ platform, installer limits, source-backed security review, and remaining risks.
 
 ## Phase 3 settings/theme boundary
 
-- The GUI does **not** write generic `settings.json` or credentials. It reads the effective theme with engine global→project precedence and applies theme changes live for the renderer session only.
-- Settings controls available in the panel call existing engine RPCs: thinking level, steering/follow-up mode, auto compaction, and auto retry.
-- Codex fast mode is not exposed: engine settings accessors exist, but protocol v2 has no fast-mode RPC.
-- Themes resolve by JSON `name` with first-match builtin → user (`.atomic`, then legacy `.pi`) → project (`.atomic`, then `.pi`) order and support string plus numeric color tokens.
-- First-run onboarding links to project trust, provider auth, and model selection without displaying saved secrets.
+- The GUI does **not** write generic `settings.json` or credentials. It receives an engine-owned resolved theme snapshot with global→project precedence; selecting a theme is validated and persisted by the engine, while Electron receives only CSS tokens.
+- Settings controls available in the panel call validated engine operations: scoped model-cycle patterns, thinking level, default thinking visibility, steering/follow-up mode, auto compaction, auto retry, and Codex fast mode. The engine rejects unmatched patterns and immediately applies accepted scope to the active session; Electron cannot write raw configuration JSON. The external-editor action likewise asks the engine to resolve `externalEditor` before Electron launches it.
+- Theme discovery, validation, live reload, and CSS-token resolution have no GUI filesystem fallback. The renderer receives only the engine’s name/source catalog and resolved tokens, including for custom themes.
+- Codex fast mode is an engine-owned chat/workflow toggle. It is available from Settings only when the engine supports it; unsupported providers simply ignore the corresponding request tier.
+- **Reload settings** asks the engine to re-read global/project configuration and then reapplies the returned resolved theme. Electron never receives a settings path or raw configuration document.
+- Themes resolve by JSON `name` with engine resource precedence and support string plus numeric color tokens.
+- First-run onboarding resolves project trust and starts the engine before it enables engine-owned provider auth and model selection; it never displays saved secrets.
+
+For provider-, OS-, and credential-dependent checks that CI cannot safely run,
+use the [desktop acceptance checklist](docs/desktop-acceptance.md). It also
+contains the required standalone-TUI compatibility smoke.
 
 ## Phase 4 Workflows boundary
 

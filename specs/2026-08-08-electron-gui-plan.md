@@ -1,6 +1,6 @@
 # Atomic Electron GUI — Implementation Plan
 
-Status: **In progress** — M0 is complete. M1–M3 are substantially implemented and now being closed with strict real-engine/Electron evidence; M4–M5 remain open for engine-owned settings/theme and complete `ctx.ui.*` parity. Protocol v3 adds GUI host identity while preserving TUI-compatible extension mode.
+Status: **In progress** — M0 is complete. M1–M3 are substantially implemented and now being closed with strict real-engine/Electron evidence. M2 now routes cancellable autocomplete—including extension wrappers—through the engine. M3 real-engine coverage includes durable import/list/resume/new-session/active-delete replacement/rename/delete/export/clone and deterministic extension-backed compaction; credentialed share remains a required manual desktop check. M4 now has typed engine-owned theme snapshots, validated theme mutation (including custom themes), operation-based settings mutation for model-cycle scope, thinking visibility, queue/compaction/retry/fast-mode controls, explicit settings reload that reapplies the resolved theme, project-trust status/options/mutation, and an engine-derived auth-capability catalog, without exposing trust/configuration stores or credentials to Electron. The obsolete GUI theme loader has been removed, but broader settings work remains; M5 now mirrors native composer state for synchronous `ctx.ui.getEditorText`, exposes engine-owned theme accessors and propagates named extension theme selections through the engine-resolved host snapshot, and dispatches ordered terminal interception, while browser-level extension acceptance remains. Protocol v3 adds GUI host identity while preserving TUI-compatible extension mode.
 
 ## Summary
 
@@ -13,7 +13,7 @@ and third-party extensions work unmodified.
 
 The core architectural bet: **the GUI is a new *host* for the existing interactive-engine
 child**, speaking the same JSONL protocol the terminal host speaks today
-(`src/modes/interactive-engine/protocol.ts`, protocol v2). The agent loop, extensions,
+(`src/modes/interactive-engine/protocol.ts`, protocol v3). The agent loop, extensions,
 tools, sessions, and models all stay in the engine child, untouched. The GUI replaces only
 the pi-tui compositor layer.
 
@@ -172,7 +172,7 @@ The complete interface in `src/core/extensions/ui-types.ts`:
 |---|---|---|
 | `--mode rpc` | Insufficient alone | RPC deliberately degrades extension UI: `custom()` returns `undefined`, `setFooter`/`setEditorComponent`/`setWorkingIndicator` are no-ops, widget component factories are ignored (`docs/rpc.md`). Parity for workflows/intercom overlays is impossible on it. |
 | Embed `AgentSession` SDK in Electron main | Rejected as primary | Couples the GUI's Node runtime to the agent's (the shipped binary is Bun-compiled; extensions assume the engine environment); no crash isolation — a wedged extension freezes the app; duplicates the supervision the engine host already has (watchdog, escape hatch, restart). Keep as a possible test seam only. |
-| **Interactive-engine protocol (v2)** | **Chosen** | Already carries everything the terminal host needs: RPC command set + `engine_custom_*` remote-rendered frames, session-picker channel, input-form channel, terminal-mode allowlist, heartbeats/watchdog, cooperative abort, Ctrl+C escape hatch. The GUI implements the *host* side, exactly like `src/modes/interactive/` does. |
+| **Interactive-engine protocol (v3)** | **Chosen** | Carries the terminal host contract plus versioned GUI host identity and additive typed host RPCs: remote frames, session-picker/input-form channels, terminal-mode allowlist, heartbeats/watchdog, cooperative abort, autocomplete, and ordered terminal interception. The GUI implements an optional host side, exactly like `src/modes/interactive/` does. |
 
 The engine child is spawned from the user's installed `atomic` (resolved like the
 terminal host does), one child per window/tab. Version skew is handled by the existing
@@ -405,7 +405,7 @@ proceeds alongside M0–M2.
 
 | Risk | Mitigation |
 |---|---|
-| Protocol drift between GUI host and engine versions | Handshake version gate (exists); conformance suite pinned to protocol v2; §5 additions are versioned. |
+| Protocol drift between GUI host and engine versions | Handshake version gate (exists); conformance suite pinned to protocol v3; §5 additions are versioned. |
 | ANSI surface fidelity (wide chars, OSC-8 links, kitty images in frames) | Full repaints simplify things; start with xterm.js (battle-tested measurement); goldens from real extensions. Kitty-image frames degrade to placeholders initially — native image rendering covers the common tool-output path. |
 | `ctx.mode === "tui"` guards in third-party extensions skip `custom()` on a non-tui mode string | Decide §5.6 early; likely report a mode that satisfies existing guards' *intent* and document it. |
 | Streaming render performance on huge transcripts | Virtualization + append-only entry model from day one; perf budget tests in M7. |

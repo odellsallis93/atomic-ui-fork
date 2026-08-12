@@ -102,7 +102,18 @@ Session teardown fences engine recovery: disposal stops the current child, cance
 
 The engine child is launched with an environment that never contains Atomic's engine-only control values (engine role, host PID, guardian path, and any `--api-key` credential). They travel in an owner-only bootstrap file whose path is a private CLI argument; the child reads it once, freezes the values, and unlinks exactly that file. Recursive cleanup of the file's directory belongs to the host that created it, never to a path read from arguments. This matters for extensions: under Bun a child process spawned without an explicit `env` inherits the runtime's launch-time environment, so a value placed in the engine's environment could not be taken back by deleting it later. Because the engine never receives those values in its environment, `Bun.spawn()`, `Bun.spawnSync()`, and `node:child_process` calls from extension and hook code cannot leak them either. Passing an explicit `env` derived from `process.env` remains the recommended practice for anything an extension spawns.
 
-Dialogs and `ctx.ui.custom()` components are proxied to the host as rendered lines with asynchronous input forwarding. Custom UI results must be JSON-safe. APIs that require a synchronous callback in the terminal process—raw `onTerminalInput` transforms, synchronous `getEditorText`, custom editor factories, autocomplete wrappers, component-factory widgets, and custom header/footer factories—are unavailable in isolated interactive mode and produce a warning rather than executing extension code in the host. Print and public RPC modes retain their existing execution model.
+Dialogs and `ctx.ui.custom()` components are proxied to the interactive host as rendered
+ANSI lines with asynchronous input forwarding. Custom UI results must be JSON-safe. In an
+isolated interactive engine, extension callbacks still execute in the engine: the host
+mirrors editor text for synchronous `getEditorText`, serializes `onTerminalInput`
+transform/consume handlers before native insertion, evaluates autocomplete providers in the
+engine, and requests frames for custom editor, widget, header, and footer factories. Theme
+accessors and host-custom-UI state remain engine-owned as well; named `setTheme` selections
+are applied by each interactive host from the engine-owned theme, never from renderer CSS or
+theme paths. This lets terminal and GUI hosts share the same extension contract without
+executing extension code in Electron. A
+headless public RPC/print host, or an older interactive host that lacks the corresponding
+protocol capability, still returns the existing actionable unavailable warning.
 
 For session-style list pickers use `ctx.ui.hostSessionPicker(request)` instead of remote-rendering a selector through `ctx.ui.custom()`: the terminal host mounts the real built-in session selector natively, fed with JSON-safe rows (`HostSessionPickerRow`: `SessionInfo` with `createdAt`/`modifiedAt` epoch millis). Arrow-key navigation and search never cross the process boundary; only semantic events do — the returned handle exposes `result` (resolves with the selected row's `path`, or `undefined` on cancel), `update(rows)`, `error(message)`, and `close()`, and the request's `onDelete(path)` callback owns deletion (the host keeps the row until the extension replies with `update` or `error`). Every interactive host implements the identical API — in-process (no IPC) when not isolated, over the engine protocol when isolated — so callers never branch; the member is absent only on non-interactive surfaces (headless RPC, print), where commands should fail with an actionable error. See [Host-native session picker](/tui#host-native-session-picker) for an example.
 

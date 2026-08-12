@@ -77,6 +77,23 @@ test("remote custom editors accept input, preserve text, and submit through the 
 	service.dispose();
 });
 
+test("native host composer state backs getEditorText when no remote editor is mounted", () => {
+	const service = new EngineCustomUiService(() => {}, new KeybindingsManager());
+	assert.equal(service.getEditorText(), "");
+	assert.equal(
+		service.handleLine(
+			serializeInteractiveEngineFrame({
+				type: "engine_editor_state",
+				componentId: "composer",
+				text: "native draft",
+			}),
+		),
+		true,
+	);
+	assert.equal(service.getEditorText(), "native draft");
+	service.dispose();
+});
+
 test("remote custom editor factory is available for extension state restoration", () => {
 	const service = new EngineCustomUiService(() => {}, new KeybindingsManager());
 	const factory = () => ({

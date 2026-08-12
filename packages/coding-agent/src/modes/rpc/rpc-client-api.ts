@@ -9,14 +9,21 @@ import type { AtomicProviderCompat } from "../../core/model-capabilities.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import type {
 	RpcAutocompleteItem,
+	RpcAutocompleteSuggestion,
 	RpcCommand,
 	RpcLoginProviderResult,
 	RpcLogoutProviderResult,
 	RpcModelCatalog,
 	RpcModelRefreshResult,
+	RpcProjectTrustOption,
+	RpcProjectTrustStatus,
+	RpcResolvedThemeSnapshot,
 	RpcResponse,
 	RpcSessionState,
+	RpcSettingsOperation,
+	RpcSettingsSnapshot,
 	RpcSlashCommand,
+	RpcThemeSummary,
 } from "./rpc-types.ts";
 
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
@@ -64,6 +71,42 @@ export abstract class RpcClientApi {
 	}
 	async getState(): Promise<RpcSessionState> {
 		return this.data(await this.request({ type: "get_state" }));
+	}
+	async getSettingsSnapshot(): Promise<RpcSettingsSnapshot> {
+		return this.data(await this.request({ type: "get_settings_snapshot" }));
+	}
+	async reloadSettings(): Promise<RpcSettingsSnapshot> {
+		return this.data(await this.request({ type: "reload_settings" }));
+	}
+	async listThemes(): Promise<RpcThemeSummary[]> {
+		return this.data<{ themes: RpcThemeSummary[] }>(await this.request({ type: "list_themes" })).themes;
+	}
+	async getThemeSnapshot(name?: string): Promise<RpcResolvedThemeSnapshot> {
+		return this.data(await this.request({ type: "get_theme_snapshot", name }));
+	}
+	async setTheme(name: string): Promise<RpcResolvedThemeSnapshot> {
+		return this.data(await this.request({ type: "set_theme", name }));
+	}
+	async setFastMode(scope: "chat" | "workflow", enabled: boolean): Promise<RpcSettingsSnapshot> {
+		return this.data(await this.request({ type: "set_fast_mode", scope, enabled }));
+	}
+	async updateSettings(operations: RpcSettingsOperation[]): Promise<RpcSettingsSnapshot> {
+		return this.data(await this.request({ type: "update_settings", operations }));
+	}
+	async getExternalEditorCommand(): Promise<string> {
+		return this.data<{ command: string }>(await this.request({ type: "get_external_editor_command" })).command;
+	}
+	async getProjectTrust(): Promise<RpcProjectTrustStatus> {
+		return this.data(await this.request({ type: "get_project_trust" }));
+	}
+	async getProjectTrustOptions(): Promise<RpcProjectTrustOption[]> {
+		return this.data<{ options: RpcProjectTrustOption[] }>(await this.request({ type: "get_project_trust_options" }))
+			.options;
+	}
+	async setProjectTrust(
+		optionId: RpcProjectTrustOption["id"],
+	): Promise<{ status: RpcProjectTrustStatus; sessionOnly?: boolean }> {
+		return this.data(await this.request({ type: "set_project_trust", optionId }));
 	}
 	async setModel(provider: string, modelId: string): Promise<{ provider: string; id: string }> {
 		return this.data(await this.request({ type: "set_model", provider, modelId }));
@@ -154,6 +197,12 @@ export abstract class RpcClientApi {
 	async shareSession(): Promise<{ gistUrl: string; shareUrl: string }> {
 		return this.data(await this.request({ type: "share_session" }));
 	}
+	async deleteSession(sessionPath: string): Promise<void> {
+		await this.request({ type: "delete_session", sessionPath });
+	}
+	async renameSession(sessionPath: string, name: string): Promise<void> {
+		await this.request({ type: "rename_session", sessionPath, name });
+	}
 	async switchSession(sessionPath: string): Promise<{ cancelled: boolean }> {
 		return this.data(await this.request({ type: "switch_session", sessionPath }));
 	}
@@ -190,5 +239,16 @@ export abstract class RpcClientApi {
 		return this.data<{ completions: RpcAutocompleteItem[] | null }>(
 			await this.request({ type: "get_command_completions", commandName, argumentPrefix }),
 		).completions;
+	}
+	async autocompleteQuery(queryKey: string, text: string, cursorOffset: number): Promise<RpcAutocompleteSuggestion[]> {
+		return this.data<{ suggestions: RpcAutocompleteSuggestion[] }>(
+			await this.request({ type: "autocomplete_query", queryKey, text, cursorOffset }),
+		).suggestions;
+	}
+	async cancelAutocompleteQuery(queryKey: string): Promise<void> {
+		await this.request({ type: "cancel_autocomplete_query", queryKey });
+	}
+	async interceptTerminalInput(data: string): Promise<{ consumed: boolean; data?: string }> {
+		return this.data(await this.request({ type: "intercept_terminal_input", data }));
 	}
 }

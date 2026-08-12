@@ -27,6 +27,39 @@ function withOccurrenceKeys<T>(items: readonly T[], keyFor: (item: T) => string)
 	});
 }
 
+function isUnifiedDiff(text: string): boolean {
+	const lines = text.split("\n");
+	return (
+		lines.some((line) => line.startsWith("@@ ")) &&
+		lines.some((line) => line.startsWith("--- ")) &&
+		lines.some((line) => line.startsWith("+++ "))
+	);
+}
+
+function DiffBody({ text }: { text: string }) {
+	return (
+		<pre className="tool-body diff-body">
+			{withOccurrenceKeys(text.split("\n"), (line) => line).map(({ item: line, key }) => (
+				<span
+					key={key}
+					className={
+						line.startsWith("+") && !line.startsWith("+++")
+							? "diff-add"
+							: line.startsWith("-") && !line.startsWith("---")
+								? "diff-remove"
+								: line.startsWith("@@ ")
+									? "diff-hunk"
+									: undefined
+					}
+				>
+					{line}
+					{"\n"}
+				</span>
+			))}
+		</pre>
+	);
+}
+
 function ToolBody({ entry }: { entry: TranscriptEntry }) {
 	if (entry.remoteRenderLines) {
 		return (
@@ -54,10 +87,28 @@ function ToolBody({ entry }: { entry: TranscriptEntry }) {
 			</pre>
 		);
 	}
+	if (entry.kind === "tool" && isUnifiedDiff(entry.text)) return <DiffBody text={entry.text} />;
 	return (
 		<pre id={`entry-body-${entry.id}`} className={`tool-body${entry.kind === "bash" ? " bash-body" : ""}`}>
 			{entry.expanded ? entry.text : entry.text.slice(0, 400)}
 		</pre>
+	);
+}
+
+function ImageAttachments({ entry }: { entry: TranscriptEntry }) {
+	if (!entry.images || entry.images.length === 0) return null;
+	return (
+		<fieldset className="entry-images">
+			<legend className="sr-only">Attachments</legend>
+			{withOccurrenceKeys(entry.images, (image) => `${image.mimeType}:${image.data}`).map(({ item: image, key }) => (
+				<img
+					key={key}
+					className="entry-image"
+					src={`data:${image.mimeType};base64,${image.data}`}
+					alt="Attachment"
+				/>
+			))}
+		</fieldset>
 	);
 }
 
@@ -146,9 +197,15 @@ function EntryView({
 				</details>
 			) : null}
 			{entry.kind === "assistant" ? (
-				<MarkdownBody source={entry.text || (entry.streaming ? "…" : "")} />
+				<>
+					<MarkdownBody source={entry.text || (entry.streaming ? "…" : "")} />
+					<ImageAttachments entry={entry} />
+				</>
 			) : entry.kind === "tool" || entry.kind === "bash" ? (
-				<ToolBody entry={entry} />
+				<>
+					<ToolBody entry={entry} />
+					<ImageAttachments entry={entry} />
+				</>
 			) : entry.kind === "skill" ? (
 				<div className="entry-body">
 					<details
@@ -161,7 +218,10 @@ function EntryView({
 					{entry.text ? <div>{entry.text}</div> : null}
 				</div>
 			) : (
-				<div className="entry-body">{entry.text}</div>
+				<>
+					<div className="entry-body">{entry.text}</div>
+					<ImageAttachments entry={entry} />
+				</>
 			)}
 		</article>
 	);
@@ -297,7 +357,10 @@ export function Transcript({
 		void scrollKey;
 		void virtual.totalHeight;
 		const scroller = scrollerRef.current;
-		if (scroller && followRef.current) scroller.scrollTop = scroller.scrollHeight;
+		if (scroller && followRef.current) {
+			scroller.scrollTop = scroller.scrollHeight;
+			setScrollTop(scroller.scrollTop);
+		}
 	}, [scrollKey, virtual.totalHeight]);
 
 	return (

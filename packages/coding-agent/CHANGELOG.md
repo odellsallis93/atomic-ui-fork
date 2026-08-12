@@ -7,9 +7,54 @@
 - Documented the optional Electron GUI host (`packages/gui` / `@bastani/atomic-gui`) and how it speaks the interactive-engine protocol alongside the TUI, including sessions/themes/auth/trust coverage, extension frame render loop, and shortcuts (`docs/gui.md`).
 - Interactive-engine protocol v3 now identifies the presentation host. GUI sessions retain `ctx.mode === "tui"` for compatibility, while extensions may opt into GUI behavior through `ctx.ui.hostInfo`.
 - Added the `share_session` RPC command, allowing GUI hosts to create a secret GitHub gist through the engine-owned `gh` flow without receiving credentials or tokens.
+- Added typed engine-owned theme snapshot and mutation RPCs. GUI hosts now receive resolved CSS tokens and precedence metadata, while theme validation and persistent settings writes remain inside the engine.
+- Added validated `update_settings` operations for optional GUI hosts. Queue behavior,
+  compaction, retry, and Codex fast-mode writes stay in Atomic's settings manager rather
+  than exposing settings documents or paths to Electron.
+- Added cancellable engine-owned autocomplete queries for GUI hosts. Slash commands and arguments, paths, `@` mentions, and extension `ctx.ui.addAutocompleteProvider` wrappers now run in the engine and return the applied document/cursor result.
+- Added ordered, cancellable `ctx.ui.onTerminalInput` interception for the optional
+  interactive-engine GUI host. Extension handlers can consume or transform input without
+  changing the standalone TUI input loop.
+- Added a validated, engine-owned Codex fast-mode RPC for optional GUI hosts. The renderer
+  can toggle chat or workflow scope without reading or writing Atomic settings files.
+- Added engine-owned durable session deletion for optional GUI hosts. The engine validates
+  the requested path against its active session store before removing it.
+- Added engine-owned durable session rename for optional GUI hosts, including inactive
+  sessions in the active store.
+- Added an opt-in durable-header request for optional GUI new and replacement sessions.
+  The standalone TUI continues to defer empty-session persistence until its normal first
+  session entry is recorded.
+- Added typed engine-owned project-trust RPCs for optional GUI hosts. Trust status,
+  choices, and persistence use Atomic's existing `ProjectTrustStore`, while Electron
+  receives no trust-store path or raw configuration data.
+- Added engine-derived API-key, OAuth, and stored-credential-removal capability metadata
+  to the optional GUI model catalog. GUI hosts can now offer only supported authentication
+  actions without receiving credentials or credential-store details.
+- Optional GUI transcript hosts now preserve engine-supplied safe raster attachments
+  (PNG, JPEG, GIF, WebP, and AVIF) while rejecting non-raster image MIME types.
+- Optional GUI hosts render escaped unified-diff tool output with distinct added, removed,
+  and hunk-line styling.
+- Added a typed external-editor command lookup for optional GUI hosts, preserving Atomic
+  settings precedence while keeping raw settings documents out of Electron.
+- Added the engine-owned `hide_thinking` GUI settings operation and snapshot metadata;
+  it persists default thinking-block visibility without changing the standalone TUI toggle.
+- Added a validated `model_scope` GUI settings operation that resolves configured model
+  patterns against the engine catalog, persists accepted patterns through `SettingsManager`,
+  and updates the active session cycle without changing standalone TUI behavior.
+- Named `ctx.ui.setTheme(...)` selections now propagate through the isolated interactive
+  host and resolve renderer CSS in the engine, without exposing theme files or raw CSS to
+  optional GUI clients.
 
 ### Fixed
 
+- Fixed optional GUI `ctx.ui.editor` dialogs ignoring their declared timeout and abort-signal
+  options. Isolated interactive extensions now receive the same cancellation contract as
+  select, confirm, and input dialogs.
+- Fixed optional GUI `update_settings` batches applying an earlier valid operation before
+  a later operation failed validation. Atomic now validates the complete batch, including
+  model-scope resolution, before persisting or applying any change.
+- Fixed optional GUI-host `@` file completion to use the same engine fallback provider as
+  the TUI when the primary autocomplete chain has no result.
 - Fixed in-process child sessions losing their admission-issued nesting depth and delegation limit. `SubagentChildPolicy` now carries both the admitted `depth` and the effective `maxSubagentDepth`, so the subagent executor can enforce the configured and inherited limits without relying on the removed process-environment bridge ([#2220](https://github.com/bastani-inc/atomic/pull/2220), regression from [#2205](https://github.com/bastani-inc/atomic/pull/2205)).
 - Release archives no longer ship packages built for a different architecture. Every archive is produced on one Linux x64 runner, and that runner's `node_modules` was copied verbatim into all of them, so 0.9.12's `atomic-linux-arm64.tar.gz` and `atomic-darwin-arm64.tar.gz` both contained `@esbuild/linux-x64`. The build now prunes the `@embedded-postgres` leaves that cannot run on the archive being staged and then fails the build if any staged package's own `os`/`cpu`/`libc` declaration is incompatible with that archive ([#2208](https://github.com/bastani-inc/atomic/issues/2208)).
 - Reduced redundant repaints of a Ctrl+O-expanded live subagent widget, which were scrolling the chat window to the bottom and clearing terminal scrollback during a run. The widget was republished on every child session event, including assistant streaming deltas, so it repainted continuously instead of when its contents changed; each repaint of a row above the terminal fold costs a pi-tui full redraw that clears scrollback. Progress is now published only at milestones that change what the widget shows. A genuine above-fold milestone change can still require that redraw when the editor/footer region plus the live widget exceed the terminal height — that path is upstream (earendil-works/pi#4785, #7194) and is not fixed here ([#2213](https://github.com/bastani-inc/atomic/pull/2213), regression from [#2205](https://github.com/bastani-inc/atomic/pull/2205)).

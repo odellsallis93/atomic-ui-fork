@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 import { FooterDataProvider } from "../../packages/coding-agent/src/core/footer-data-provider.js";
+import { SettingsManager } from "../../packages/coding-agent/src/core/settings-manager-core.ts";
 import type { EngineCustomUiService } from "../../packages/coding-agent/src/modes/interactive-engine/engine-custom-ui.ts";
 import { createRpcExtensionUIContext } from "../../packages/coding-agent/src/modes/rpc/rpc-extension-ui.ts";
 
@@ -37,6 +38,60 @@ test("isolated GUI extensions receive an opt-in host descriptor while retaining 
 		hostInfo: { kind: "gui" },
 	});
 	assert.deepEqual(ui.hostInfo, { kind: "gui" });
+});
+
+test("isolated extension UI registers autocomplete wrappers with the engine query service", () => {
+	let registered = 0;
+	const ui = createRpcExtensionUIContext({
+		output: () => {},
+		pendingExtensionRequests: new Map(),
+		onAddAutocompleteProvider: () => {
+			registered += 1;
+		},
+	});
+	ui.addAutocompleteProvider((current) => current);
+	assert.equal(registered, 1);
+});
+
+test("isolated extension UI registers terminal interception handlers with the engine", () => {
+	let handler: ((data: string) => { consume?: boolean } | undefined) | undefined;
+	const ui = createRpcExtensionUIContext({
+		output: () => {},
+		pendingExtensionRequests: new Map(),
+		onTerminalInput: (registered) => {
+			handler = registered;
+			return () => {
+				handler = undefined;
+			};
+		},
+	});
+	const unsubscribe = ui.onTerminalInput(() => ({ consume: true }));
+	assert.deepEqual(handler?.("\u001b"), { consume: true });
+	unsubscribe();
+	assert.equal(handler, undefined);
+});
+
+test("isolated extension UI exposes and switches engine themes", () => {
+	const settingsManager = SettingsManager.inMemory({ theme: "dark" });
+	const requests: Array<{ type?: string; method?: string; name?: string }> = [];
+	const ui = createRpcExtensionUIContext({
+		output: (message) => requests.push(message),
+		pendingExtensionRequests: new Map(),
+		settingsManager,
+	});
+	assert.ok(ui.getAllThemes().some((candidate) => candidate.name === "dark"));
+	assert.equal(ui.getTheme("dark")?.name, "dark");
+	assert.deepEqual(ui.setTheme("catppuccin-mocha"), { success: true });
+	assert.equal(settingsManager.getThemeSetting(), "catppuccin-mocha");
+	assert.equal(ui.setTheme("does-not-exist").success, false);
+	assert.deepEqual(ui.setTheme("dark"), { success: true });
+	assert.deepEqual(
+		requests.map(({ type, method, name }) => ({ type, method, name })),
+		[
+			{ type: "extension_ui_request", method: "setTheme", name: "catppuccin-mocha" },
+			{ type: "extension_ui_request", method: "setTheme", name: "dark" },
+		],
+	);
 });
 
 test("isolated extension UI exposes live footer status and cached git data", () => {
@@ -118,4 +173,23 @@ test("hidden-thinking label emits host configuration", () => {
 	ui.setHiddenThinkingLabel("Reasoning privately");
 	assert.equal(requests[0]?.method, "setHiddenThinkingLabel");
 	assert.equal(requests[0]?.label, "Reasoning privately");
+});
+
+test("isolated editor dialogs retain timeout and abort semantics", async () => {
+	const requests: Array<Record<string, unknown>> = [];
+	const pending = new Map();
+	const ui = createRpcExtensionUIContext({
+		output: (request) => requests.push(request as Record<string, unknown>),
+		pendingExtensionRequests: pending,
+	});
+	const controller = new AbortController();
+	const result = ui.editor("Timed editor", "draft", { timeout: 25, signal: controller.signal });
+	assert.deepEqual(
+		requests.map(({ method, title, prefill, timeout }) => ({ method, title, prefill, timeout })),
+		[{ method: "editor", title: "Timed editor", prefill: "draft", timeout: 25 }],
+	);
+	assert.equal(pending.size, 1);
+	controller.abort();
+	assert.equal(await result, undefined);
+	assert.equal(pending.size, 0);
 });

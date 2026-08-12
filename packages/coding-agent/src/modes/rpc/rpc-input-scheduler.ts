@@ -9,7 +9,14 @@ const INTERRUPT_COMMANDS: ReadonlySet<string> = new Set([
 	"abort_bash",
 	"pause_queued_messages",
 ]);
-const CONCURRENT_COMMANDS: ReadonlySet<string> = new Set(["bash", "user_bash", "refresh_models"]);
+const CONCURRENT_COMMANDS: ReadonlySet<string> = new Set([
+	"autocomplete_query",
+	"cancel_autocomplete_query",
+	"intercept_terminal_input",
+	"bash",
+	"user_bash",
+	"refresh_models",
+]);
 
 export function isRpcExtensionUIResponse(value: unknown): value is RpcExtensionUIResponse {
 	return (

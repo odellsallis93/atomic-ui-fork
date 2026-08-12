@@ -107,6 +107,7 @@ export class EngineCustomUiService {
 	private readonly widgetIds = new Map<string, string>();
 	private readonly chromeIds = new Map<RemoteChromeSlot, string>();
 	private editorFactory: EditorFactory | undefined;
+	private hostEditorText = "";
 	private readonly active = new Map<string, ActiveComponent>();
 	private nextId = 0;
 	private readonly write: (line: string) => void;
@@ -244,7 +245,7 @@ export class EngineCustomUiService {
 	getEditorText(): string | undefined {
 		const componentId = this.chromeIds.get("editor");
 		const editor = componentId ? (this.active.get(componentId)?.component as EditorComponent | undefined) : undefined;
-		return editor?.getExpandedText?.() ?? editor?.getText();
+		return editor?.getExpandedText?.() ?? editor?.getText() ?? this.hostEditorText;
 	}
 	constructor(write: (line: string) => void, keybindings: KeybindingsManager) {
 		this.write = write;
@@ -338,6 +339,10 @@ export class EngineCustomUiService {
 	handleLine(line: string): boolean {
 		const command = parseInteractiveEngineCommand(line);
 		if (!command) return false;
+		if (command.type === "engine_editor_state") {
+			this.hostEditorText = command.text;
+			return true;
+		}
 		if (!command.type.startsWith("engine_custom_")) return false;
 		const record = this.active.get(command.componentId);
 		if (!record) return true;

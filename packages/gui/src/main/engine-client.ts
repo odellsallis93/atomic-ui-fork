@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type {
 	AuthCatalog,
 	CommandCompletionInfo,
+	EngineAutocompleteSuggestion,
 	EngineStatus,
 	ExtensionShortcutInfo,
 	ExtensionUiRequest,
@@ -12,16 +13,23 @@ import type {
 	ForkMessageInfo,
 	GuiBashResult,
 	GuiRpcEvent,
+	GuiSettingsSnapshot,
 	ModelInfo,
 	OAuthProviderInfo,
 	PromptRequest,
+	ResolvedThemeCss,
 	RpcResult,
 	SessionListItem,
 	SessionShareResult,
 	SessionStatsSummary,
 	SessionTreeNodeInfo,
+	SettingsOperation,
 	SlashCommandInfo,
+	TerminalInputInterception,
+	ThemeSummary,
 	TreeNavigationOptions,
+	TrustOption,
+	TrustStatus,
 } from "../shared/ipc.ts";
 import {
 	INTERACTIVE_ENGINE_BOOTSTRAP_FLAG,
@@ -46,15 +54,20 @@ export interface EngineClientOptions {
 	sessionPath?: string;
 	cli?: ResolvedAtomicCli;
 	extraArgs?: string[];
+	/** Optional child-process environment additions (primarily for isolated host tests). */
+	env?: NodeJS.ProcessEnv;
 	onStatus?: (status: EngineStatus) => void;
 	onEvent?: (event: GuiRpcEvent) => void;
 	onRawLine?: (line: string) => void;
 	onExtensionUi?: (request: ExtensionUiRequest) => void;
 }
 
+/** A durable transcript page can take longer than ordinary interactive RPCs to cross Electron IPC. */
+const TRANSCRIPT_READ_TIMEOUT_MS = 120_000;
+
 /**
  * Host-side JSONL client for an isolated interactive-engine child.
- * Speaks protocol v2 (engine_ready handshake) plus the RPC command set.
+ * Speaks protocol v3 (engine_ready handshake) plus the RPC command set.
  */
 export class EngineClient {
 	private child: ChildProcess | null = null;
@@ -89,7 +102,11 @@ export class EngineClient {
 			hostKind: "gui",
 		});
 
-		const sessionArgs = this.options.sessionPath ? ["--session", this.options.sessionPath] : ["--no-session"];
+		// A GUI window owns normal durable Atomic sessions by default. `--no-session`
+		// makes import/list/new/resume impossible and is appropriate only for an
+		// explicit ephemeral host (which this launcher is not). Keep the optional
+		// explicit resume path while letting the engine create its standard session.
+		const sessionArgs = this.options.sessionPath ? ["--session", this.options.sessionPath] : [];
 		const cliArgs = [
 			"--mode",
 			"rpc",
@@ -103,7 +120,7 @@ export class EngineClient {
 		try {
 			this.child = spawn(cli.runtimeExecutable, argv, {
 				cwd: this.options.cwd ?? process.cwd(),
-				env: { ...process.env },
+				env: { ...process.env, ...this.options.env },
 				stdio: ["pipe", "pipe", "pipe"],
 				detached: process.platform !== "win32",
 			});
@@ -254,7 +271,7 @@ export class EngineClient {
 	}
 
 	async newSession(): Promise<RpcResult> {
-		const result = await this.command({ type: "new_session" });
+		const result = await this.command({ type: "new_session", persist: true });
 		await this.refreshState().catch(() => undefined);
 		return result;
 	}
@@ -315,6 +332,170 @@ export class EngineClient {
 			return { ok: false, error: "Engine returned an invalid share response" };
 		}
 		return { ok: true, data: { gistUrl: result.data.gistUrl, shareUrl: result.data.shareUrl } };
+	}
+
+	async deleteSession(sessionPath: string): Promise<RpcResult> {
+		const result = await this.command({ type: "delete_session", sessionPath, persistReplacement: true });
+		await this.refreshState().catch(() => undefined);
+		return result;
+	}
+
+	async renameSession(sessionPath: string, name: string): Promise<RpcResult> {
+		return await this.command({ type: "rename_session", sessionPath, name });
+	}
+
+	async getSettingsSnapshot(): Promise<RpcResult<GuiSettingsSnapshot>> {
+		const result = await this.command<Partial<GuiSettingsSnapshot>>({ type: "get_settings_snapshot" });
+		if (!result.ok) return { ok: false, error: result.error };
+		return this.parseSettingsSnapshot(result.data);
+	}
+
+	async reloadSettings(): Promise<RpcResult<GuiSettingsSnapshot>> {
+		const result = await this.command<Partial<GuiSettingsSnapshot>>({ type: "reload_settings" });
+		if (!result.ok) return { ok: false, error: result.error };
+		return this.parseSettingsSnapshot(result.data);
+	}
+
+	async setFastMode(scope: "chat" | "workflow", enabled: boolean): Promise<RpcResult<GuiSettingsSnapshot>> {
+		const result = await this.command<Partial<GuiSettingsSnapshot>>({ type: "set_fast_mode", scope, enabled });
+		if (!result.ok) return { ok: false, error: result.error };
+		return this.parseSettingsSnapshot(result.data);
+	}
+
+	private parseSettingsSnapshot(data: Partial<GuiSettingsSnapshot> | undefined): RpcResult<GuiSettingsSnapshot> {
+		if (
+			typeof data?.theme !== "string" ||
+			typeof data.projectOverridesTheme !== "boolean" ||
+			typeof data.fastMode?.chat !== "boolean" ||
+			typeof data.fastMode.workflow !== "boolean" ||
+			typeof data.hideThinkingBlock !== "boolean" ||
+			(data.steeringMode !== "all" && data.steeringMode !== "one-at-a-time") ||
+			(data.followUpMode !== "all" && data.followUpMode !== "one-at-a-time") ||
+			typeof data.autoCompactionEnabled !== "boolean" ||
+			typeof data.autoRetryEnabled !== "boolean" ||
+			!Array.isArray(data.modelScopePatterns) ||
+			!data.modelScopePatterns.every((pattern) => typeof pattern === "string")
+		) {
+			return { ok: false, error: "Engine returned an invalid settings snapshot" };
+		}
+		return { ok: true, data: data as GuiSettingsSnapshot };
+	}
+
+	async updateSettings(operations: SettingsOperation[]): Promise<RpcResult<GuiSettingsSnapshot>> {
+		const result = await this.command<Partial<GuiSettingsSnapshot>>({ type: "update_settings", operations });
+		if (!result.ok) return { ok: false, error: result.error };
+		return this.parseSettingsSnapshot(result.data);
+	}
+
+	async getExternalEditorCommand(): Promise<RpcResult<string>> {
+		const result = await this.command<{ command?: unknown }>({ type: "get_external_editor_command" });
+		if (!result.ok) return { ok: false, error: result.error };
+		if (typeof result.data?.command !== "string" || result.data.command.trim() === "") {
+			return { ok: false, error: "Engine returned an invalid external-editor command" };
+		}
+		return { ok: true, data: result.data.command };
+	}
+
+	async getProjectTrust(): Promise<RpcResult<TrustStatus>> {
+		const result = await this.command<Partial<TrustStatus>>({ type: "get_project_trust" });
+		if (!result.ok) return { ok: false, error: result.error };
+		if (
+			typeof result.data?.cwd !== "string" ||
+			typeof result.data.needsTrustPrompt !== "boolean" ||
+			typeof result.data.hasProjectResources !== "boolean" ||
+			(result.data.decision !== true && result.data.decision !== false && result.data.decision !== null)
+		) {
+			return { ok: false, error: "Engine returned an invalid project-trust status" };
+		}
+		return { ok: true, data: result.data as TrustStatus };
+	}
+
+	async getProjectTrustOptions(): Promise<RpcResult<TrustOption[]>> {
+		const result = await this.command<{ options?: unknown }>({ type: "get_project_trust_options" });
+		if (!result.ok) return { ok: false, error: result.error };
+		const options = Array.isArray(result.data?.options)
+			? result.data.options.filter(
+					(option): option is TrustOption =>
+						typeof option === "object" &&
+						option !== null &&
+						typeof (option as { id?: unknown }).id === "string" &&
+						typeof (option as { label?: unknown }).label === "string" &&
+						typeof (option as { trusted?: unknown }).trusted === "boolean" &&
+						typeof (option as { sessionOnly?: unknown }).sessionOnly === "boolean",
+				)
+			: [];
+		return { ok: true, data: options };
+	}
+
+	async setProjectTrust(optionId: string): Promise<RpcResult<{ status: TrustStatus; sessionOnly?: boolean }>> {
+		const result = await this.command<{ status?: TrustStatus; sessionOnly?: unknown }>({
+			type: "set_project_trust",
+			optionId,
+		});
+		if (!result.ok) return { ok: false, error: result.error };
+		const data = result.data;
+		const status = data?.status;
+		if (
+			typeof status?.cwd !== "string" ||
+			typeof status.needsTrustPrompt !== "boolean" ||
+			typeof status.hasProjectResources !== "boolean" ||
+			(status.decision !== true && status.decision !== false && status.decision !== null) ||
+			(data?.sessionOnly !== undefined && typeof data.sessionOnly !== "boolean")
+		) {
+			return { ok: false, error: "Engine returned an invalid project-trust decision" };
+		}
+		return {
+			ok: true,
+			data: {
+				status,
+				...(typeof data?.sessionOnly === "boolean" ? { sessionOnly: data.sessionOnly } : {}),
+			},
+		};
+	}
+
+	async listThemes(): Promise<RpcResult<ThemeSummary[]>> {
+		const result = await this.command<{ themes?: unknown }>({ type: "list_themes" });
+		if (!result.ok) return { ok: false, error: result.error };
+		const themes = Array.isArray(result.data?.themes)
+			? result.data.themes.filter(
+					(theme): theme is ThemeSummary =>
+						typeof theme === "object" &&
+						theme !== null &&
+						typeof (theme as { name?: unknown }).name === "string" &&
+						((theme as { source?: unknown }).source === "builtin" ||
+							(theme as { source?: unknown }).source === "custom"),
+				)
+			: [];
+		return { ok: true, data: themes };
+	}
+
+	async getThemeSnapshot(name?: string): Promise<RpcResult<ResolvedThemeCss>> {
+		const result = await this.command<Partial<ResolvedThemeCss>>({
+			type: "get_theme_snapshot",
+			...(name?.trim() ? { name: name.trim() } : {}),
+		});
+		if (!result.ok) return { ok: false, error: result.error };
+		if (
+			typeof result.data?.name !== "string" ||
+			typeof result.data.cssVariables !== "object" ||
+			result.data.cssVariables === null
+		) {
+			return { ok: false, error: "Engine returned an invalid theme snapshot" };
+		}
+		return { ok: true, data: { name: result.data.name, cssVariables: result.data.cssVariables } };
+	}
+
+	async setTheme(name: string): Promise<RpcResult<ResolvedThemeCss>> {
+		const result = await this.command<Partial<ResolvedThemeCss>>({ type: "set_theme", name });
+		if (!result.ok) return { ok: false, error: result.error };
+		if (
+			typeof result.data?.name !== "string" ||
+			typeof result.data.cssVariables !== "object" ||
+			result.data.cssVariables === null
+		) {
+			return { ok: false, error: "Engine returned an invalid theme snapshot" };
+		}
+		return { ok: true, data: { name: result.data.name, cssVariables: result.data.cssVariables } };
 	}
 
 	async compact(): Promise<RpcResult> {
@@ -419,14 +600,62 @@ export class EngineClient {
 		return { ok: true, data: completions };
 	}
 
-	async getEntries(): Promise<RpcResult<{ entries: unknown[]; leafId: string | null }>> {
-		const result = await this.command<{ entries?: unknown; leafId?: unknown }>({ type: "get_entries" });
+	async getAutocomplete(text: string, cursorOffset: number): Promise<RpcResult<EngineAutocompleteSuggestion[]>> {
+		const result = await this.command<{ suggestions?: unknown }>({
+			type: "autocomplete_query",
+			queryKey: "composer",
+			text,
+			cursorOffset,
+		});
+		if (!result.ok) return { ok: false, error: result.error };
+		const suggestions = Array.isArray(result.data?.suggestions)
+			? result.data.suggestions.filter(
+					(suggestion): suggestion is EngineAutocompleteSuggestion =>
+						typeof suggestion === "object" &&
+						suggestion !== null &&
+						typeof (suggestion as { value?: unknown }).value === "string" &&
+						typeof (suggestion as { label?: unknown }).label === "string" &&
+						typeof (suggestion as { text?: unknown }).text === "string" &&
+						typeof (suggestion as { cursorOffset?: unknown }).cursorOffset === "number",
+				)
+			: [];
+		return { ok: true, data: suggestions };
+	}
+
+	async interceptTerminalInput(data: string): Promise<RpcResult<TerminalInputInterception>> {
+		const result = await this.command<Partial<TerminalInputInterception>>({ type: "intercept_terminal_input", data });
+		if (!result.ok) return { ok: false, error: result.error };
+		if (typeof result.data?.consumed !== "boolean") {
+			return { ok: false, error: "Engine returned an invalid terminal interception response" };
+		}
+		return {
+			ok: true,
+			data: {
+				consumed: result.data.consumed,
+				...(typeof result.data.data === "string" ? { data: result.data.data } : {}),
+			},
+		};
+	}
+
+	async getEntries(options?: {
+		offset?: number;
+		limit?: number;
+	}): Promise<RpcResult<{ entries: unknown[]; leafId: string | null; total: number; nextOffset: number | null }>> {
+		const result = await this.command<{ entries?: unknown; leafId?: unknown; total?: unknown; nextOffset?: unknown }>(
+			{
+				type: "get_entries",
+				...options,
+			},
+			TRANSCRIPT_READ_TIMEOUT_MS,
+		);
 		if (!result.ok) return { ok: false, error: result.error };
 		return {
 			ok: true,
 			data: {
 				entries: Array.isArray(result.data?.entries) ? result.data.entries : [],
 				leafId: typeof result.data?.leafId === "string" ? result.data.leafId : null,
+				total: typeof result.data?.total === "number" ? result.data.total : 0,
+				nextOffset: typeof result.data?.nextOffset === "number" ? result.data.nextOffset : null,
 			},
 		};
 	}
@@ -471,6 +700,8 @@ export class EngineClient {
 				loginLabel?: string;
 				usesCallbackServer?: boolean;
 			}>;
+			apiKeyProviders?: Array<{ id?: string; name?: string }>;
+			logoutProviders?: unknown[];
 		}>({ type: "get_available_models" });
 		if (!result.ok) return { ok: false, error: result.error };
 		const mapModel = (model: { provider?: string; id?: string; name?: string; thinking?: boolean }): ModelInfo => ({
@@ -512,10 +743,21 @@ export class EngineClient {
 				usesCallbackServer:
 					typeof provider.usesCallbackServer === "boolean" ? provider.usesCallbackServer : undefined,
 			}));
-		const providers = [
-			...new Set([...displayModels.map((model) => model.provider), ...oauthProviders.map((p) => p.id)]),
-		].sort();
-		return { ok: true, data: { models: displayModels, scopedModels, oauthProviders, providers } };
+		const apiKeyProviders = (result.data?.apiKeyProviders ?? [])
+			.filter(
+				(provider): provider is { id: string; name: string } =>
+					typeof provider.id === "string" && typeof provider.name === "string",
+			)
+			.map((provider) => ({ id: provider.id, name: provider.name }));
+		const apiKeyProviderIds = new Set(apiKeyProviders.map((provider) => provider.id));
+		const providers = [...new Set([...apiKeyProviderIds, ...oauthProviders.map((provider) => provider.id)])].sort();
+		const logoutProviders = (result.data?.logoutProviders ?? []).filter(
+			(provider): provider is string => typeof provider === "string" && providers.includes(provider),
+		);
+		return {
+			ok: true,
+			data: { models: displayModels, scopedModels, apiKeyProviders, oauthProviders, logoutProviders, providers },
+		};
 	}
 
 	async loginProvider(provider: string, authType: "api_key" | "oauth" = "api_key"): Promise<RpcResult> {

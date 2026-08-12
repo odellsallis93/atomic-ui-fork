@@ -6,6 +6,7 @@ import {
 	isSafeExternalUrl,
 	isTrustedIpcSender,
 	redactSensitiveProtocolLine,
+	summarizeRawProtocolLine,
 } from "../src/main/security.ts";
 
 test("packaged navigation allows only its document and local dev origin", () => {
@@ -70,4 +71,23 @@ test("raw protocol logging redacts credential fields at every level", () => {
 	assert.doesNotMatch(redacted, /token-value|secret-value|key-value|bare-token-value|verification-value/u);
 	assert.match(redacted, /\[redacted\]/u);
 	assert.equal(redactSensitiveProtocolLine("engine diagnostic"), "engine diagnostic");
+});
+
+test("raw protocol logs summarize durable transcript responses without retaining entry content", () => {
+	const line = JSON.stringify({
+		id: "gui-42",
+		type: "response",
+		command: "get_entries",
+		success: true,
+		data: {
+			entries: [{ id: "secret-entry", message: { role: "user", content: "do not duplicate this" } }],
+			leafId: "leaf-1",
+			total: 100,
+			nextOffset: 1,
+		},
+	});
+	const summarized = summarizeRawProtocolLine(line);
+	assert.match(summarized, /"entryCount":1/u);
+	assert.match(summarized, /"total":100/u);
+	assert.doesNotMatch(summarized, /do not duplicate this|secret-entry/u);
 });

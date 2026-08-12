@@ -22,8 +22,13 @@ function parseCommand(command: string): string[] {
 export async function editExternally(
 	text: string,
 	environment = process.env,
+	configuredCommand?: string,
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
-	const command = environment.VISUAL || environment.EDITOR || (process.platform === "win32" ? "notepad" : "nano");
+	const command =
+		configuredCommand?.trim() ||
+		environment.VISUAL ||
+		environment.EDITOR ||
+		(process.platform === "win32" ? "notepad" : "nano");
 	const [editor, ...args] = parseCommand(command);
 	if (!editor) return { ok: false, error: "No external editor is configured" };
 	const directory = mkdtempSync(join(tmpdir(), "atomic-gui-editor-"));

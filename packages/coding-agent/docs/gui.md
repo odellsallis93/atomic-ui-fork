@@ -21,11 +21,11 @@ Extensions can opt into GUI behavior through `ctx.ui.hostInfo`.
 | Milestone | Status |
 |---|---|
 | M0 Skeleton + engine bridge | Done |
-| M1 Core chat parity | Mostly done — active-leaf-only durable transcript hydration, virtualized variable-height long transcripts with bottom-only auto-follow, user/assistant/custom/skill/system/branch/compaction/tool/bash handling, thinking toggle, footer + usage meter, working indicator, and engine-rendered live/durable tool cards. The host reads engine-owned JSONL through `get_entries` and follows its `leafId`/`parentId` path; it does not treat history order as the active transcript. Durable-kind and 10,000-row window coverage are unit-tested; extension-owned custom renderers, Electron long-scroll walkthrough, and a real-engine transcript corpus remain open |
-| M2 Input system | Mostly done — CodeMirror composer, `/` command and command-argument + `@` autocomplete, history, `!`/`!!` bash, steer/follow-up/abort, queue chips |
-| M3 Sessions | Mostly done — resume picker (search/sort/all-projects), persisted transcript hydration on start/switch/tree navigation, rename/delete, clone/fork/import/export/**share**/compact, and tree folds/labels/edit-resubmit. `share_session` keeps the GitHub CLI credential flow engine-owned. Legacy composer `/import` or `/atomic` remain excluded because runtime `get_commands` inventories extension/prompt/skill commands only. |
-| M4 Models / settings | Partial — model picker, cycle model/thinking, theme loader, provider login/logout + OAuth UI, project trust prompt (full onboarding still open) |
-| M5 Extension UI host | Partial — native dialogs/notify/status/widgets, extension shortcut dispatch, `engine_input_form_*`, `hostSessionPicker` (`engine_session_picker_*`), ANSI frame overlays with render loop + `overlayOptions` + control/invalidate + legacy key encoding + kitty key-release + mouse-scroll wheel + autowrap terminal mode; remote custom header/footer/editor slots and transcript-local engine tool renderer frames |
+| M1 Core chat parity | Mostly done — active-leaf-only durable transcript hydration, virtualized variable-height long transcripts with bottom-only auto-follow, user/assistant/custom/skill/system/branch/compaction/tool/bash handling, thinking toggle, safe raster image attachments, escaped unified-diff tool output, footer + usage meter, working indicator, and engine-rendered live/durable tool cards. The host reads engine-owned JSONL through `get_entries` and follows its `leafId`/`parentId` path; it does not treat history order as the active transcript. A real-engine durable transcript corpus plus 10,000-row window coverage now complement renderer tests; extension-owned custom renderers and the Electron long-scroll/provider walkthrough remain open |
+| M2 Input system | Mostly done — CodeMirror composer with configurable submit/newline bindings, cancellable engine-evaluated `/` command/arguments/path/`@` autocomplete (including extension provider wrappers), engine-resolved external editor, history, `!`/`!!` bash, steer/follow-up/abort, queue chips |
+| M3 Sessions | Mostly done — resume picker (search/sort/all-projects), persisted transcript hydration on start/switch/tree navigation, rename/delete, clone/fork/import/export/**share**/compact, and tree folds/labels/edit-resubmit. Durable import/list/resume/new-session/active-delete replacement, user-node tree navigation with draft restoration, fork/rename/delete/export/clone, and extension-backed compaction have real-engine coverage; `share_session` keeps the GitHub CLI credential flow engine-owned and requires credentialed manual desktop acceptance. Legacy composer `/import` or `/atomic` remain excluded because runtime `get_commands` inventories extension/prompt/skill commands only. |
+| M4 Models / settings | Partial — model picker, cycle model/thinking, an engine-validated scoped-model editor that persists and immediately applies the `ctrl+p` model cycle, engine-owned resolved theme snapshot + validated built-in/custom theme mutation and reload, validated operation-based settings mutation for default thinking visibility, queue/compaction/retry/fast-mode controls, typed settings reload that returns only the effective snapshot, engine-owned project-trust status/options/mutation, and an engine-derived API-key/OAuth/logout capability catalog for provider auth. The GUI never infers a login method or sees credentials; real-provider and first-run desktop acceptance plus broader settings coverage remain open. |
+| M5 Extension UI host | Partial — native dialogs/notify/status/widgets, extension shortcut dispatch, `engine_input_form_*`, `hostSessionPicker` (`engine_session_picker_*`), ANSI frame overlays with render loop + `overlayOptions` + control/invalidate + legacy key encoding + kitty key-release + mouse-scroll wheel + autowrap terminal mode; remote custom header/footer/editor slots, native composer text mirrored for synchronous `ctx.ui.getEditorText`, engine-owned theme accessors with named selections resolved back through the host CSS snapshot, engine-dispatched autocomplete providers, ordered terminal-input interception, and transcript-local engine tool renderer frames. Real-engine extension coverage verifies confirm/select/input/editor response round-trips, confirm and editor timeout defaults, host input-form submit and session-picker selection, custom-overlay and header/footer/editor-chrome render lifecycles, ordered terminal-input transform/consume behavior, title/widget/status, `setEditorText`, mirrored `getEditorText`, theme accessors and named-theme forwarding, and `hostInfo.kind = gui` while `ctx.mode` remains `tui`; browser-level extension acceptance remains open. |
 | M6 | Partial — Workflows has a scripted Electron renderer-host walkthrough: Composer sends generic `/workflow …` prompts for dispatch/list/status/attach, runtime F2 opens the generic custom-frame graph, and generic input-form/session-picker/dialog/widget routes cover its host surfaces. This is fixture evidence only; no workflow RPC, GUI-only renderer, live DBOS workflow proof, or other bundled-extension walkthrough is claimed. |
 
 | M7 Release readiness | Partial — Phase 5.1 adds changed-path Linux x64 GUI CI; Phase 5.2/5.3 adds host-platform directory packaging/startup smoke and a source-backed security review; Phase 5.4/5.5 adds focused accessibility and renderer-budget evidence. Signed DMG/NSIS/AppImage installers, packaging CI, updates, provider/network behavior, cross-platform behavior, and screen-reader validation remain open or unproven. |
@@ -177,24 +177,28 @@ engine starts. From there you can:
 - Resume / new session / rename / delete
 - Clone the current leaf (`clone` RPC), fork from an engine-supplied user message (`get_fork_messages` → `fork`), import JSONL (`import_session`), export HTML (`export_html`), and share through the engine-owned `share_session` GitHub CLI flow
 - Open **Tree** for `get_tree` / `navigate_tree`; local folds do not change the engine tree, while labels use `set_label` and selecting a user turn restores engine-supplied editor text for edit/resubmit
-- **Excluded:** share has no protocol-v2 RPC; legacy `/import` and `/atomic` do not appear in runtime `get_commands`, so the GUI does not invent composer routes
+- **Excluded:** legacy `/import` and `/atomic` do not appear in runtime `get_commands`, so the GUI does not invent composer routes
 
 ## Themes
 
-Settings reads the effective theme and applies a selected theme live for the
-current GUI session. It does not write `theme` to
-`~/.atomic/agent/settings.json`; persistent theme mutation stays excluded until
-protocol v2 exposes an engine-owned settings RPC. Builtin themes ship with
-`@bastani/atomic`; user themes load from `~/.atomic/agent/themes/`.
+Settings receives the engine's resolved theme snapshot and global/project
+precedence metadata. Selecting a theme is validated and persisted by the
+engine's typed `set_theme` RPC; Electron receives only the resolved CSS tokens,
+never settings/theme paths. The supported GUI queue, compaction, retry, and
+fast-mode controls use typed `update_settings` operations; arbitrary settings
+documents and paths remain private to the engine. Builtin themes ship with `@bastani/atomic`; user themes load
+through the engine resource system.
 
 ## Auth and trust
 
 - **Auth** panel lists providers from `get_available_models` (including
   `oauthProviders`) and runs `login_provider` / `logout_provider`. API-key login
   uses `engine_input_form_*`; OAuth uses the `oauth_*` extension UI channel.
-- **Trust** prompts before engine start when the cwd has project resources and
-  `~/.atomic/agent/trust.json` has no decision, matching TUI trust options
-  (including session-only).
+- **Trust** is queried and mutated through typed engine RPCs backed by Atomic's
+  existing trust store. Before the main engine starts, the GUI uses an isolated
+  `--no-approve` engine probe so untrusted project resources stay unloaded;
+  Electron never reads or writes `trust.json`. Session-only choices are retained
+  only as the typed launch override for that GUI engine.
 
 ## Extension frames
 

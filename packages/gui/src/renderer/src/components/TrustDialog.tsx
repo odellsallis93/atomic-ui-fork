@@ -27,7 +27,7 @@ export function TrustDialog(props: {
 								<span className="session-name">{option.label}</span>
 								<span className="session-meta">
 									{option.trusted ? "trusted" : "untrusted"}
-									{option.persistPath ? " · remembered" : " · session only"}
+									{option.sessionOnly ? " · session only" : " · remembered"}
 								</span>
 							</button>
 						</li>

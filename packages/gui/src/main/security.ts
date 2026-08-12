@@ -67,3 +67,46 @@ export function redactSensitiveProtocolLine(line: string): string {
 		return line;
 	}
 }
+
+/**
+ * The raw diagnostic panel must not duplicate a complete durable transcript
+ * across Electron IPC. The typed get_entries response already carries those
+ * entries to its caller; the log keeps the useful pagination metadata instead.
+ */
+export function summarizeRawProtocolLine(line: string): string {
+	try {
+		const value = JSON.parse(line) as {
+			type?: unknown;
+			command?: unknown;
+			success?: unknown;
+			id?: unknown;
+			data?: { entries?: unknown; leafId?: unknown; total?: unknown; nextOffset?: unknown };
+		};
+		if (
+			value.type === "response" &&
+			value.command === "get_entries" &&
+			value.success === true &&
+			Array.isArray(value.data?.entries)
+		) {
+			return JSON.stringify({
+				type: "response",
+				command: "get_entries",
+				success: true,
+				...(typeof value.id === "string" ? { id: value.id } : {}),
+				data: {
+					entryCount: value.data.entries.length,
+					...(typeof value.data.leafId === "string" || value.data.leafId === null
+						? { leafId: value.data.leafId }
+						: {}),
+					...(typeof value.data.total === "number" ? { total: value.data.total } : {}),
+					...(typeof value.data.nextOffset === "number" || value.data.nextOffset === null
+						? { nextOffset: value.data.nextOffset }
+						: {}),
+				},
+			});
+		}
+	} catch {
+		// Preserve malformed diagnostic output as-is, consistent with redaction.
+	}
+	return redactSensitiveProtocolLine(line);
+}

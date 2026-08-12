@@ -90,10 +90,10 @@ export type {
 	// Errors
 	ExtensionError,
 	ExtensionEvent,
-	ExtensionHostInfo,
 	ExtensionFactory,
 	ExtensionFlag,
 	ExtensionHandler,
+	ExtensionHostInfo,
 	ExtensionMode,
 	// Runtime
 	ExtensionRuntime,

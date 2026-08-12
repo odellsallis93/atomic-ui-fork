@@ -18,6 +18,8 @@ export function AuthPanel(props: {
 		provider.toLowerCase().includes(filter.trim().toLowerCase()),
 	);
 	const oauthIds = new Set((catalog?.oauthProviders ?? []).map((provider) => provider.id));
+	const apiKeyIds = new Set((catalog?.apiKeyProviders ?? []).map((provider) => provider.id));
+	const logoutIds = new Set(catalog?.logoutProviders ?? []);
 
 	return (
 		<div className="modal-backdrop">
@@ -45,7 +47,11 @@ export function AuthPanel(props: {
 									<div className="session-name">{oauth?.name ?? provider}</div>
 									<div className="session-meta">
 										{provider}
-										{oauthIds.has(provider) ? " · OAuth" : " · API key"}
+										{oauthIds.has(provider) && apiKeyIds.has(provider)
+											? " · OAuth + API key"
+											: oauthIds.has(provider)
+												? " · OAuth"
+												: " · API key"}
 										{oauth?.loginLabel ? ` · ${oauth.loginLabel}` : ""}
 									</div>
 								</div>
@@ -60,22 +66,26 @@ export function AuthPanel(props: {
 											{busy ? "…" : "OAuth login"}
 										</button>
 									) : null}
-									<button
-										type="button"
-										className="btn"
-										disabled={busy}
-										onClick={() => props.onLogin(provider, "api_key")}
-									>
-										API key
-									</button>
-									<button
-										type="button"
-										className="btn"
-										disabled={busy}
-										onClick={() => props.onLogout(provider)}
-									>
-										Logout
-									</button>
+									{apiKeyIds.has(provider) ? (
+										<button
+											type="button"
+											className="btn"
+											disabled={busy}
+											onClick={() => props.onLogin(provider, "api_key")}
+										>
+											API key
+										</button>
+									) : null}
+									{logoutIds.has(provider) ? (
+										<button
+											type="button"
+											className="btn"
+											disabled={busy}
+											onClick={() => props.onLogout(provider)}
+										>
+											Logout
+										</button>
+									) : null}
 									{busy ? (
 										<button type="button" className="btn btn-danger" onClick={() => props.onCancel(provider)}>
 											Cancel

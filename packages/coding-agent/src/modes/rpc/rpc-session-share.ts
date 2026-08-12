@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentSession } from "../../core/agent-session.ts";
 import { getShareViewerUrl } from "../../config.ts";
+import type { AgentSession } from "../../core/agent-session.ts";
 
 export interface RpcSessionShareResult {
 	gistUrl: string;

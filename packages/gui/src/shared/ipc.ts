@@ -69,6 +69,16 @@ export interface CommandCompletionInfo {
 	description?: string;
 }
 
+export interface EngineAutocompleteSuggestion extends CommandCompletionInfo {
+	text: string;
+	cursorOffset: number;
+}
+
+export interface TerminalInputInterception {
+	consumed: boolean;
+	data?: string;
+}
+
 export interface ExtensionShortcutInfo {
 	key: string;
 	description?: string;
@@ -152,8 +162,8 @@ export interface ForkMessageInfo {
 
 export interface ThemeSummary {
 	name: string;
-	source: "builtin" | "user" | "project";
-	path: string;
+	/** Classified by the engine; filesystem paths stay in the engine process. */
+	source: "builtin" | "custom";
 }
 
 export interface ResolvedThemeCss {
@@ -163,14 +173,25 @@ export interface ResolvedThemeCss {
 
 export interface GuiSettingsSnapshot {
 	theme: string;
-	path: string;
-	exists: boolean;
-	globalPath: string;
-	projectPath: string;
-	globalExists: boolean;
-	projectExists: boolean;
 	projectOverridesTheme: boolean;
+	fastMode: { chat: boolean; workflow: boolean };
+	hideThinkingBlock: boolean;
+	steeringMode: "all" | "one-at-a-time";
+	followUpMode: "all" | "one-at-a-time";
+	autoCompactionEnabled: boolean;
+	autoRetryEnabled: boolean;
+	/** Configured engine model patterns; an empty list means all available models. */
+	modelScopePatterns: string[];
 }
+
+export type SettingsOperation =
+	| { kind: "fast_mode"; scope: "chat" | "workflow"; enabled: boolean }
+	| { kind: "steering_mode"; mode: "all" | "one-at-a-time" }
+	| { kind: "follow_up_mode"; mode: "all" | "one-at-a-time" }
+	| { kind: "auto_compaction"; enabled: boolean }
+	| { kind: "auto_retry"; enabled: boolean }
+	| { kind: "hide_thinking"; enabled: boolean }
+	| { kind: "model_scope"; patterns: string[] };
 
 export interface OAuthProviderInfo {
 	id: string;
@@ -179,10 +200,17 @@ export interface OAuthProviderInfo {
 	usesCallbackServer?: boolean;
 }
 
+export interface ApiKeyProviderInfo {
+	id: string;
+	name: string;
+}
+
 export interface AuthCatalog {
 	models: ModelInfo[];
 	scopedModels: ScopedModelInfo[];
+	apiKeyProviders: ApiKeyProviderInfo[];
 	oauthProviders: OAuthProviderInfo[];
+	logoutProviders: string[];
 	providers: string[];
 }
 
@@ -197,7 +225,8 @@ export interface TrustOption {
 	id: string;
 	label: string;
 	trusted: boolean;
-	persistPath: string | null;
+	/** The engine owns persistence; this choice affects only the next GUI engine launch. */
+	sessionOnly: boolean;
 }
 
 export interface InputFormField {
@@ -222,7 +251,7 @@ export type ExtensionUiRequest =
 	| { id: string; method: "select"; title: string; options: string[]; timeout?: number }
 	| { id: string; method: "confirm"; title: string; message: string; timeout?: number }
 	| { id: string; method: "input"; title: string; placeholder?: string; timeout?: number }
-	| { id: string; method: "editor"; title: string; prefill?: string }
+	| { id: string; method: "editor"; title: string; prefill?: string; timeout?: number }
 	| { id: string; method: "notify"; message: string; notifyType?: "info" | "warning" | "error" }
 	| { id: string; method: "setStatus"; statusKey: string; statusText: string | undefined }
 	| {
@@ -244,6 +273,7 @@ export type ExtensionUiRequest =
 			widgetPlacement?: "aboveEditor" | "belowEditor";
 	  }
 	| { id: string; method: "setTitle"; title: string }
+	| { id: string; method: "setTheme"; name: string }
 	| { id: string; method: "set_editor_text"; text: string }
 	| {
 			id: string;
@@ -333,7 +363,12 @@ export interface GuiHostApi {
 		commandName: string,
 		argumentPrefix: string,
 	): Promise<RpcResult<CommandCompletionInfo[] | null>>;
-	getEntries(): Promise<RpcResult<{ entries: unknown[]; leafId: string | null }>>;
+	getAutocomplete(text: string, cursorOffset: number): Promise<RpcResult<EngineAutocompleteSuggestion[]>>;
+	interceptTerminalInput(data: string): Promise<RpcResult<TerminalInputInterception>>;
+	getEntries(options?: {
+		offset?: number;
+		limit?: number;
+	}): Promise<RpcResult<{ entries: unknown[]; leafId: string | null; total: number; nextOffset: number | null }>>;
 	getShortcuts(): Promise<RpcResult<ExtensionShortcutInfo[]>>;
 	invokeShortcut(key: string): Promise<RpcResult>;
 	getModels(): Promise<RpcResult<ModelInfo[]>>;
@@ -359,10 +394,13 @@ export interface GuiHostApi {
 	listThemes(): Promise<ThemeSummary[]>;
 	getThemeCss(name?: string): Promise<ResolvedThemeCss>;
 	getSettings(): Promise<GuiSettingsSnapshot>;
+	reloadSettings(): Promise<GuiSettingsSnapshot>;
+	updateSettings(operations: SettingsOperation[]): Promise<GuiSettingsSnapshot>;
+	setFastMode(scope: "chat" | "workflow", enabled: boolean): Promise<GuiSettingsSnapshot>;
 	setTheme(name: string): Promise<ResolvedThemeCss>;
-	getTrustStatus(cwd?: string): Promise<TrustStatus>;
-	getTrustOptions(cwd?: string): Promise<TrustOption[]>;
-	applyTrust(optionId: string, cwd?: string): Promise<TrustStatus>;
+	getTrustStatus(): Promise<TrustStatus>;
+	getTrustOptions(): Promise<TrustOption[]>;
+	applyTrust(optionId: string): Promise<TrustStatus>;
 	submitInputForm(componentId: string, values: Record<string, string>): Promise<void>;
 	cancelInputForm(componentId: string): Promise<void>;
 	runEngineCommand<T = unknown>(command: { type: string; [key: string]: unknown }): Promise<RpcResult<T>>;
@@ -397,6 +435,8 @@ export const IPC_CHANNELS = {
 	setTreeLabel: "gui:set-tree-label",
 	getCommands: "gui:get-commands",
 	getCommandCompletions: "gui:get-command-completions",
+	getAutocomplete: "gui:get-autocomplete",
+	interceptTerminalInput: "gui:intercept-terminal-input",
 	getEntries: "gui:get-entries",
 	getShortcuts: "gui:get-shortcuts",
 	invokeShortcut: "gui:invoke-shortcut",
@@ -423,6 +463,9 @@ export const IPC_CHANNELS = {
 	listThemes: "gui:list-themes",
 	getThemeCss: "gui:get-theme-css",
 	getSettings: "gui:get-settings",
+	reloadSettings: "gui:reload-settings",
+	updateSettings: "gui:update-settings",
+	setFastMode: "gui:set-fast-mode",
 	setTheme: "gui:set-theme",
 	getTrustStatus: "gui:get-trust-status",
 	getTrustOptions: "gui:get-trust-options",

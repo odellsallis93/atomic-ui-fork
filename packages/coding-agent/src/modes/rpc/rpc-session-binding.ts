@@ -7,9 +7,11 @@ import type { EngineCustomUiService } from "../interactive-engine/engine-custom-
 import type { EngineInputFormService } from "../interactive-engine/engine-input-form.ts";
 import type { EngineRenderService } from "../interactive-engine/engine-render-service.ts";
 import type { EngineSessionPickerService } from "../interactive-engine/engine-session-picker.ts";
+import { RpcAutocompleteService } from "./rpc-autocomplete.ts";
 import { createRpcExtensionUIContext, type RpcPendingExtensionRequests } from "./rpc-extension-ui.ts";
 import type { KeybindingsReloadCoordinator } from "./rpc-keybindings-reload.ts";
 import type { RpcOutput } from "./rpc-responses.ts";
+import { RpcTerminalInputService } from "./rpc-terminal-input.ts";
 
 interface RpcSessionBindingOptions {
 	runtimeHost: AgentSessionRuntime;
@@ -38,6 +40,8 @@ export class RpcSessionBinding {
 	private readonly reloadCoordinator: KeybindingsReloadCoordinator<AgentSession> | undefined;
 
 	private footerDataProvider: FooterDataProvider | undefined;
+	private autocomplete: RpcAutocompleteService | undefined;
+	private terminalInput: RpcTerminalInputService | undefined;
 	constructor({
 		runtimeHost,
 		output,
@@ -65,10 +69,20 @@ export class RpcSessionBinding {
 		return this.session;
 	}
 
+	get autocompleteService(): RpcAutocompleteService | undefined {
+		return this.autocomplete;
+	}
+
+	get terminalInputService(): RpcTerminalInputService | undefined {
+		return this.terminalInput;
+	}
+
 	async rebindSession(): Promise<void> {
 		this.session = this.runtimeHost.session;
 		this.disposeSubscriptions();
 		const session = this.session;
+		this.autocomplete = new RpcAutocompleteService(session);
+		this.terminalInput = new RpcTerminalInputService();
 		this.renderService?.bindSession(session);
 		this.footerDataProvider = new FooterDataProvider(session.sessionManager.getCwd());
 		// Seed the provider count from the current catalog snapshot, mirroring
@@ -90,6 +104,9 @@ export class RpcSessionBinding {
 					sessionPicker: this.sessionPicker,
 					inputForm: this.inputForm,
 					footerDataProvider: this.footerDataProvider,
+					settingsManager: session.settingsManager,
+					onAddAutocompleteProvider: (factory) => this.autocomplete?.addWrapper(factory),
+					onTerminalInput: (handler) => this.terminalInput?.add(handler) ?? (() => {}),
 					onEditorSubmit: (text) => {
 						if (!text.trim()) return;
 						void session.prompt(text, { source: "rpc" }).catch((error: Error) =>
@@ -102,7 +119,11 @@ export class RpcSessionBinding {
 						);
 					},
 					...(this.customUi
-						? { hostInfo: { kind: interactiveEngineStartupEnv().hostKind === "gui" ? "gui" : "terminal" } as const }
+						? {
+								hostInfo: {
+									kind: interactiveEngineStartupEnv().hostKind === "gui" ? "gui" : "terminal",
+								} as const,
+							}
 						: {}),
 				}),
 				mode: this.customUi ? "tui" : "rpc",

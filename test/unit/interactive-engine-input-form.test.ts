@@ -466,4 +466,15 @@ describe("host-native input form", () => {
 		assert.equal(bridge.workingVisibility.at(-1), true);
 		bridge.controller.dispose();
 	});
+
+	test("editor state is accepted only for the reserved composer mirror", () => {
+		const command = { type: "engine_editor_state", componentId: "composer", text: "draft" } as const;
+		assert.deepEqual(parseInteractiveEngineCommand(JSON.stringify(command)), command);
+		assert.equal(
+			parseInteractiveEngineCommand(
+				JSON.stringify({ type: "engine_editor_state", componentId: "untrusted", text: "draft" }),
+			),
+			undefined,
+		);
+	});
 });

@@ -19,8 +19,10 @@ test("configured composer key matrix routes actions only to the owning focus zon
 		"app.model.select": "alt+m",
 		"app.thinking.toggle": "alt+t",
 		"app.tools.expand": "alt+o",
+		"tui.input.newLine": "ctrl+shift+enter",
 	};
 	assert.equal(actionForKey(bindings, "ctrl+enter", "composer"), "tui.input.submit");
+	assert.equal(actionForKey(bindings, "ctrl+shift+enter", "composer"), "tui.input.newLine");
 	assert.equal(actionForKey(bindings, "alt+f", "composer"), "app.message.followUp");
 	assert.equal(actionForKey(bindings, "alt+m", "transcript"), "app.model.select");
 	assert.equal(actionForKey(bindings, "alt+m", "modal"), undefined);

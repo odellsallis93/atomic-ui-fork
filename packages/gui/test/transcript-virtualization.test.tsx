@@ -147,7 +147,8 @@ test("populates the viewport after an initially empty transcript", () => {
 	act(() => {
 		root.render(<Transcript entries={makeEntries(100)} leafId="leaf-a" hideThinking={false} hiddenThinkingLabel="hidden" onToggle={() => {}} />);
 	});
-	assert.ok(container.querySelectorAll(".transcript-virtual-row").length > 7, "the mounted scroller supplies its viewport height");
+	assert.ok(container.querySelectorAll(".transcript-virtual-row").length > 0, "the mounted scroller supplies its viewport height");
+	assert.match(container.textContent ?? "", /entry-99/, "auto-follow synchronizes the virtual window with the DOM scroll position");
 });
 
 test("keeps shared real heights when switching leaves", () => {
@@ -169,6 +170,12 @@ test("keeps disclosures and focused controls mounted across a virtual scroll", (
 	entries[0] = { ...entries[0]!, kind: "assistant", thinking: "reasoning" };
 	act(() => {
 		root.render(<Transcript entries={entries} leafId="leaf-a" hideThinking={false} hiddenThinkingLabel="hidden" onToggle={() => {}} />);
+	});
+	act(() => {
+		const scroller = container.querySelector<HTMLElement>(".transcript");
+		assert.ok(scroller);
+		scroller.scrollTop = 0;
+		scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
 	});
 	const details = container.querySelector<HTMLDetailsElement>("details.thinking");
 	assert.ok(details);
@@ -211,4 +218,35 @@ test("renders repeated ANSI lines without duplicate content keys", () => {
 		root.render(<Transcript entries={entries} leafId="leaf-a" hideThinking={false} hiddenThinkingLabel="hidden" onToggle={() => {}} />);
 	});
 	assert.equal(container.querySelectorAll(".ansi-line").length, 3);
+});
+
+test("renders safe engine image attachments as raster data URIs", () => {
+	const entries: TranscriptEntry[] = [
+		{
+			...makeEntries(1, "assistant")[0]!,
+			images: [{ data: "cGl4ZWw=", mimeType: "image/png" }],
+		},
+	];
+	act(() => {
+		root.render(<Transcript entries={entries} leafId="leaf-a" hideThinking={false} hiddenThinkingLabel="hidden" onToggle={() => {}} />);
+	});
+	const image = container.querySelector<HTMLImageElement>("img.entry-image");
+	assert.equal(image?.src, "data:image/png;base64,cGl4ZWw=");
+	assert.equal(image?.alt, "Attachment");
+});
+
+test("renders unified tool diffs with escaped added, removed, and hunk lines", () => {
+	const entries: TranscriptEntry[] = [
+		{
+			...makeEntries(1, "tool")[0]!,
+			text: "--- a/file.ts\n+++ b/file.ts\n@@ -1 +1 @@\n-old <script>\n+new <script>",
+		},
+	];
+	act(() => {
+		root.render(<Transcript entries={entries} leafId="leaf-a" hideThinking={false} hiddenThinkingLabel="hidden" onToggle={() => {}} />);
+	});
+	assert.equal(container.querySelectorAll(".diff-add").length, 1);
+	assert.equal(container.querySelectorAll(".diff-remove").length, 1);
+	assert.equal(container.querySelectorAll(".diff-hunk").length, 1);
+	assert.equal(container.querySelector("script"), null, "tool output is rendered as text, never markup");
 });

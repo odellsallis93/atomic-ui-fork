@@ -59,7 +59,11 @@ test("a bootstrap record round-trips and the reader consumes only the named file
 });
 
 test("a bootstrap record preserves GUI host identity without changing engine mode", () => {
-	const handle = writeInteractiveEngineBootstrap({ hostPid: 4242, guardFile: "/tmp/atomic-gui-guardian", hostKind: "gui" });
+	const handle = writeInteractiveEngineBootstrap({
+		hostPid: 4242,
+		guardFile: "/tmp/atomic-gui-guardian",
+		hostKind: "gui",
+	});
 	try {
 		assert.deepEqual(readInteractiveEngineBootstrap(handle.path), {
 			version: INTERACTIVE_ENGINE_BOOTSTRAP_VERSION,

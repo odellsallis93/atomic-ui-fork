@@ -12,3 +12,23 @@ test("external editor uses VISUAL and returns its edited draft", async () => {
 	const result = await editExternally("draft", { VISUAL: `${process.execPath} ${editor}` });
 	assert.deepEqual(result, { ok: true, text: "draft edited" });
 });
+
+test("engine-resolved editor command takes precedence over Electron environment", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "atomic-gui-editor-test-"));
+	const visualEditor = join(directory, "visual.mjs");
+	const configuredEditor = join(directory, "configured.mjs");
+	writeFileSync(
+		visualEditor,
+		'import { appendFileSync } from "node:fs"; appendFileSync(process.argv[2], " visual");\n',
+	);
+	writeFileSync(
+		configuredEditor,
+		'import { appendFileSync } from "node:fs"; appendFileSync(process.argv[2], " configured");\n',
+	);
+	const result = await editExternally(
+		"draft",
+		{ VISUAL: `${process.execPath} ${visualEditor}` },
+		`${process.execPath} ${configuredEditor}`,
+	);
+	assert.deepEqual(result, { ok: true, text: "draft configured" });
+});

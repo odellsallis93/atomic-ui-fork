@@ -1,21 +1,33 @@
+import { unlink } from "node:fs/promises";
+import { resolve } from "node:path";
 import type { KeyId } from "@earendil-works/pi-tui";
 import type { AgentSession } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { runCallback } from "../../core/callback-activity.ts";
 import { KeybindingsManager } from "../../core/keybindings.ts";
 import { SessionManager } from "../../core/session-manager.ts";
+import type { RpcAutocompleteService } from "./rpc-autocomplete.ts";
 import { RpcBashRequestOwners } from "./rpc-bash-request-owners.ts";
-import { shareSessionAsSecretGist } from "./rpc-session-share.ts";
 import type { RpcPendingExtensionRequests } from "./rpc-extension-ui.ts";
 import type { KeybindingsReloadCoordinator } from "./rpc-keybindings-reload.ts";
 import { rejectUnsupportedProviderPrompt } from "./rpc-model-fallback-prompt.ts";
-import { type ProviderLoginInput, RpcProviderAuth } from "./rpc-provider-auth.ts";
+import { getRpcProjectTrustOptions, getRpcProjectTrustStatus, setRpcProjectTrust } from "./rpc-project-trust.ts";
+import { getRpcModelCatalog, type ProviderLoginInput, RpcProviderAuth } from "./rpc-provider-auth.ts";
 import {
 	createRpcErrorResponse,
 	createRpcSuccessResponse,
 	formatRpcErrorMessage,
 	type RpcOutput,
 } from "./rpc-responses.ts";
+import { shareSessionAsSecretGist } from "./rpc-session-share.ts";
+import type { RpcTerminalInputService } from "./rpc-terminal-input.ts";
+import {
+	getRpcResolvedThemeSnapshot,
+	getRpcSettingsSnapshot,
+	getRpcThemeSummaries,
+	setRpcTheme,
+	updateRpcSettings,
+} from "./rpc-theme-settings.ts";
 import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.ts";
 
 export type RpcCommandHandler = (command: RpcCommand) => Promise<RpcResponse | undefined>;
@@ -30,6 +42,8 @@ interface RpcCommandHandlerOptions {
 	reloadCoordinator?: KeybindingsReloadCoordinator<AgentSession>;
 	inputForm?: ProviderLoginInput;
 	pendingExtensionRequests?: RpcPendingExtensionRequests;
+	getAutocompleteService?: () => RpcAutocompleteService | undefined;
+	getTerminalInputService?: () => RpcTerminalInputService | undefined;
 }
 
 export function createRpcCommandHandler({
@@ -41,6 +55,8 @@ export function createRpcCommandHandler({
 	reloadCoordinator,
 	inputForm,
 	pendingExtensionRequests,
+	getAutocompleteService,
+	getTerminalInputService,
 }: RpcCommandHandlerOptions): ManagedRpcCommandHandler {
 	let fallbackShortcutKeybindings: KeybindingsManager | undefined;
 	const providerAuth = new RpcProviderAuth(inputForm, {
@@ -100,6 +116,7 @@ export function createRpcCommandHandler({
 				const result = await runtimeHost.newSession(options);
 				if (!result.cancelled) {
 					await rebindSession();
+					if (command.persist) getSession().sessionManager.flush();
 				}
 				return createRpcSuccessResponse(id, "new_session", result);
 			}
@@ -126,6 +143,65 @@ export function createRpcCommandHandler({
 				};
 				return createRpcSuccessResponse(id, "get_state", state);
 			}
+			case "get_settings_snapshot":
+				return createRpcSuccessResponse(
+					id,
+					"get_settings_snapshot",
+					getRpcSettingsSnapshot(session.settingsManager, session),
+				);
+			case "reload_settings":
+				await session.settingsManager.reload();
+				await session.resourceLoader.reload();
+				return createRpcSuccessResponse(
+					id,
+					"reload_settings",
+					getRpcSettingsSnapshot(session.settingsManager, session),
+				);
+			case "list_themes":
+				return createRpcSuccessResponse(id, "list_themes", { themes: getRpcThemeSummaries(session) });
+			case "get_theme_snapshot": {
+				const name = command.name?.trim() || getRpcSettingsSnapshot(session.settingsManager, session).theme;
+				return createRpcSuccessResponse(id, "get_theme_snapshot", getRpcResolvedThemeSnapshot(name, session));
+			}
+			case "set_theme":
+				return createRpcSuccessResponse(
+					id,
+					"set_theme",
+					setRpcTheme(session.settingsManager, command.name, session),
+				);
+			case "set_fast_mode":
+				session.settingsManager.setCodexFastModeSettings({ [command.scope]: command.enabled });
+				return createRpcSuccessResponse(
+					id,
+					"set_fast_mode",
+					getRpcSettingsSnapshot(session.settingsManager, session),
+				);
+			case "update_settings":
+				return createRpcSuccessResponse(
+					id,
+					"update_settings",
+					await updateRpcSettings(session, command.operations),
+				);
+			case "get_external_editor_command":
+				return createRpcSuccessResponse(id, "get_external_editor_command", {
+					command: session.settingsManager.getExternalEditorCommand(),
+				});
+			case "get_project_trust":
+				return createRpcSuccessResponse(
+					id,
+					"get_project_trust",
+					getRpcProjectTrustStatus(session.sessionManager.getCwd(), runtimeHost.services.agentDir),
+				);
+			case "get_project_trust_options":
+				return createRpcSuccessResponse(id, "get_project_trust_options", {
+					options: getRpcProjectTrustOptions(session.sessionManager.getCwd()),
+				});
+			case "set_project_trust":
+				return createRpcSuccessResponse(
+					id,
+					"set_project_trust",
+					setRpcProjectTrust(session.sessionManager.getCwd(), command.optionId, runtimeHost.services.agentDir),
+				);
 			case "set_model": {
 				const models = await session.modelRuntime.getAvailableSnapshot();
 				const model = models.find(
@@ -149,13 +225,7 @@ export function createRpcCommandHandler({
 				return createRpcSuccessResponse(id, "cycle_model", result ?? null);
 			}
 			case "get_available_models": {
-				const models = await session.modelRuntime.getAvailableSnapshot();
-				return createRpcSuccessResponse(id, "get_available_models", {
-					models,
-					scopedModels: session.scopedModels,
-					customAuthProviders: [],
-					oauthProviders: session.modelRuntime.getOAuthProviderMetadata(),
-				});
+				return createRpcSuccessResponse(id, "get_available_models", getRpcModelCatalog(session));
 			}
 
 			case "login_provider": {
@@ -209,10 +279,7 @@ export function createRpcCommandHandler({
 					return createRpcSuccessResponse(id, "refresh_models", {
 						aborted: result.aborted,
 						errors: [...result.errors].map(([provider, error]) => ({ provider, message: error.message })),
-						models: session.modelRuntime.getAvailableSnapshot(),
-						scopedModels: session.scopedModels,
-						customAuthProviders: [],
-						oauthProviders: session.modelRuntime.getOAuthProviderMetadata(),
+						...getRpcModelCatalog(session),
 					});
 				} finally {
 					if (timeout) clearTimeout(timeout);
@@ -346,9 +413,13 @@ export function createRpcCommandHandler({
 				const offset = Math.max(0, Math.floor(command.offset ?? 0));
 				const limit = Math.min(500, Math.max(1, Math.floor(command.limit ?? 100)));
 				const includeInternal = command.includeInternal === true;
+				// Session enumeration must use the active runtime's configured store.
+				// Falling back to the global default hides sessions from hosts launched
+				// with --session-dir, including newly imported GUI sessions.
+				const sessionDir = session.sessionManager.getSessionDir();
 				const sessions = command.all
-					? await SessionManager.listAll(undefined, undefined, { includeInternal })
-					: await SessionManager.list(command.cwd ?? session.sessionManager.getCwd(), undefined, undefined, {
+					? await SessionManager.listAll(sessionDir, undefined, { includeInternal })
+					: await SessionManager.list(command.cwd ?? session.sessionManager.getCwd(), sessionDir, undefined, {
 							includeInternal,
 						});
 				const page = sessions.slice(offset, offset + limit).map((item) => ({
@@ -377,6 +448,40 @@ export function createRpcCommandHandler({
 			case "share_session": {
 				const result = await shareSessionAsSecretGist(session);
 				return createRpcSuccessResponse(id, "share_session", result);
+			}
+
+			case "delete_session": {
+				const sessionDir = session.sessionManager.getSessionDir();
+				const target = resolve(command.sessionPath);
+				const managedSessions = await SessionManager.listAll(sessionDir, undefined, { includeInternal: true });
+				if (!managedSessions.some((candidate) => resolve(candidate.path) === target)) {
+					return createRpcErrorResponse(id, "delete_session", "Session is not in the active session store");
+				}
+				if (session.sessionFile && resolve(session.sessionFile) === target) {
+					const replacement = await runtimeHost.newSession();
+					if (replacement.cancelled) return createRpcSuccessResponse(id, "delete_session");
+					await rebindSession();
+					if (command.persistReplacement) getSession().sessionManager.flush();
+				}
+				await unlink(target);
+				return createRpcSuccessResponse(id, "delete_session");
+			}
+
+			case "rename_session": {
+				const name = command.name.trim();
+				if (!name) return createRpcErrorResponse(id, "rename_session", "Session name cannot be empty");
+				const sessionDir = session.sessionManager.getSessionDir();
+				const target = resolve(command.sessionPath);
+				const managedSessions = await SessionManager.listAll(sessionDir, undefined, { includeInternal: true });
+				if (!managedSessions.some((candidate) => resolve(candidate.path) === target)) {
+					return createRpcErrorResponse(id, "rename_session", "Session is not in the active session store");
+				}
+				if (session.sessionFile && resolve(session.sessionFile) === target) {
+					session.setSessionName(name);
+				} else {
+					SessionManager.open(target, sessionDir).appendSessionInfo(name);
+				}
+				return createRpcSuccessResponse(id, "rename_session");
 			}
 
 			case "switch_session": {
@@ -428,7 +533,24 @@ export function createRpcCommandHandler({
 					}
 					entries = entries.slice(sinceIndex + 1);
 				}
-				return createRpcSuccessResponse(id, "get_entries", { entries, leafId: sessionManager.getLeafId() });
+				const offset = command.offset ?? 0;
+				const limit = command.limit ?? entries.length;
+				if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1) {
+					return createRpcErrorResponse(
+						id,
+						"get_entries",
+						"offset must be non-negative and limit must be positive integers",
+					);
+				}
+				const total = entries.length;
+				const page = entries.slice(offset, offset + limit);
+				const nextOffset = offset + page.length < total ? offset + page.length : null;
+				return createRpcSuccessResponse(id, "get_entries", {
+					entries: page,
+					leafId: sessionManager.getLeafId(),
+					total,
+					nextOffset,
+				});
 			}
 
 			case "get_tree": {
@@ -512,6 +634,24 @@ export function createRpcCommandHandler({
 				);
 				return createRpcSuccessResponse(id, "get_command_completions", { completions });
 			}
+			case "autocomplete_query": {
+				const service = getAutocompleteService?.();
+				if (!service) return createRpcErrorResponse(id, "autocomplete_query", "Autocomplete is unavailable");
+				return createRpcSuccessResponse(
+					id,
+					"autocomplete_query",
+					await service.query(command.queryKey, command.text, command.cursorOffset),
+				);
+			}
+			case "cancel_autocomplete_query":
+				getAutocompleteService?.()?.cancel(command.queryKey);
+				return createRpcSuccessResponse(id, "cancel_autocomplete_query");
+			case "intercept_terminal_input":
+				return createRpcSuccessResponse(
+					id,
+					"intercept_terminal_input",
+					getTerminalInputService?.()?.intercept(command.data) ?? { consumed: false },
+				);
 
 			case "get_commands": {
 				const commands: RpcSlashCommand[] = [];

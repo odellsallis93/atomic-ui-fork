@@ -53,6 +53,7 @@ export function actionForKey(bindings: KeybindingConfig, key: string, zone: Focu
 					"app.thinking.toggle",
 					"app.tools.expand",
 					"tui.input.submit",
+					"tui.input.newLine",
 					"tui.input.tab",
 				]
 			: zone === "transcript"

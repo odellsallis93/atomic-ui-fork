@@ -21,12 +21,14 @@ interface Mount {
 	method: string;
 	resolve(value: unknown): void;
 	aborted: boolean;
+	timeout?: number;
 }
 
 interface Harness {
 	controller: EngineDialogHostController;
 	mounts: Mount[];
 	widgetWrites: Array<{ key: string; cleared: boolean }>;
+	themeNames: string[];
 	responses: Array<RpcExtensionUIResponse | undefined>;
 	generation: number;
 	send(request: RpcExtensionUIRequest): Promise<void>;
@@ -36,16 +38,17 @@ interface Harness {
 function harness(): Harness {
 	const mounts: Mount[] = [];
 	const widgetWrites: Array<{ key: string; cleared: boolean }> = [];
+	const themeNames: string[] = [];
 	const responses: Array<RpcExtensionUIResponse | undefined> = [];
 	const generationListeners: Array<(event: InteractiveEngineGenerationEnded) => void> = [];
 	let handler: ((request: RpcExtensionUIRequest) => Promise<RpcExtensionUIResponse | undefined>) | undefined;
 	const state = { generation: 1 };
 
-	const mount = (method: string, signal: AbortSignal | undefined): Promise<unknown> =>
+	const mount = (method: string, options: { signal?: AbortSignal; timeout?: number } | undefined): Promise<unknown> =>
 		new Promise((resolve) => {
-			const record: Mount = { method, resolve, aborted: false };
+			const record: Mount = { method, resolve, aborted: false, timeout: options?.timeout };
 			mounts.push(record);
-			signal?.addEventListener(
+			options?.signal?.addEventListener(
 				"abort",
 				() => {
 					record.aborted = true;
@@ -57,16 +60,24 @@ function harness(): Harness {
 		});
 
 	const ui = {
-		select: (_title: string, _options: string[], opts?: { signal?: AbortSignal }) => mount("select", opts?.signal),
-		confirm: (_title: string, _message: string, opts?: { signal?: AbortSignal }) => mount("confirm", opts?.signal),
-		input: (_title: string, _placeholder?: string, opts?: { signal?: AbortSignal }) => mount("input", opts?.signal),
-		editor: (_title: string, _prefill?: string, opts?: { signal?: AbortSignal }) => mount("editor", opts?.signal),
+		select: (_title: string, _options: string[], opts?: { signal?: AbortSignal; timeout?: number }) =>
+			mount("select", opts),
+		confirm: (_title: string, _message: string, opts?: { signal?: AbortSignal; timeout?: number }) =>
+			mount("confirm", opts),
+		input: (_title: string, _placeholder?: string, opts?: { signal?: AbortSignal; timeout?: number }) =>
+			mount("input", opts),
+		editor: (_title: string, _prefill?: string, opts?: { signal?: AbortSignal; timeout?: number }) =>
+			mount("editor", opts),
 		notify: () => {},
 		setStatus: () => {},
 		setWidget: (key: string, lines: string[] | undefined) => {
 			widgetWrites.push({ key, cleared: lines === undefined });
 		},
 		setTitle: () => {},
+		setTheme: (name: string) => {
+			themeNames.push(name);
+			return { success: true };
+		},
 		setEditorText: () => {},
 	} as unknown as ExtensionUIContext;
 
@@ -89,6 +100,7 @@ function harness(): Harness {
 		controller,
 		mounts,
 		widgetWrites,
+		themeNames,
 		responses,
 		get generation(): number {
 			return state.generation;
@@ -190,6 +202,13 @@ test("non-mounting requests are handled without ownership bookkeeping", async ()
 	h.controller.dispose();
 });
 
+test("a named theme selection is applied by the terminal interactive host", async () => {
+	const h = harness();
+	await h.send({ type: "extension_ui_request", id: "theme", method: "setTheme", name: "light" });
+	assert.deepEqual(h.themeNames, ["light"]);
+	h.controller.dispose();
+});
+
 test("disposing the controller cancels every live dialog", async () => {
 	const h = harness();
 	const settled = h.send(REQUESTS.editor!);
@@ -198,6 +217,16 @@ test("disposing the controller cancels every live dialog", async () => {
 	await settled;
 	assert.equal(h.mounts[0]!.aborted, true);
 	assert.deepEqual(h.responses, [undefined]);
+});
+
+test("the terminal interactive host forwards editor timeout", async () => {
+	const h = harness();
+	const settled = h.send({ ...REQUESTS.editor!, timeout: 1_250 } as RpcExtensionUIRequest);
+	await sleep(0);
+	assert.equal(h.mounts[0]!.timeout, 1_250);
+	h.mounts[0]!.resolve("updated");
+	await settled;
+	h.controller.dispose();
 });
 
 /**

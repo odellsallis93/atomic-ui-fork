@@ -1,6 +1,11 @@
 import * as crypto from "node:crypto";
 import type { Component, TUI } from "@earendil-works/pi-tui";
+// Load the SettingsManager accessor mixins in this RPC-only module. The core
+// class intentionally stays lean, while ctx.ui.setTheme needs its persisted
+// theme accessor even when an extension is loaded before interactive startup.
+import "../../core/settings-manager.ts";
 import type {
+	AutocompleteProviderFactory,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
@@ -8,9 +13,16 @@ import type {
 	HostSessionPickerRequest,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
-import type { ExtensionHostInfo } from "../../core/extensions/ui-types.ts";
+import type { ExtensionHostInfo, TerminalInputHandler } from "../../core/extensions/ui-types.ts";
 import type { FooterDataProvider } from "../../core/footer-data-provider.ts";
-import { type Theme, theme } from "../interactive/theme/theme.ts";
+import type { SettingsManager } from "../../core/settings-manager-core.ts";
+import {
+	getAvailableThemesWithPaths,
+	getThemeByName,
+	setThemeInstance,
+	Theme,
+	theme,
+} from "../interactive/theme/theme.ts";
 import type { EngineCustomUiService } from "../interactive-engine/engine-custom-ui.ts";
 import type { EngineInputFormService } from "../interactive-engine/engine-input-form.ts";
 import type { EngineSessionPickerService } from "../interactive-engine/engine-session-picker.ts";
@@ -31,6 +43,9 @@ interface CreateRpcExtensionUIContextOptions {
 	sessionPicker?: EngineSessionPickerService;
 	inputForm?: EngineInputFormService;
 	footerDataProvider?: FooterDataProvider;
+	settingsManager?: SettingsManager;
+	onAddAutocompleteProvider?: (factory: AutocompleteProviderFactory) => void;
+	onTerminalInput?: (handler: TerminalInputHandler) => () => void;
 	onEditorSubmit?: (text: string) => void;
 	hostInfo?: ExtensionHostInfo;
 }
@@ -97,6 +112,9 @@ export function createRpcExtensionUIContext({
 	sessionPicker,
 	inputForm,
 	footerDataProvider,
+	settingsManager,
+	onAddAutocompleteProvider,
+	onTerminalInput,
 	onEditorSubmit,
 	hostInfo,
 }: CreateRpcExtensionUIContextOptions): ExtensionUIContext {
@@ -174,9 +192,12 @@ export function createRpcExtensionUIContext({
 		onHostCustomUiStateChange: (listener) => customUi?.onHostCustomUiStateChange(listener) ?? (() => {}),
 		focusHostInlineCustomUi: () => customUi?.focusHostInlineCustomUi() ?? false,
 
-		onTerminalInput(): () => void {
-			warnUnsupported("ctx.ui.onTerminalInput");
-			return () => {};
+		onTerminalInput(handler): () => void {
+			if (!onTerminalInput) {
+				warnUnsupported("ctx.ui.onTerminalInput");
+				return () => {};
+			}
+			return onTerminalInput(handler);
 		},
 
 		setStatus(key: string, text: string | undefined): void {
@@ -289,27 +310,27 @@ export function createRpcExtensionUIContext({
 			return "";
 		},
 
-		async editor(title: string, prefill?: string): Promise<string | undefined> {
-			const id = crypto.randomUUID();
-			return new Promise((resolve, reject) => {
-				pendingExtensionRequests.set(id, {
-					resolve: (response: RpcExtensionUIResponse) => {
-						if ("cancelled" in response && response.cancelled) {
-							resolve(undefined);
-						} else if ("value" in response) {
-							resolve(response.value);
-						} else {
-							resolve(undefined);
-						}
-					},
-					reject,
-				});
-				output({ type: "extension_ui_request", id, method: "editor", title, prefill } as RpcExtensionUIRequest);
-			});
-		},
+		editor: (title, prefill, opts) =>
+			createDialogPromise({
+				output,
+				pendingExtensionRequests,
+				dialogOptions: opts,
+				defaultValue: undefined,
+				request: { method: "editor", title, prefill, timeout: opts?.timeout },
+				parseResponse: (response) =>
+					"cancelled" in response && response.cancelled
+						? undefined
+						: "value" in response
+							? response.value
+							: undefined,
+			}),
 
-		addAutocompleteProvider(): void {
-			warnUnsupported("ctx.ui.addAutocompleteProvider");
+		addAutocompleteProvider(factory): void {
+			if (!onAddAutocompleteProvider) {
+				warnUnsupported("ctx.ui.addAutocompleteProvider");
+				return;
+			}
+			onAddAutocompleteProvider(factory);
 		},
 
 		setEditorComponent(factory): void {
@@ -340,16 +361,30 @@ export function createRpcExtensionUIContext({
 		},
 
 		getAllThemes() {
-			return [];
+			return getAvailableThemesWithPaths();
 		},
 
-		getTheme(_name: string) {
-			return undefined;
+		getTheme(name: string) {
+			return getThemeByName(name);
 		},
 
-		setTheme(_theme: string | Theme) {
-			// Theme switching not supported in RPC mode
-			return { success: false, error: "Theme switching not supported in RPC mode" };
+		setTheme(themeOrName: string | Theme) {
+			if (themeOrName instanceof Theme) {
+				setThemeInstance(themeOrName);
+				customUi?.requestRender();
+				if (themeOrName.name) {
+					emitExtensionUIRequest(output, { method: "setTheme", name: themeOrName.name });
+				}
+				return { success: true };
+			}
+			const name = themeOrName.trim();
+			const selected = getThemeByName(name);
+			if (!selected) return { success: false, error: `Theme not found: ${themeOrName}` };
+			setThemeInstance(selected);
+			settingsManager?.setTheme(name);
+			customUi?.requestRender();
+			emitExtensionUIRequest(output, { method: "setTheme", name });
+			return { success: true };
 		},
 
 		getToolsExpanded() {

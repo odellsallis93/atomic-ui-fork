@@ -33,7 +33,61 @@ export interface RpcModelCatalog {
 	models: Model<Api>[];
 	scopedModels: Array<{ model: Model<Api>; thinkingLevel?: ThinkingLevel }>;
 	customAuthProviders: Array<{ id: string; name: string }>;
+	/** Provider login capabilities, derived by the engine without exposing credentials. */
+	apiKeyProviders?: Array<{ id: string; name: string }>;
 	oauthProviders?: OAuthProviderMetadata[];
+	/** Providers with a stored credential that may be removed by the host. */
+	logoutProviders?: string[];
+}
+
+export interface RpcThemeSummary {
+	name: string;
+	source: "builtin" | "custom";
+}
+
+export interface RpcResolvedThemeSnapshot {
+	name: string;
+	cssVariables: Record<string, string>;
+}
+
+export interface RpcSettingsSnapshot {
+	theme: string;
+	projectOverridesTheme: boolean;
+	fastMode: { chat: boolean; workflow: boolean };
+	hideThinkingBlock: boolean;
+	steeringMode: "all" | "one-at-a-time";
+	followUpMode: "all" | "one-at-a-time";
+	autoCompactionEnabled: boolean;
+	autoRetryEnabled: boolean;
+	/** Configured model patterns; an empty list means all available models. */
+	modelScopePatterns: string[];
+}
+
+/**
+ * Deliberately small, validated settings surface for non-terminal hosts.
+ * Filesystem paths and arbitrary JSON remain private to SettingsManager.
+ */
+export type RpcSettingsOperation =
+	| { kind: "fast_mode"; scope: "chat" | "workflow"; enabled: boolean }
+	| { kind: "steering_mode"; mode: "all" | "one-at-a-time" }
+	| { kind: "follow_up_mode"; mode: "all" | "one-at-a-time" }
+	| { kind: "auto_compaction"; enabled: boolean }
+	| { kind: "auto_retry"; enabled: boolean }
+	| { kind: "hide_thinking"; enabled: boolean }
+	| { kind: "model_scope"; patterns: string[] };
+
+export interface RpcProjectTrustStatus {
+	cwd: string;
+	needsTrustPrompt: boolean;
+	decision: boolean | null;
+	hasProjectResources: boolean;
+}
+
+export interface RpcProjectTrustOption {
+	id: "trust" | "trust-parent" | "trust-session" | "deny" | "deny-session";
+	label: string;
+	trusted: boolean;
+	sessionOnly: boolean;
 }
 
 export interface RpcModelRefreshResult extends RpcModelCatalog {
@@ -63,10 +117,21 @@ export type RpcCommand =
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "abort" }
-	| { id?: string; type: "new_session"; parentSession?: string }
+	| { id?: string; type: "new_session"; parentSession?: string; persist?: boolean }
 
 	// State
 	| { id?: string; type: "get_state" }
+	| { id?: string; type: "get_settings_snapshot" }
+	| { id?: string; type: "reload_settings" }
+	| { id?: string; type: "list_themes" }
+	| { id?: string; type: "get_theme_snapshot"; name?: string }
+	| { id?: string; type: "set_theme"; name: string }
+	| { id?: string; type: "set_fast_mode"; scope: "chat" | "workflow"; enabled: boolean }
+	| { id?: string; type: "update_settings"; operations: RpcSettingsOperation[] }
+	| { id?: string; type: "get_external_editor_command" }
+	| { id?: string; type: "get_project_trust" }
+	| { id?: string; type: "get_project_trust_options" }
+	| { id?: string; type: "set_project_trust"; optionId: RpcProjectTrustOption["id"] }
 
 	// Model
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
@@ -117,12 +182,14 @@ export type RpcCommand =
 	  }
 	| { id?: string; type: "export_html"; outputPath?: string }
 	| { id?: string; type: "share_session" }
+	| { id?: string; type: "delete_session"; sessionPath: string; persistReplacement?: boolean }
+	| { id?: string; type: "rename_session"; sessionPath: string; name: string }
 	| { id?: string; type: "switch_session"; sessionPath: string }
 	| { id?: string; type: "import_session"; inputPath: string; cwdOverride?: string }
 	| { id?: string; type: "fork"; entryId: string }
 	| { id?: string; type: "clone" }
 	| { id?: string; type: "get_fork_messages" }
-	| { id?: string; type: "get_entries"; since?: string }
+	| { id?: string; type: "get_entries"; since?: string; offset?: number; limit?: number }
 	| { id?: string; type: "get_tree" }
 	| { id?: string; type: "get_last_assistant_text" }
 	| { id?: string; type: "set_session_name"; name: string }
@@ -142,7 +209,10 @@ export type RpcCommand =
 
 	// Commands and their live argument completions
 	| { id?: string; type: "get_commands" }
-	| { id?: string; type: "get_command_completions"; commandName: string; argumentPrefix: string };
+	| { id?: string; type: "get_command_completions"; commandName: string; argumentPrefix: string }
+	| { id?: string; type: "autocomplete_query"; queryKey: string; text: string; cursorOffset: number }
+	| { id?: string; type: "cancel_autocomplete_query"; queryKey: string }
+	| { id?: string; type: "intercept_terminal_input"; data: string };
 // ============================================================================
 // RPC Argument Completion
 // ============================================================================
@@ -151,6 +221,11 @@ export interface RpcAutocompleteItem {
 	value: string;
 	label: string;
 	description?: string;
+}
+
+export interface RpcAutocompleteSuggestion extends RpcAutocompleteItem {
+	text: string;
+	cursorOffset: number;
 }
 
 // RPC Slash Command (for get_commands response)
@@ -338,6 +413,8 @@ export type RpcResponse =
 	  }
 	| { id?: string; type: "response"; command: "import_session"; success: true; data: { cancelled: boolean } }
 	| { id?: string; type: "response"; command: "export_html"; success: true; data: { path: string } }
+	| { id?: string; type: "response"; command: "delete_session"; success: true }
+	| { id?: string; type: "response"; command: "rename_session"; success: true }
 	| {
 			id?: string;
 			type: "response";
@@ -360,7 +437,7 @@ export type RpcResponse =
 			type: "response";
 			command: "get_entries";
 			success: true;
-			data: { entries: SessionEntry[]; leafId: string | null };
+			data: { entries: SessionEntry[]; leafId: string | null; total: number; nextOffset: number | null };
 	  }
 	| {
 			id?: string;
@@ -413,6 +490,40 @@ export type RpcResponse =
 			success: true;
 			data: { completions: RpcAutocompleteItem[] | null };
 	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "autocomplete_query";
+			success: true;
+			data: { suggestions: RpcAutocompleteSuggestion[] };
+	  }
+	| { id?: string; type: "response"; command: "cancel_autocomplete_query"; success: true }
+	| {
+			id?: string;
+			type: "response";
+			command: "intercept_terminal_input";
+			success: true;
+			data: { consumed: boolean; data?: string };
+	  }
+	| { id?: string; type: "response"; command: "set_fast_mode"; success: true; data: RpcSettingsSnapshot }
+	| { id?: string; type: "response"; command: "update_settings"; success: true; data: RpcSettingsSnapshot }
+	| { id?: string; type: "response"; command: "get_external_editor_command"; success: true; data: { command: string } }
+	| { id?: string; type: "response"; command: "reload_settings"; success: true; data: RpcSettingsSnapshot }
+	| { id?: string; type: "response"; command: "get_project_trust"; success: true; data: RpcProjectTrustStatus }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_project_trust_options";
+			success: true;
+			data: { options: RpcProjectTrustOption[] };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "set_project_trust";
+			success: true;
+			data: { status: RpcProjectTrustStatus; sessionOnly?: boolean };
+	  }
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };
@@ -440,7 +551,7 @@ export type RpcExtensionUIRequest =
 			placeholder?: string;
 			timeout?: number;
 	  }
-	| { type: "extension_ui_request"; id: string; method: "editor"; title: string; prefill?: string }
+	| { type: "extension_ui_request"; id: string; method: "editor"; title: string; prefill?: string; timeout?: number }
 	| {
 			type: "extension_ui_request";
 			id: string;
@@ -476,6 +587,7 @@ export type RpcExtensionUIRequest =
 			widgetPlacement?: "aboveEditor" | "belowEditor";
 	  }
 	| { type: "extension_ui_request"; id: string; method: "setTitle"; title: string }
+	| { type: "extension_ui_request"; id: string; method: "setTheme"; name: string }
 	| { type: "extension_ui_request"; id: string; method: "set_editor_text"; text: string }
 	| (RpcOAuthUIEnvelope & { method: "oauth_auth"; info: OAuthAuthInfo })
 	| (RpcOAuthUIEnvelope & { method: "oauth_device_code"; info: OAuthDeviceCodeInfo })

@@ -18,6 +18,9 @@ export function DialogModal(props: {
 		request.method === "editor" && typeof request.prefill === "string" ? request.prefill : undefined;
 	const requestTimeout = "timeout" in request && typeof request.timeout === "number" ? request.timeout : undefined;
 	const [value, setValue] = useState(requestPrefill ?? "");
+	const [secondsRemaining, setSecondsRemaining] = useState<number | undefined>(() =>
+		requestTimeout && requestTimeout > 0 ? Math.ceil(requestTimeout / 1_000) : undefined,
+	);
 	const valueRef = useRef(value);
 	valueRef.current = value;
 	const onRespondRef = useRef(props.onRespond);
@@ -64,19 +67,31 @@ export function DialogModal(props: {
 			}
 		};
 		window.addEventListener("keydown", onKeyDown, true);
-		const timeout = requestTimeout && requestTimeout > 0 ? window.setTimeout(cancel, requestTimeout) : undefined;
+		const deadline = requestTimeout && requestTimeout > 0 ? Date.now() + requestTimeout : undefined;
+		const updateCountdown = (): void => {
+			if (deadline === undefined) return;
+			setSecondsRemaining(Math.max(0, Math.ceil((deadline - Date.now()) / 1_000)));
+		};
+		updateCountdown();
+		const countdown = deadline === undefined ? undefined : window.setInterval(updateCountdown, 250);
+		const timeout = deadline === undefined ? undefined : window.setTimeout(cancel, requestTimeout);
 		return () => {
 			window.clearTimeout(focus);
 			if (timeout !== undefined) window.clearTimeout(timeout);
+			if (countdown !== undefined) window.clearInterval(countdown);
 			window.removeEventListener("keydown", onKeyDown, true);
 			if (previous?.isConnected) previous.focus();
 		};
 	}, [request.id, request.method, requestTimeout, respondOnce]);
+	const dialogTitle =
+		requestTimeout && requestTimeout > 0 && secondsRemaining !== undefined
+			? `${titleOf(request)} (${secondsRemaining}s)`
+			: titleOf(request);
 	if (request.method === "confirm") {
 		return (
 			<div className="modal-backdrop">
-				<div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-label={titleOf(request)}>
-					<h2>{titleOf(request)}</h2>
+				<div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-label={dialogTitle}>
+					<h2>{dialogTitle}</h2>
 					<p>{typeof request.message === "string" ? request.message : ""}</p>
 					<div className="modal-actions">
 						<button
@@ -103,8 +118,8 @@ export function DialogModal(props: {
 		const options = request.options.filter((option): option is string => typeof option === "string");
 		return (
 			<div className="modal-backdrop">
-				<div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-label={titleOf(request)}>
-					<h2>{titleOf(request)}</h2>
+				<div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-label={dialogTitle}>
+					<h2>{dialogTitle}</h2>
 					<ul className="modal-list">
 						{options.map((option) => (
 							<li key={option}>
@@ -137,8 +152,8 @@ export function DialogModal(props: {
 		const options = Array.isArray(prompt.options) ? prompt.options : [];
 		return (
 			<div className="modal-backdrop">
-				<div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-label={titleOf(request)}>
-					<h2>{titleOf(request)}</h2>
+				<div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-label={dialogTitle}>
+					<h2>{dialogTitle}</h2>
 					<p>{prompt.message ?? "Select an option"}</p>
 					<ul className="modal-list">
 						{options.map((option) => (
@@ -171,8 +186,8 @@ export function DialogModal(props: {
 		const message = request.info.instructions ?? "Continue authentication in your browser.";
 		return (
 			<div className="modal-backdrop">
-				<div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-label={titleOf(request)}>
-					<h2>{titleOf(request)}</h2>
+				<div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-label={dialogTitle}>
+					<h2>{dialogTitle}</h2>
 					<p>{message}</p>
 					<p className="settings-hint">
 						<a href={request.info.url} target="_blank" rel="noreferrer">
@@ -310,7 +325,7 @@ export function DialogModal(props: {
 			"message" in request.prompt &&
 			typeof (request.prompt as { message?: unknown }).message === "string"
 				? (request.prompt as { message: string }).message
-				: titleOf(request);
+				: dialogTitle;
 		return (
 			<div className="modal-backdrop">
 				<div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-label={heading}>
@@ -327,7 +342,11 @@ export function DialogModal(props: {
 						<input
 							className="modal-input"
 							aria-label={heading}
-							type={request.method === "oauth_prompt" || request.method === "oauth_manual_code" ? "password" : "text"}
+							type={
+								request.method === "oauth_prompt" || request.method === "oauth_manual_code"
+									? "password"
+									: "text"
+							}
 							placeholder={placeholder}
 							value={value}
 							onChange={(e) => setValue(e.target.value)}

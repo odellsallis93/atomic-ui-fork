@@ -29,11 +29,13 @@ export function attachJsonlLineReader(stream: Readable, onLine: (line: string) =
 
 export const INTERACTIVE_ENGINE_PROTOCOL_VERSION = 3;
 
-export function parseEngineReady(line: string): {
-	protocolVersion: number;
-	pid: number;
-	hostInfo?: { kind: "terminal" | "gui" };
-} | undefined {
+export function parseEngineReady(line: string):
+	| {
+			protocolVersion: number;
+			pid: number;
+			hostInfo?: { kind: "terminal" | "gui" };
+	  }
+	| undefined {
 	let value: unknown;
 	try {
 		value = JSON.parse(line);

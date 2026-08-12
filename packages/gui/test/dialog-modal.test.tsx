@@ -73,6 +73,23 @@ describe("DialogModal keyboard and timeout contract", () => {
 		assert.deepEqual(editorResponses, []);
 	});
 
+	test("applies timeout cancellation to editor dialogs", async () => {
+		const responses: ExtensionUiResponse[] = [];
+		await render(
+			{ id: "editor-timeout", method: "editor", title: "Timed editor", prefill: "draft", timeout: 50 },
+			(response) => responses.push(response),
+		);
+		act(() => void vi.advanceTimersByTime(50));
+		assert.deepEqual(responses, [{ id: "editor-timeout", cancelled: true }]);
+	});
+
+	test("shows a live countdown for timed dialogs", async () => {
+		await render({ id: "countdown-1", method: "editor", title: "Timed editor", timeout: 5_000 }, () => undefined);
+		assert.equal(container.querySelector("h2")?.textContent, "Timed editor (5s)");
+		act(() => void vi.advanceTimersByTime(1_000));
+		assert.equal(container.querySelector("h2")?.textContent, "Timed editor (4s)");
+	});
+
 	test("masks OAuth token and authorization-code prompts", async () => {
 		await render(
 			{

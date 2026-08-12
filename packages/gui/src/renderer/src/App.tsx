@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ExtensionUiResponse, ForkMessageInfo, GuiSettingsSnapshot, PromptImage } from "../../shared/ipc";
+import type {
+	ExtensionUiRequest,
+	ExtensionUiResponse,
+	ForkMessageInfo,
+	GuiSettingsSnapshot,
+	PromptImage,
+} from "../../shared/ipc";
 import { AuthPanel } from "./components/AuthPanel";
 import { ChromeFrame } from "./components/ChromeFrame";
 import { Composer } from "./components/Composer";
@@ -22,6 +28,9 @@ import { createSubmitGate, planSubmit, readFileAsDataUrl, readImageFiles } from 
 import { actionForKey, keyboardShortcut, restoreFailedDraft } from "./helpers/composer-parity";
 import { RefreshGeneration } from "./helpers/refresh-generation";
 import { formatUsage, useSessionStore } from "./store/session-store";
+
+/** Keep individual Electron IPC payloads small; remaining pages are requested together after metadata is known. */
+const TRANSCRIPT_PAGE_SIZE = 1_000;
 
 function hasGuiApi(): boolean {
 	return typeof window !== "undefined" && typeof window.atomicGui !== "undefined";
@@ -81,6 +90,13 @@ function normalizedShortcutKey(key: string): string {
 		.join("+");
 }
 
+interface GuiConfirmation {
+	id: string;
+	title: string;
+	message: string;
+	onConfirm(): void;
+}
+
 export function App() {
 	const status = useSessionStore((s) => s.status);
 	const entries = useSessionStore((s) => s.entries);
@@ -97,7 +113,6 @@ export function App() {
 	const composerText = useSessionStore((s) => s.composerText);
 	const errorBanner = useSessionStore((s) => s.errorBanner);
 	const usageLabel = useSessionStore((s) => s.usageLabel);
-	const commands = useSessionStore((s) => s.commands);
 	const extensionShortcuts = useSessionStore((s) => s.extensionShortcuts);
 	const keybindings = useSessionStore((s) => s.keybindings);
 	const models = useSessionStore((s) => s.models);
@@ -128,6 +143,7 @@ export function App() {
 	const historyDown = useSessionStore((s) => s.historyDown);
 	const toggleRawLog = useSessionStore((s) => s.toggleRawLog);
 	const toggleThinking = useSessionStore((s) => s.toggleThinking);
+	const setHideThinking = useSessionStore((s) => s.setHideThinking);
 	const appendRawLine = useSessionStore((s) => s.appendRawLine);
 	const ingestEvent = useSessionStore((s) => s.ingestEvent);
 	const ingestExtensionUi = useSessionStore((s) => s.ingestExtensionUi);
@@ -159,6 +175,7 @@ export function App() {
 	const treeRefreshGeneration = useRef(new RefreshGeneration());
 	const [attachedImages, setAttachedImages] = useState<PromptImage[]>([]);
 	const [forkMessages, setForkMessages] = useState<ForkMessageInfo[]>([]);
+	const [guiConfirmation, setGuiConfirmation] = useState<GuiConfirmation | undefined>(undefined);
 	const [compacting, setCompacting] = useState(false);
 	const [composerFocusRequest, setComposerFocusRequest] = useState(0);
 	const attachedImagesRef = useRef<PromptImage[]>(attachedImages);
@@ -192,13 +209,42 @@ export function App() {
 	const refreshTranscript = useCallback(async (): Promise<void> => {
 		if (!hasGuiApi()) return;
 		const generation = transcriptRefreshGeneration.current.begin();
-		const result = await window.atomicGui.getEntries();
+		const first = await window.atomicGui.getEntries({ offset: 0, limit: TRANSCRIPT_PAGE_SIZE });
 		if (!transcriptRefreshGeneration.current.isCurrent(generation)) return;
-		if (!result.ok || !result.data) {
-			setErrorBanner(result.error ?? "Failed to load session transcript");
+		if (!first.ok || !first.data) {
+			setErrorBanner(first.error ?? "Failed to load session transcript");
 			return;
 		}
-		hydrateTranscript(result.data.entries, result.data.leafId);
+		if (first.data.nextOffset === null) {
+			hydrateTranscript(first.data.entries, first.data.leafId);
+			return;
+		}
+
+		const offsets: number[] = [];
+		for (let offset = first.data.nextOffset; offset < first.data.total; offset += TRANSCRIPT_PAGE_SIZE) {
+			offsets.push(offset);
+		}
+		const entries = [...first.data.entries];
+		// Keep page reads on one ordered lane. The engine deliberately serializes
+		// ordinary RPC commands, and issuing every page concurrently can leave a
+		// large Electron transcript waiting behind stale renderer requests.
+		for (const offset of offsets) {
+			const result = await window.atomicGui.getEntries({ offset, limit: TRANSCRIPT_PAGE_SIZE });
+			if (!transcriptRefreshGeneration.current.isCurrent(generation)) return;
+			if (!result.ok || !result.data) {
+				setErrorBanner(result.error ?? "Failed to load session transcript");
+				return;
+			}
+			if (
+				result.data.total !== first.data.total ||
+				(result.data.nextOffset !== null && result.data.nextOffset <= offset)
+			) {
+				setErrorBanner("Engine returned inconsistent transcript pages");
+				return;
+			}
+			entries.push(...result.data.entries);
+		}
+		hydrateTranscript(entries, first.data.leafId);
 	}, [hydrateTranscript, setErrorBanner]);
 
 	const refreshTree = useCallback(async (): Promise<void> => {
@@ -217,6 +263,21 @@ export function App() {
 		await Promise.all([refreshTranscript(), refreshTree()]);
 	}, [refreshTranscript, refreshTree]);
 
+	const handleExtensionUi = useCallback(
+		(request: ExtensionUiRequest): void => {
+			ingestExtensionUi(request);
+			if (request.method !== "setTheme" || !hasGuiApi()) return;
+			void window.atomicGui.getThemeCss(request.name).then(
+				(theme) => {
+					applyThemeCss(theme.cssVariables);
+					setThemeName(theme.name);
+				},
+				(error: unknown) => setErrorBanner(error instanceof Error ? error.message : String(error)),
+			);
+		},
+		[ingestExtensionUi, setErrorBanner, setThemeName],
+	);
+
 	useEffect(() => {
 		if (!hasGuiApi()) return;
 		const api = window.atomicGui;
@@ -224,6 +285,7 @@ export function App() {
 		void (async () => {
 			const settings = await api.getSettings();
 			setThemeName(settings.theme);
+			setHideThinking(settings.hideThinkingBlock);
 			const theme = await api.getThemeCss(settings.theme);
 			applyThemeCss(theme.cssVariables);
 			setThemes(await api.listThemes());
@@ -231,17 +293,26 @@ export function App() {
 		const offStatus = api.onStatus(setStatus);
 		const offEvent = api.onEvent(ingestEvent);
 		const offRaw = api.onRawLine(appendRawLine);
-		const offUi = api.onExtensionUi(ingestExtensionUi);
+		const offUi = api.onExtensionUi(handleExtensionUi);
 		return () => {
 			offStatus();
 			offEvent();
 			offRaw();
 			offUi();
 		};
-	}, [appendRawLine, ingestEvent, ingestExtensionUi, setStatus, setThemeName, setThemes]);
+	}, [appendRawLine, handleExtensionUi, ingestEvent, setHideThinking, setStatus, setThemeName, setThemes]);
 
 	useEffect(() => {
 		if (status.state !== "ready") return;
+		void (async () => {
+			const [settings, themes] = await Promise.all([window.atomicGui.getSettings(), window.atomicGui.listThemes()]);
+			const theme = await window.atomicGui.getThemeCss(settings.theme);
+			applyThemeCss(theme.cssVariables);
+			setThemeName(theme.name);
+			setThemes(themes);
+			setGuiSettings(settings);
+			setHideThinking(settings.hideThinkingBlock);
+		})();
 		void refreshMetadata();
 		const timer = window.setInterval(() => {
 			void window.atomicGui.getSessionStats().then((result) => {
@@ -251,7 +322,7 @@ export function App() {
 			});
 		}, 5000);
 		return () => window.clearInterval(timer);
-	}, [refreshMetadata, setUsageLabel, status.state]);
+	}, [refreshMetadata, setHideThinking, setThemeName, setThemes, setUsageLabel, status.state]);
 
 	const ready = status.state === "ready";
 	const starting = status.state === "starting";
@@ -259,9 +330,13 @@ export function App() {
 	const openModels = useCallback(async (): Promise<void> => {
 		if (!hasGuiApi()) return;
 		const result = await window.atomicGui.getModels();
-		if (result.ok && result.data) setModels(result.data);
+		if (!result.ok || !result.data) {
+			setErrorBanner(result.error ?? "Model catalog is unavailable until the engine is started.");
+			return;
+		}
+		setModels(result.data);
 		setModal("models");
-	}, [setModal, setModels]);
+	}, [setErrorBanner, setModal, setModels]);
 
 	const openSessions = useCallback(async (): Promise<void> => {
 		if (!hasGuiApi()) return;
@@ -294,31 +369,34 @@ export function App() {
 		const settings = await window.atomicGui.getSettings();
 		setGuiSettings(settings);
 		setThemeName(settings.theme);
+		setHideThinking(settings.hideThinkingBlock);
 		if (status.state === "ready") {
 			const levels = await window.atomicGui.getAvailableThinkingLevels();
 			if (levels.ok && levels.data) setThinkingLevels(levels.data);
 		}
 		setModal("settings");
-	}, [setModal, setThemeName, setThemes, status.state]);
+	}, [setHideThinking, setModal, setThemeName, setThemes, status.state]);
 
 	const openAuth = useCallback(async (): Promise<void> => {
 		if (!hasGuiApi()) return;
 		const result = await window.atomicGui.getAuthCatalog();
-		if (result.ok && result.data) {
-			setAuthCatalog(result.data);
-			setModels(result.data.models);
+		if (!result.ok || !result.data) {
+			setErrorBanner(result.error ?? "Provider authentication is unavailable until the engine is started.");
+			return;
 		}
+		setAuthCatalog(result.data);
+		setModels(result.data.models);
 		setModal("auth");
-	}, [setAuthCatalog, setModal, setModels]);
+	}, [setAuthCatalog, setErrorBanner, setModal, setModels]);
 
 	const maybePromptTrust = useCallback(async (): Promise<void> => {
 		if (!hasGuiApi()) return;
-		const statusResult = await window.atomicGui.getTrustStatus(status.cwd);
+		const statusResult = await window.atomicGui.getTrustStatus();
 		if (!statusResult?.needsTrustPrompt) return;
-		const options = await window.atomicGui.getTrustOptions(status.cwd);
+		const options = await window.atomicGui.getTrustOptions();
 		setTrust(statusResult, options);
 		setModal("trust");
-	}, [setModal, setTrust, status.cwd]);
+	}, [setModal, setTrust]);
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent): void => {
@@ -562,20 +640,6 @@ export function App() {
 		clearDialog(response.id);
 	};
 
-	const searchFiles = useCallback(
-		async (query: string) => {
-			if (!hasGuiApi()) return [];
-			return await window.atomicGui.searchFiles(query, status.cwd);
-		},
-		[status.cwd],
-	);
-
-	const searchCommandCompletions = useCallback(async (commandName: string, argumentPrefix: string) => {
-		if (!hasGuiApi()) return [];
-		const result = await window.atomicGui.getCommandCompletions(commandName, argumentPrefix);
-		return result.ok && result.data ? result.data : [];
-	}, []);
-
 	return (
 		<div className="app-shell">
 			{customHeader ? <ChromeFrame frame={customHeader} slot="header" modalOpen={modal !== "none"} /> : null}
@@ -693,13 +757,19 @@ export function App() {
 					disabled={!ready}
 					working={working && workingVisible}
 					queue={queue}
-					commands={commands}
 					widgets={widgets}
 					images={attachedImages}
 					keybindings={keybindings}
 					extensionShortcuts={extensionShortcuts}
 					focusRequest={composerFocusRequest}
-					onChange={setComposerText}
+					onChange={(text) => {
+						setComposerText(text);
+						void window.atomicGui.sendEngineCommand({
+							type: "engine_editor_state",
+							componentId: "composer",
+							text,
+						});
+					}}
 					onSubmit={(behavior, message) => void submit(behavior, message)}
 					onAbort={(restoreQueue) => void abort(restoreQueue)}
 					onClear={clear}
@@ -734,8 +804,16 @@ export function App() {
 					onHistoryDown={() => {
 						historyDown();
 					}}
-					onSearchFiles={searchFiles}
-					onSearchCommandCompletions={searchCommandCompletions}
+					onAutocomplete={async (text, cursorOffset) => {
+						if (!hasGuiApi()) return [];
+						const result = await window.atomicGui.getAutocomplete(text, cursorOffset);
+						return result.ok && result.data ? result.data : [];
+					}}
+					onTerminalInput={async (data) => {
+						if (!hasGuiApi()) return { consumed: false };
+						const result = await window.atomicGui.interceptTerminalInput(data);
+						return result.ok && result.data ? result.data : { consumed: false };
+					}}
 					onPasteImages={addPastedImages}
 					onRemoveImage={(index) =>
 						setAttached((images) => images.filter((_image, itemIndex) => itemIndex !== index))
@@ -761,6 +839,7 @@ export function App() {
 					usageLabel={usageLabel}
 					statusSegments={statusSegments}
 					working={working}
+					workingVisible={workingVisible}
 					workingLabel={workingLabel}
 					workingIndicatorFrames={workingIndicatorFrames}
 					workingIndicatorIntervalMs={workingIndicatorIntervalMs}
@@ -811,7 +890,24 @@ export function App() {
 				}}
 			/>
 
-			{modal === "sessions" ? (
+			{guiConfirmation ? (
+				<DialogModal
+					request={{
+						id: guiConfirmation.id,
+						method: "confirm",
+						title: guiConfirmation.title,
+						message: guiConfirmation.message,
+					}}
+					onRespond={(response) => {
+						const confirmation = guiConfirmation;
+						setGuiConfirmation(undefined);
+						if ("confirmed" in response && response.confirmed) confirmation.onConfirm();
+					}}
+					onDismiss={() => setGuiConfirmation(undefined)}
+				/>
+			) : null}
+
+			{modal === "sessions" && !guiConfirmation ? (
 				<SessionPicker
 					sessions={sessions}
 					forkMessages={forkMessages}
@@ -844,15 +940,24 @@ export function App() {
 						});
 					}}
 					onImport={(inputPath) => {
-						if (!window.confirm(`Import and replace the active session with ${inputPath}?`)) return;
-						void window.atomicGui.importSession(inputPath).then((result) => {
-							if (!result.ok) setErrorBanner(result.error);
-							else if (!result.data?.cancelled) {
-								resetTranscript();
-								void refreshSessionView();
-								setModal("none");
-								void refreshMetadata();
-							}
+						setGuiConfirmation({
+							id: `import-${Date.now()}`,
+							title: "Import session",
+							message: `Import and replace the active session with ${inputPath}?`,
+							onConfirm: () => {
+								void window.atomicGui.importSession(inputPath).then((result) => {
+									if (!result.ok) setErrorBanner(result.error);
+									else if (!result.data?.cancelled) {
+										resetTranscript();
+										// A large linear transcript can have an equally deep tree. The
+										// session picker is closing, so hydrate the visible transcript now
+										// and load the tree only if the user later opens Tree.
+										void refreshTranscript();
+										setModal("none");
+										void refreshMetadata();
+									}
+								});
+							},
 						});
 					}}
 					onClone={() => {
@@ -903,14 +1008,20 @@ export function App() {
 						});
 					}}
 					onDelete={(session) => {
-						if (!window.confirm(`Delete session ${session.name || session.id}?`)) return;
-						void window.atomicGui.deleteSession(session.path).then(async (result) => {
-							if (!result.ok) setErrorBanner(result.error);
-							else {
-								if (session.path === status.sessionFile) resetTranscript();
-								setSessions(await window.atomicGui.listSessions({ cwd: status.cwd }));
-								void refreshMetadata();
-							}
+						setGuiConfirmation({
+							id: `delete-${session.path}`,
+							title: "Delete session",
+							message: `Delete session ${session.name || session.id}?`,
+							onConfirm: () => {
+								void window.atomicGui.deleteSession(session.path).then(async (result) => {
+									if (!result.ok) setErrorBanner(result.error);
+									else {
+										if (session.path === status.sessionFile) resetTranscript();
+										setSessions(await window.atomicGui.listSessions({ cwd: status.cwd }));
+										void refreshMetadata();
+									}
+								});
+							},
 						});
 					}}
 					onSelect={(session) => {
@@ -990,11 +1101,31 @@ export function App() {
 					currentThinkingLevel={status.thinkingLevel}
 					onClose={() => setModal("none")}
 					onOpenAuth={() => void openAuth()}
+					onReloadSettings={() => {
+						void window.atomicGui
+							.reloadSettings()
+							.then(async (settings) => {
+								const [theme, refreshedThemes] = await Promise.all([
+									window.atomicGui.getThemeCss(settings.theme),
+									window.atomicGui.listThemes(),
+								]);
+								applyThemeCss(theme.cssVariables);
+								setThemeName(theme.name);
+								setThemes(refreshedThemes);
+								setGuiSettings(settings);
+								setHideThinking(settings.hideThinkingBlock);
+							})
+							.catch((error: unknown) => setErrorBanner(error instanceof Error ? error.message : String(error)));
+					}}
 					onSelectTheme={(name) => {
-						void window.atomicGui.setTheme(name).then((theme) => {
-							applyThemeCss(theme.cssVariables);
-							setThemeName(theme.name);
-						});
+						void window.atomicGui
+							.setTheme(name)
+							.then(async (theme) => {
+								applyThemeCss(theme.cssVariables);
+								setThemeName(theme.name);
+								setGuiSettings(await window.atomicGui.getSettings());
+							})
+							.catch((error: unknown) => setErrorBanner(error instanceof Error ? error.message : String(error)));
 					}}
 					onSetThinkingLevel={(level) => {
 						void window.atomicGui.setThinkingLevel(level).then((result) => {
@@ -1003,24 +1134,56 @@ export function App() {
 						});
 					}}
 					onSetSteeringMode={(mode) => {
-						void window.atomicGui.setSteeringMode(mode).then((result) => {
-							if (!result.ok) setErrorBanner(result.error);
-						});
+						void window.atomicGui
+							.updateSettings([{ kind: "steering_mode", mode }])
+							.then(setGuiSettings, (error: unknown) =>
+								setErrorBanner(error instanceof Error ? error.message : String(error)),
+							);
 					}}
 					onSetFollowUpMode={(mode) => {
-						void window.atomicGui.setFollowUpMode(mode).then((result) => {
-							if (!result.ok) setErrorBanner(result.error);
-						});
+						void window.atomicGui
+							.updateSettings([{ kind: "follow_up_mode", mode }])
+							.then(setGuiSettings, (error: unknown) =>
+								setErrorBanner(error instanceof Error ? error.message : String(error)),
+							);
 					}}
 					onSetAutoCompaction={(enabled) => {
-						void window.atomicGui.setAutoCompaction(enabled).then((result) => {
-							if (!result.ok) setErrorBanner(result.error);
-						});
+						void window.atomicGui
+							.updateSettings([{ kind: "auto_compaction", enabled }])
+							.then(setGuiSettings, (error: unknown) =>
+								setErrorBanner(error instanceof Error ? error.message : String(error)),
+							);
 					}}
 					onSetAutoRetry={(enabled) => {
-						void window.atomicGui.setAutoRetry(enabled).then((result) => {
-							if (!result.ok) setErrorBanner(result.error);
-						});
+						void window.atomicGui
+							.updateSettings([{ kind: "auto_retry", enabled }])
+							.then(setGuiSettings, (error: unknown) =>
+								setErrorBanner(error instanceof Error ? error.message : String(error)),
+							);
+					}}
+					onSetHideThinking={(enabled) => {
+						void window.atomicGui.updateSettings([{ kind: "hide_thinking", enabled }]).then(
+							(settings) => {
+								setGuiSettings(settings);
+								setHideThinking(settings.hideThinkingBlock);
+							},
+							(error: unknown) => setErrorBanner(error instanceof Error ? error.message : String(error)),
+						);
+					}}
+					onSetFastMode={(scope, enabled) => {
+						void window.atomicGui.updateSettings([{ kind: "fast_mode", scope, enabled }]).then(
+							(settings) => setGuiSettings(settings),
+							(error: unknown) => setErrorBanner(error instanceof Error ? error.message : String(error)),
+						);
+					}}
+					onSetModelScope={(patterns) => {
+						void window.atomicGui.updateSettings([{ kind: "model_scope", patterns }]).then(
+							(settings) => {
+								setGuiSettings(settings);
+								void refreshMetadata();
+							},
+							(error: unknown) => setErrorBanner(error instanceof Error ? error.message : String(error)),
+						);
 					}}
 				/>
 			) : null}
@@ -1073,7 +1236,7 @@ export function App() {
 					status={trustStatus}
 					options={trustOptions}
 					onChoose={(optionId) => {
-						void window.atomicGui.applyTrust(optionId, status.cwd).then((next) => {
+						void window.atomicGui.applyTrust(optionId).then((next) => {
 							setTrust(next, trustOptions);
 							setModal("none");
 							const sessionPath = pendingSessionPath.current;

@@ -21,8 +21,8 @@ export function OnboardingPanel(props: {
 				<button type="button" className="btn" onClick={props.onTrust}>
 					Review trust
 				</button>
-				<button type="button" className="btn" onClick={props.onAuth}>
-					2. Provider auth
+				<button type="button" className="btn" onClick={props.onAuth} disabled={!props.ready}>
+					2. Provider auth (after start)
 				</button>
 				<button type="button" className="btn" onClick={props.onModels} disabled={!props.ready}>
 					3. Choose model

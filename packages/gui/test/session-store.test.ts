@@ -74,6 +74,20 @@ test("ingestEvent streams assistant text deltas into one entry", () => {
 	assert.equal(entries[0]?.streaming, false);
 });
 
+test("prompt history deduplicates submissions and traverses from an empty composer", () => {
+	const { pushPromptHistory, historyDown, historyUp } = useSessionStore.getState();
+	pushPromptHistory("first prompt");
+	pushPromptHistory("second prompt");
+	pushPromptHistory("first prompt");
+	assert.deepEqual(useSessionStore.getState().promptHistory, ["second prompt", "first prompt"]);
+	assert.equal(historyUp(), "first prompt");
+	assert.equal(historyUp(), "second prompt");
+	assert.equal(historyDown(), "first prompt");
+	assert.equal(historyDown(), "");
+	assert.equal(useSessionStore.getState().historyIndex, -1);
+	assert.equal(useSessionStore.getState().composerText, "");
+});
+
 test("updating an earlier transcript entry preserves its position", () => {
 	const { ingestEvent } = useSessionStore.getState();
 	ingestEvent({ type: "message_start", message: { id: "m1", role: "assistant", content: [] } });
@@ -902,7 +916,7 @@ test("direct bash output and durable bash state remain visible", () => {
 	);
 });
 
-test("thinking is separate from text and image content has a visible placeholder", () => {
+test("thinking and safe image content are retained as distinct transcript fields", () => {
 	useSessionStore.getState().hydrateTranscript(
 		[
 			{
@@ -925,6 +939,26 @@ test("thinking is separate from text and image content has a visible placeholder
 	const entry = useSessionStore.getState().entries[0];
 	assert.equal(entry?.text, "answer[image attachment]");
 	assert.equal(entry?.thinking, "reason");
+	assert.deepEqual(entry?.images, [{ data: "abc", mimeType: "image/png" }]);
+});
+
+test("transcript rejects non-raster image MIME types", () => {
+	useSessionStore.getState().hydrateTranscript(
+		[
+			{
+				type: "message",
+				id: "assistant",
+				parentId: null,
+				timestamp: "2026-01-01T00:00:00Z",
+				message: {
+					role: "assistant",
+					content: [{ type: "image", data: "<svg />", mimeType: "image/svg+xml" }],
+				},
+			},
+		],
+		"assistant",
+	);
+	assert.equal(useSessionStore.getState().entries[0]?.images, undefined);
 });
 
 test("compaction events retain durable summaries and render aborted and failed terminal states", () => {

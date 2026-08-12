@@ -9,6 +9,7 @@ export function Footer(props: {
 	usageLabel: string;
 	statusSegments: Record<string, string>;
 	working: boolean;
+	workingVisible: boolean;
 	workingLabel: string;
 	workingIndicatorFrames?: string[];
 	workingIndicatorIntervalMs?: number;
@@ -29,7 +30,7 @@ export function Footer(props: {
 				))}
 			</div>
 			<div className="footer-right">
-				{props.working ? (
+				{props.working && props.workingVisible ? (
 					<WorkingIndicator
 						label={props.workingLabel}
 						frames={props.workingIndicatorFrames}

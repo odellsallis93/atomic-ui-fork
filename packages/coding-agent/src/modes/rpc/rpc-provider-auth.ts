@@ -13,6 +13,32 @@ interface ActiveLogin {
 	controller: AbortController;
 }
 
+/**
+ * Auth-capability catalog for non-terminal hosts. It deliberately exposes only
+ * action availability and display names; credential values and storage paths
+ * remain inside the engine.
+ */
+export function getRpcModelCatalog(session: AgentSession): RpcModelCatalog {
+	const providers = session.modelRuntime.getProviders();
+	const oauthProviders = session.modelRuntime.getOAuthProviderMetadata();
+	const providerIds = new Set([
+		...providers.map((provider) => provider.id),
+		...oauthProviders.map((provider) => provider.id),
+	]);
+	return {
+		models: [...session.modelRuntime.getAvailableSnapshot()],
+		scopedModels: [...session.scopedModels],
+		customAuthProviders: [],
+		apiKeyProviders: providers
+			.filter((provider) => provider.auth.apiKey !== undefined)
+			.map((provider) => ({ id: provider.id, name: provider.name ?? provider.id })),
+		oauthProviders,
+		logoutProviders: [...providerIds].filter(
+			(provider) => session.modelRuntime.getProviderAuthStatus(provider).source === "stored",
+		),
+	};
+}
+
 export class RpcProviderAuth {
 	private readonly controllers = new Map<string, ActiveLogin>();
 	private readonly inputForm: ProviderLoginInput | undefined;
@@ -113,11 +139,6 @@ export class RpcProviderAuth {
 		if (this.controllers.get(loginId)?.controller === controller) this.controllers.delete(loginId);
 	}
 	private catalog(session: AgentSession): RpcModelCatalog {
-		return {
-			models: [...session.modelRuntime.getAvailableSnapshot()],
-			scopedModels: [...session.scopedModels],
-			customAuthProviders: [],
-			oauthProviders: session.modelRuntime.getOAuthProviderMetadata(),
-		};
+		return getRpcModelCatalog(session);
 	}
 }

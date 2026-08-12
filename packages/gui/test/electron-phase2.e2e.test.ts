@@ -150,6 +150,8 @@ process.stdin.on("data", (chunk) => {
     if (!request.id || typeof request.type !== "string") continue;
     accept(request);
     if (request.type === "get_state") response(request, true, { sessionFile: current().file, sessionName: current().name, model: { provider: "fixture", id: "model" } });
+    else if (request.type === "get_project_trust") response(request, true, { cwd: process.cwd(), needsTrustPrompt: false, decision: null, hasProjectResources: false });
+    else if (request.type === "get_project_trust_options") response(request, true, { options: [] });
     else if (request.type === "get_entries") {
       if (delayInitialEntries) { delayInitialEntries = false; pendingInitialEntries = request; }
       else {
@@ -253,9 +255,13 @@ process.stdin.on("data", (chunk) => {
         response(request, true);
       } else {
         send({ type: "agent_start" });
-        appendPrompt(request.message);
+        const attachmentNote = Array.isArray(request.images) && request.images.length > 0
+          ? "[" + request.images.length + " image attachment" + (request.images.length === 1 ? "" : "s") + "]"
+          : "";
+        const promptText = request.message || attachmentNote;
+        appendPrompt(promptText);
         send({ type: "message_start", message: { id: current().leaf, role: "assistant", content: [] } });
-        send({ type: "message_end", message: { id: current().leaf, role: "assistant", content: [{ type: "text", text: "reply: " + request.message }] } });
+        send({ type: "message_end", message: { id: current().leaf, role: "assistant", content: [{ type: "text", text: "reply: " + promptText }] } });
         if (request.message === "queue seed") { queues = { steering: ["steer first"], followUp: ["follow first"] }; queueUpdate(); }
         else send({ type: "agent_end" });
         response(request, true);
@@ -334,9 +340,15 @@ async function launchFixture(delayInitialEntries = false): Promise<Page> {
 	return page;
 }
 
-afterEach(async () => {
+async function closeElectronApp(): Promise<void> {
+	const electronProcess = app?.process();
 	await app?.close().catch(() => undefined);
+	if (electronProcess?.exitCode === null && !electronProcess.killed) electronProcess.kill("SIGTERM");
 	app = undefined;
+}
+
+afterEach(async () => {
+	await closeElectronApp();
 	for (const path of tempPaths.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
@@ -417,6 +429,30 @@ test("Electron fixture E2E: queue pause, resume, and dequeue render protocol-v2 
 	assert.match((await editor(page).textContent()) ?? "", /steer firstfollow first/);
 }, 30_000);
 
+test("Electron fixture E2E: composer expands paste markers and forwards dropped image attachments", async () => {
+	const page = await launchFixture();
+	const pasted = "p".repeat(1_200);
+	await editor(page).click();
+	await page.locator(".composer-editor").evaluate((node, text) => {
+		const clipboardData = new DataTransfer();
+		clipboardData.setData("text/plain", text);
+		node.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }));
+	}, pasted);
+	await page.getByText("[paste #1 1200 chars]", { exact: true }).waitFor();
+	await page.getByRole("button", { name: "Send" }).click();
+	await page.getByText(`reply: ${pasted}`, { exact: true }).waitFor();
+
+	await page.locator(".composer-main").evaluate((node) => {
+		const dataTransfer = new DataTransfer();
+		dataTransfer.items.add(new File([new Uint8Array([137, 80, 78, 71])], "fixture.png", { type: "image/png" }));
+		node.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer }));
+		node.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+	});
+	await page.getByRole("button", { name: "Remove attached image 1" }).waitFor();
+	await page.getByRole("button", { name: "Send" }).click();
+	await page.getByText("reply: [1 image attachment]", { exact: true }).waitFor();
+}, 30_000);
+
 test("Electron fixture E2E: fork and import refresh durable active leaves", async () => {
 	const page = await launchFixture();
 	await page.getByRole("button", { name: "Sessions" }).click();
@@ -428,8 +464,8 @@ test("Electron fixture E2E: fork and import refresh durable active leaves", asyn
 
 	await page.getByRole("button", { name: "Sessions" }).click();
 	await page.locator('input[placeholder="/path/to/session.jsonl"]').fill("/tmp/import.jsonl");
-	page.once("dialog", (dialog) => dialog.accept());
 	await page.getByRole("button", { name: "Import", exact: true }).click();
+	await page.getByRole("dialog", { name: "Import session" }).getByRole("button", { name: "Confirm" }).click();
 	await page.getByText("imported durable prompt").waitFor();
 	await page.getByRole("button", { name: "Tree" }).click();
 	await page.locator(".tree-row.session-row-active").getByText("assistant: imported leaf").waitFor();
@@ -443,8 +479,8 @@ test("Electron fixture E2E: tree navigation restores focus for edit-resubmit and
 	const page = await launchFixture();
 	await page.getByRole("button", { name: "Sessions" }).click();
 	await page.locator('input[placeholder="/path/to/session.jsonl"]').fill("/tmp/import.jsonl");
-	page.once("dialog", (dialog) => dialog.accept());
 	await page.getByRole("button", { name: "Import", exact: true }).click();
+	await page.getByRole("dialog", { name: "Import session" }).getByRole("button", { name: "Confirm" }).click();
 	await page.getByText("imported durable prompt").waitFor();
 
 	await page.getByRole("button", { name: "Tree" }).click();

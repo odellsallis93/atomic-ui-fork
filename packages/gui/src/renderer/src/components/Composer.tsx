@@ -3,7 +3,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ExtensionShortcutInfo, FileMentionItem, PromptImage, SlashCommandInfo } from "../../../shared/ipc";
+import type { EngineAutocompleteSuggestion, ExtensionShortcutInfo, PromptImage } from "../../../shared/ipc";
 import { canSubmit, filterImageFiles, isFileDrag } from "../helpers/attachments";
 import {
 	actionForKey,
@@ -12,25 +12,15 @@ import {
 	type KeybindingConfig,
 	keyboardShortcut,
 } from "../helpers/composer-parity";
+import { encodeTerminalKey } from "../helpers/key-encode";
 import type { QueueChip, WidgetItem } from "../store/session-store";
 import { Autocomplete, type AutocompleteItem } from "./Autocomplete";
 import { Widgets } from "./Widgets";
 
-type CompletionQuery =
-	| { kind: "slash-command"; query: string }
-	| { kind: "slash-argument"; commandName: string; query: string }
-	| { kind: "file" | "path"; query: string }
-	| { kind: null; query: string };
-function parseCompletionQuery(text: string): CompletionQuery {
-	const argument = text.match(/(?:^|\s)\/([^\s]+)\s+([^\s]*)$/);
-	if (argument) return { kind: "slash-argument", commandName: argument[1] ?? "", query: argument[2] ?? "" };
-	const slash = text.match(/(?:^|\s)\/([^\s]*)$/);
-	if (slash) return { kind: "slash-command", query: slash[1] ?? "" };
-	const file = text.match(/(?:^|\s)@([^\s]*)$/);
-	if (file) return { kind: "file", query: file[1] ?? "" };
-	const path = text.match(/(?:^|\s)(?:\.|~|\/)[^\s]*$/);
-	if (path) return { kind: "path", query: path[0].trim() };
-	return { kind: null, query: "" };
+type CompletionItem = AutocompleteItem & Pick<EngineAutocompleteSuggestion, "text" | "cursorOffset">;
+
+function isInsertableTerminalText(data: string): boolean {
+	return data.length > 0 && !/[\u0000-\u001f\u007f]/.test(data);
 }
 
 function shortcutKeyId(event: KeyboardEvent): string | undefined {
@@ -68,13 +58,12 @@ export function Composer(props: {
 	disabled: boolean;
 	working: boolean;
 	queue: QueueChip[];
-	commands: SlashCommandInfo[];
 	widgets: WidgetItem[];
 	images: PromptImage[];
 	keybindings: KeybindingConfig;
 	extensionShortcuts: ExtensionShortcutInfo[];
 	focusRequest?: number;
-	onChange: (value: string) => void;
+	onChange: (value: string, cursorOffset: number) => void;
 	onSubmit: (behavior?: "steer" | "followUp", message?: string) => void;
 	onAbort: (restoreQueue: boolean) => void;
 	onClear: () => void;
@@ -88,11 +77,8 @@ export function Composer(props: {
 	onExtensionShortcut: (key: string) => void;
 	onHistoryUp: () => void;
 	onHistoryDown: () => void;
-	onSearchFiles: (query: string) => Promise<FileMentionItem[]>;
-	onSearchCommandCompletions: (
-		commandName: string,
-		argumentPrefix: string,
-	) => Promise<Array<{ value: string; label: string; description?: string }>>;
+	onAutocomplete: (text: string, cursorOffset: number) => Promise<EngineAutocompleteSuggestion[]>;
+	onTerminalInput: (data: string) => Promise<{ consumed: boolean; data?: string }>;
 	onPasteImages: (files: File[]) => void;
 	onRemoveImage: (index: number) => void;
 }) {
@@ -102,85 +88,36 @@ export function Composer(props: {
 	propsRef.current = props;
 	const pasteRegistry = useRef(new Map<number, string>());
 	const [activeIndex, setActiveIndex] = useState(0);
-	const [fileItems, setFileItems] = useState<FileMentionItem[]>([]);
-	const [argumentItems, setArgumentItems] = useState<Array<{ value: string; label: string; description?: string }>>(
-		[],
-	);
+	const [cursorOffset, setCursorOffset] = useState(props.value.length);
+	const [completionItems, setCompletionItems] = useState<EngineAutocompleteSuggestion[]>([]);
+	const terminalInputQueue = useRef(Promise.resolve());
 	const [draggingImages, setDraggingImages] = useState(false);
 	const bashMode = props.value.startsWith("!");
-	const completion = parseCompletionQuery(props.value);
-	const commandName = completion.kind === "slash-argument" ? completion.commandName : "";
 	useEffect(() => {
-		if (completion.kind !== "file" && completion.kind !== "path") return void setFileItems([]);
 		let cancelled = false;
-		void props.onSearchFiles(completion.query).then((items) => {
-			if (!cancelled) setFileItems(items);
+		void props.onAutocomplete(props.value, cursorOffset).then((items) => {
+			if (!cancelled) setCompletionItems(items);
 		});
 		return () => {
 			cancelled = true;
 		};
-	}, [completion.kind, completion.query, props.onSearchFiles]);
-	useEffect(() => {
-		if (
-			completion.kind !== "slash-argument" ||
-			!props.commands.find((item) => item.name === commandName)?.hasArgumentCompletions
-		)
-			return void setArgumentItems([]);
-		let cancelled = false;
-		void props.onSearchCommandCompletions(commandName, completion.query).then((items) => {
-			if (!cancelled) setArgumentItems(items);
-		});
-		return () => {
-			cancelled = true;
-		};
-	}, [commandName, completion.kind, completion.query, props.commands, props.onSearchCommandCompletions]);
-	const items = useMemo<AutocompleteItem[]>(() => {
-		if (completion.kind === "slash-command")
-			return props.commands
-				.filter((item) => item.name.toLowerCase().includes(completion.query.toLowerCase()))
-				.slice(0, 30)
-				.map((item) => ({
-					id: item.name,
-					label: `/${item.name}`,
-					insertText: `/${item.name}`,
-					description: item.description ?? item.source,
-				}));
-		if (completion.kind === "slash-argument")
-			return argumentItems.map((item) => ({
-				id: `${commandName}:${item.value}`,
+	}, [cursorOffset, props.onAutocomplete, props.value]);
+	const items = useMemo<CompletionItem[]>(
+		() =>
+			completionItems.map((item) => ({
+				id: `${item.label}:${item.value}:${item.cursorOffset}`,
 				label: item.label,
 				insertText: item.value,
 				description: item.description,
-			}));
-		if (completion.kind === "file" || completion.kind === "path")
-			return fileItems.map((item) => ({
-				id: item.path,
-				label: completion.kind === "file" ? `@${item.label}` : item.label,
-				insertText: completion.kind === "file" ? `@${item.label}` : item.label,
-				description: item.path,
-			}));
-		return [];
-	}, [argumentItems, commandName, completion.kind, completion.query, fileItems, props.commands]);
+				text: item.text,
+				cursorOffset: item.cursorOffset,
+			})),
+		[completionItems],
+	);
 	const safeActiveIndex = items.length === 0 ? 0 : activeIndex % items.length;
-	const hasExactSlashCommand = useCallback((text: string): boolean => {
-		const completion = parseCompletionQuery(text);
-		if (completion.kind !== "slash-command") return false;
-		const trimmed = text.trim().toLowerCase();
-		return propsRef.current.commands.some((command) => trimmed === `/${command.name.toLowerCase()}`);
-	}, []);
-	const applyCompletion = useCallback((item: AutocompleteItem) => {
-		const text = propsRef.current.value;
-		const kind = parseCompletionQuery(text).kind;
-		const insert = item.insertText ?? item.label;
-		propsRef.current.onChange(
-			kind === "slash-command"
-				? text.replace(/(^|\s)\/[^\s]*$/, `$1${insert} `)
-				: kind === "slash-argument"
-					? text.replace(/(^|\s)\/([^\s]+)\s+[^\s]*$/, `$1/$2 ${insert} `)
-					: kind === "file"
-						? text.replace(/(^|\s)@[^\s]*$/, `$1${insert} `)
-						: text.replace(/(^|\s)(?:\.|~|\/)[^\s]*$/, `$1${insert} `),
-		);
+	const applyCompletion = useCallback((item: CompletionItem) => {
+		setCursorOffset(item.cursorOffset);
+		propsRef.current.onChange(item.text, item.cursorOffset);
 	}, []);
 	useEffect(() => {
 		if (!hostRef.current) return;
@@ -200,7 +137,9 @@ export function Composer(props: {
 					placeholder("Message Atomic — /commands · @files · !bash"),
 					keymap.of([...defaultKeymap, ...historyKeymap]),
 					EditorView.updateListener.of((update) => {
-						if (update.docChanged) propsRef.current.onChange(update.state.doc.toString());
+						const offset = update.state.selection.main.head;
+						if (update.docChanged) propsRef.current.onChange(update.state.doc.toString(), offset);
+						if (update.docChanged || update.selectionSet) setCursorOffset(offset);
 					}),
 					EditorView.theme({ "&": { height: "100%" }, ".cm-gutters": { display: "none" } }),
 				],
@@ -234,7 +173,7 @@ export function Composer(props: {
 		if (props.focusRequest) viewRef.current?.focus();
 	}, [props.focusRequest]);
 	useEffect(() => {
-		const onKeyDown = (event: KeyboardEvent) => {
+		const applyKeyDown = (event: KeyboardEvent, terminalData: string | undefined): void => {
 			if (!(event.target as HTMLElement | null)?.closest(".composer-editor")) return;
 			const current = propsRef.current;
 			const key = keyboardShortcut(event);
@@ -247,7 +186,7 @@ export function Composer(props: {
 				return;
 			}
 			if (action === "tui.input.submit" && !current.disabled) {
-				if (items.length && !hasExactSlashCommand(current.value)) {
+				if (items.length) {
 					event.preventDefault();
 					const item = items[safeActiveIndex];
 					if (item) applyCompletion(item);
@@ -258,6 +197,12 @@ export function Composer(props: {
 					current.working ? "steer" : undefined,
 					expandPasteMarkers(current.value, pasteRegistry.current),
 				);
+				return;
+			}
+			if (action === "tui.input.newLine" && !current.disabled) {
+				event.preventDefault();
+				const view = viewRef.current;
+				if (view) view.dispatch(view.state.replaceSelection("\n"));
 				return;
 			}
 			if (action === "app.message.followUp" && !current.disabled) {
@@ -326,18 +271,56 @@ export function Composer(props: {
 				current.onExtensionShortcut(extensionShortcut.key);
 				return;
 			}
-			if (!items.length) return;
-			if (event.key === "ArrowDown") {
+			if (items.length && event.key === "ArrowDown") {
 				event.preventDefault();
 				setActiveIndex((i) => (i + 1) % items.length);
-			} else if (event.key === "ArrowUp") {
+				return;
+			}
+			if (items.length && event.key === "ArrowUp") {
 				event.preventDefault();
 				setActiveIndex((i) => (i - 1 + items.length) % items.length);
+				return;
 			}
+			if (viewRef.current?.state.doc.length === 0 && event.key === "ArrowUp") {
+				event.preventDefault();
+				current.onHistoryUp();
+				return;
+			}
+			if (viewRef.current?.state.doc.length === 0 && event.key === "ArrowDown") {
+				event.preventDefault();
+				current.onHistoryDown();
+				return;
+			}
+			if (terminalData && isInsertableTerminalText(terminalData)) {
+				const view = viewRef.current;
+				if (view) view.dispatch(view.state.replaceSelection(terminalData));
+			}
+		};
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (!(event.target as HTMLElement | null)?.closest(".composer-editor")) return;
+			const encoded = encodeTerminalKey(event);
+			if (!encoded) {
+				applyKeyDown(event, undefined);
+				return;
+			}
+			event.preventDefault();
+			terminalInputQueue.current = terminalInputQueue.current
+				.then(async () => {
+					const result = await propsRef.current.onTerminalInput(encoded);
+					if (result.consumed) return;
+					const transformed = result.data ?? encoded;
+					if (transformed.length === 0) return;
+					applyKeyDown(event, transformed);
+				})
+				.catch(() => {
+					// A failed interception must not drop the user's key; preserve the
+					// existing local keyboard behavior when the engine is unavailable.
+					applyKeyDown(event, encoded);
+				});
 		};
 		window.addEventListener("keydown", onKeyDown, true);
 		return () => window.removeEventListener("keydown", onKeyDown, true);
-	}, [applyCompletion, hasExactSlashCommand, items, safeActiveIndex]);
+	}, [applyCompletion, items, safeActiveIndex]);
 	return (
 		<section className="composer-region" aria-label="Message composer">
 			<Widgets widgets={props.widgets} placement="aboveEditor" />
@@ -384,7 +367,14 @@ export function Composer(props: {
 							))}
 						</fieldset>
 					) : null}
-					<Autocomplete items={items} activeIndex={safeActiveIndex} onPick={applyCompletion} />
+					<Autocomplete
+						items={items}
+						activeIndex={safeActiveIndex}
+						onPick={(item) => {
+							const choice = items.find((candidate) => candidate.id === item.id);
+							if (choice) applyCompletion(choice);
+						}}
+					/>
 					<div
 						ref={hostRef}
 						className={`composer-editor${bashMode ? " bash-mode" : ""}`}

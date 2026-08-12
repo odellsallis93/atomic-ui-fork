@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
@@ -72,7 +73,32 @@ test("GUI docs keep the Phase 5 boundary and theme behavior source-backed", asyn
 		assert.match(docs, /packaging|security|accessibility|performance/iu);
 		assert.match(docs, /npm run test:gui/iu);
 	}
-	assert.match(readme, /session only/iu);
-	assert.match(agentDocs, /does not write `theme`/u);
-	assert.doesNotMatch(agentDocs, /Settings writes `theme`/u);
+	assert.match(readme, /normal `atomic` TUI neither starts nor requires this package/iu);
+	assert.match(readme, /do not force `--no-session`/u);
+	assert.match(agentDocs, /Electron receives only the resolved CSS tokens/u);
+	assert.match(agentDocs, /arbitrary settings\s+documents and paths remain private to the engine/u);
+});
+
+test("coding-agent remains independent of the optional Electron GUI package", async () => {
+	const codingAgent = join(root, "packages/coding-agent");
+	const manifest = JSON.parse(await readFile(join(codingAgent, "package.json"), "utf8")) as {
+		dependencies?: Record<string, string>;
+		devDependencies?: Record<string, string>;
+	};
+	for (const dependencies of [manifest.dependencies, manifest.devDependencies]) {
+		assert.equal(dependencies?.electron, undefined);
+		assert.equal(dependencies?.["@bastani/atomic-gui"], undefined);
+	}
+
+	const sourceFiles = (await readdir(join(codingAgent, "src"), { recursive: true })).filter(
+		(entry): entry is string => typeof entry === "string" && entry.endsWith(".ts"),
+	);
+	for (const relativePath of sourceFiles) {
+		const source = await readFile(join(codingAgent, "src", relativePath), "utf8");
+		assert.doesNotMatch(
+			source,
+			/from\s+["'][^"']*(?:@bastani\/atomic-gui|packages\/gui|electron)[^"']*["']/u,
+			`${relativePath} must not import the optional GUI host`,
+		);
+	}
 });

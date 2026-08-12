@@ -6,17 +6,16 @@ import type {
 	GuiRpcEvent,
 	PromptRequest,
 	RpcResult,
+	SettingsOperation,
+	TrustOption,
+	TrustStatus,
 } from "../shared/ipc.ts";
 import { IPC_CHANNELS } from "../shared/ipc.ts";
 import { EngineClient } from "./engine-client.ts";
 import { editExternally } from "./external-editor.ts";
 import { searchFiles } from "./file-search.ts";
-import { applyTrustDecision, getTrustOptions, getTrustStatus } from "./project-trust.ts";
-import { redactSensitiveProtocolLine } from "./security.ts";
+import { summarizeRawProtocolLine } from "./security.ts";
 import { listSessions } from "./session-list.ts";
-import { deleteSessionFile, renameSessionFile } from "./session-ops.ts";
-import { readGuiSettings } from "./settings-store.ts";
-import { listThemes, loadThemeCss } from "./theme-loader.ts";
 
 /**
  * Owns one interactive-engine child per window and fans status/events out over IPC.
@@ -46,7 +45,7 @@ export class EngineSupervisor {
 				: undefined,
 			onStatus: (status) => this.send(IPC_CHANNELS.status, status),
 			onEvent: (event) => this.send(IPC_CHANNELS.event, event),
-			onRawLine: (line) => this.send(IPC_CHANNELS.rawLine, redactSensitiveProtocolLine(line)),
+			onRawLine: (line) => this.send(IPC_CHANNELS.rawLine, summarizeRawProtocolLine(line)),
 			onExtensionUi: (request) => this.send(IPC_CHANNELS.extensionUi, request),
 		});
 		return await this.client.start();
@@ -152,9 +151,19 @@ export class EngineSupervisor {
 		return await this.client.getCommandCompletions(commandName, argumentPrefix);
 	}
 
-	async getEntries() {
+	async getAutocomplete(text: string, cursorOffset: number) {
 		if (!this.client) return { ok: false as const, error: "Engine is not started" };
-		return await this.client.getEntries();
+		return await this.client.getAutocomplete(text, cursorOffset);
+	}
+
+	async interceptTerminalInput(data: string) {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.interceptTerminalInput(data);
+	}
+
+	async getEntries(options?: { offset?: number; limit?: number }) {
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		return await this.client.getEntries(options);
 	}
 
 	async getShortcuts() {
@@ -256,72 +265,126 @@ export class EngineSupervisor {
 	}
 
 	async renameSession(sessionPath: string, name: string): Promise<RpcResult> {
-		const current = this.client?.getStatus().sessionFile;
-		if (current && current === sessionPath && this.client) {
-			return await this.client.setSessionName(name);
-		}
-		const result = await renameSessionFile(sessionPath, name);
-		return result.ok ? { ok: true } : { ok: false, error: result.error };
+		if (!this.client) return { ok: false, error: "Engine is not started" };
+		return await this.client.renameSession(sessionPath, name);
 	}
 
 	async deleteSession(sessionPath: string): Promise<RpcResult> {
-		const current = this.client?.getStatus().sessionFile;
-		if (current && current === sessionPath) {
-			const switched = await this.client?.newSession();
-			if (switched && !switched.ok) return switched;
-		}
-		const result = await deleteSessionFile(sessionPath);
-		return result.ok ? { ok: true } : { ok: false, error: result.error };
+		if (!this.client) return { ok: false, error: "Engine is not started" };
+		return await this.client.deleteSession(sessionPath);
 	}
 
 	async searchFiles(query: string, cwd?: string) {
 		return await searchFiles(cwd ?? this.cwd, query);
 	}
 
-	listThemes() {
-		return listThemes(process.env, this.cwd);
+	async listThemes() {
+		if (!this.client) return [];
+		const result = await this.client.listThemes();
+		return result.ok && result.data ? result.data : [];
 	}
 
-	getThemeCss(name?: string) {
-		const theme = name?.trim() || readGuiSettings(process.env, this.cwd).theme;
-		return loadThemeCss(theme, process.env, this.cwd);
+	async getThemeCss(name?: string) {
+		if (!this.client) return { name: "dark", cssVariables: {} };
+		const result = await this.client.getThemeSnapshot(name);
+		return result.ok && result.data ? result.data : { name: "dark", cssVariables: {} };
 	}
 
-	getSettings() {
-		return readGuiSettings(process.env, this.cwd);
-	}
-
-	setTheme(name: string) {
-		// Theme mutation remains engine-owned. Until protocol v2 exposes a set-theme
-		// RPC, the GUI only applies the selected theme live for this renderer session.
-		return loadThemeCss(name, process.env, this.cwd);
-	}
-
-	getTrustStatus(cwd?: string) {
-		const status = getTrustStatus(cwd ?? this.cwd);
-		const sessionTrustOverride = this.sessionTrustOverrides.get(cwd ?? this.cwd);
-		if (sessionTrustOverride !== undefined) {
+	async getSettings() {
+		if (!this.client)
 			return {
-				...status,
-				decision: sessionTrustOverride,
-				needsTrustPrompt: false,
+				theme: "dark",
+				projectOverridesTheme: false,
+				fastMode: { chat: false, workflow: false },
+				hideThinkingBlock: false,
+				steeringMode: "one-at-a-time" as const,
+				followUpMode: "one-at-a-time" as const,
+				autoCompactionEnabled: true,
+				autoRetryEnabled: true,
+				modelScopePatterns: [],
 			};
-		}
-		return status;
+		const result = await this.client.getSettingsSnapshot();
+		return result.ok && result.data
+			? result.data
+			: {
+					theme: "dark",
+					projectOverridesTheme: false,
+					fastMode: { chat: false, workflow: false },
+					hideThinkingBlock: false,
+					steeringMode: "one-at-a-time" as const,
+					followUpMode: "one-at-a-time" as const,
+					autoCompactionEnabled: true,
+					autoRetryEnabled: true,
+					modelScopePatterns: [],
+				};
 	}
 
-	getTrustOptions(cwd?: string) {
-		return getTrustOptions(cwd ?? this.cwd);
+	async reloadSettings() {
+		if (!this.client) throw new Error("Engine is not started");
+		const result = await this.client.reloadSettings();
+		if (!result.ok || !result.data) throw new Error(result.error ?? "Failed to reload settings");
+		return result.data;
 	}
 
-	applyTrust(optionId: string, cwd?: string) {
-		const option = getTrustOptions(cwd ?? this.cwd).find((item) => item.id === optionId);
-		if (option && option.persistPath === null) {
-			this.sessionTrustOverrides.set(cwd ?? this.cwd, option.trusted);
-			return this.getTrustStatus(cwd);
+	async setFastMode(scope: "chat" | "workflow", enabled: boolean) {
+		if (!this.client) throw new Error("Engine is not started");
+		const result = await this.client.setFastMode(scope, enabled);
+		if (!result.ok || !result.data) throw new Error(result.error ?? "Failed to set fast mode");
+		return result.data;
+	}
+
+	async updateSettings(operations: SettingsOperation[]) {
+		if (!this.client) throw new Error("Engine is not started");
+		const result = await this.client.updateSettings(operations);
+		if (!result.ok || !result.data) throw new Error(result.error ?? "Failed to update settings");
+		return result.data;
+	}
+
+	async setTheme(name: string) {
+		if (!this.client) throw new Error("Engine is not started");
+		const result = await this.client.setTheme(name);
+		if (!result.ok || !result.data) throw new Error(result.error ?? "Failed to set theme");
+		return result.data;
+	}
+
+	async getTrustStatus(): Promise<TrustStatus | undefined> {
+		const result = await this.withTrustEngine((client) => client.getProjectTrust());
+		if (!result.ok) throw new Error(result.error ?? "Failed to read project trust");
+		if (!result.data) return undefined;
+		const sessionTrustOverride = this.sessionTrustOverrides.get(this.cwd);
+		return sessionTrustOverride === undefined
+			? result.data
+			: { ...result.data, decision: sessionTrustOverride, needsTrustPrompt: false };
+	}
+
+	async getTrustOptions(): Promise<TrustOption[]> {
+		const result = await this.withTrustEngine((client) => client.getProjectTrustOptions());
+		if (!result.ok) throw new Error(result.error ?? "Failed to list project-trust choices");
+		return result.data ?? [];
+	}
+
+	async applyTrust(optionId: string): Promise<TrustStatus> {
+		const result = await this.withTrustEngine((client) => client.setProjectTrust(optionId));
+		if (!result.ok || !result.data) throw new Error(result.error ?? "Failed to apply project-trust choice");
+		if (result.data.sessionOnly !== undefined) {
+			this.sessionTrustOverrides.set(this.cwd, result.data.sessionOnly);
+		} else {
+			this.sessionTrustOverrides.delete(this.cwd);
 		}
-		this.sessionTrustOverrides.delete(cwd ?? this.cwd);
-		return applyTrustDecision(cwd ?? this.cwd, optionId);
+		return result.data.status;
+	}
+
+	private async withTrustEngine<T>(run: (client: EngineClient) => Promise<RpcResult<T>>): Promise<RpcResult<T>> {
+		if (this.client) return await run(this.client);
+		// Probe under --no-approve: this engine owns trust-store access but cannot
+		// load untrusted project resources while the GUI is asking the user.
+		const probe = new EngineClient({ cwd: this.cwd, extraArgs: ["--no-approve", "--no-session"] });
+		try {
+			await probe.start();
+			return await run(probe);
+		} finally {
+			await probe.stop().catch(() => undefined);
+		}
 	}
 
 	submitInputForm(componentId: string, values: Record<string, string>): void {
@@ -338,7 +401,11 @@ export class EngineSupervisor {
 	}
 
 	async editExternally(text: string) {
-		return await editExternally(text);
+		if (!this.client) return { ok: false as const, error: "Engine is not started" };
+		const command = await this.client.getExternalEditorCommand();
+		if (!command.ok || !command.data)
+			return { ok: false as const, error: command.error ?? "No external editor is configured" };
+		return await editExternally(text, process.env, command.data);
 	}
 
 	sendEngineCommand(command: { type: string; [key: string]: unknown }): void {

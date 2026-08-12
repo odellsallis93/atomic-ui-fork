@@ -262,6 +262,37 @@ input {
 	font-size: 0.86em;
 }
 
+.entry-images {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 8px 0 0;
+	padding: 0;
+	border: 0;
+}
+
+.entry-image {
+	max-width: min(100%, 640px);
+	max-height: 420px;
+	border: 1px solid var(--surface1);
+	border-radius: 6px;
+	object-fit: contain;
+}
+
+.diff-add {
+	background: color-mix(in srgb, var(--green) 22%, transparent);
+	color: var(--green);
+}
+
+.diff-remove {
+	background: color-mix(in srgb, var(--red) 20%, transparent);
+	color: var(--red);
+}
+
+.diff-hunk {
+	color: var(--mauve);
+}
+
 .attachment-row {
 	display: flex;
 	flex-wrap: wrap;

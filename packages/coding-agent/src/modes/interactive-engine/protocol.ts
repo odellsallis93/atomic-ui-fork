@@ -115,6 +115,7 @@ export type InteractiveEngineMessage =
 	  }
 	| { type: "engine_input_form_close"; componentId: string };
 export type InteractiveEngineCommand =
+	| { type: "engine_editor_state"; componentId: "composer"; text: string }
 	| { type: "engine_custom_render"; componentId: string; requestId: number; width: number; rows: number }
 	| { type: "engine_custom_input"; componentId: string; data: string }
 	| { type: "engine_custom_dispose"; componentId: string }
@@ -464,6 +465,9 @@ export function parseInteractiveEngineMessage(line: string): InteractiveEngineMe
 export function parseInteractiveEngineCommand(line: string): InteractiveEngineCommand | undefined {
 	const value = parseJsonObject(line);
 	if (!value || typeof value.type !== "string" || typeof value.componentId !== "string") return undefined;
+	if (value.type === "engine_editor_state" && value.componentId === "composer" && typeof value.text === "string") {
+		return { type: value.type, componentId: "composer", text: value.text };
+	}
 	if (
 		value.type === "engine_custom_render" &&
 		typeof value.requestId === "number" &&

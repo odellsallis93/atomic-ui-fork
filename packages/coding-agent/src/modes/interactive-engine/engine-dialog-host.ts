@@ -28,7 +28,7 @@ async function handleRequest(
 				: { type: "extension_ui_response", id: request.id, value };
 		}
 		case "editor": {
-			const value = await ui.editor(request.title, request.prefill, { signal });
+			const value = await ui.editor(request.title, request.prefill, { timeout: request.timeout, signal });
 			return value === undefined
 				? { type: "extension_ui_response", id: request.id, cancelled: true }
 				: { type: "extension_ui_response", id: request.id, value };
@@ -44,6 +44,9 @@ async function handleRequest(
 			return undefined;
 		case "setTitle":
 			ui.setTitle(request.title);
+			return undefined;
+		case "setTheme":
+			ui.setTheme(request.name);
 			return undefined;
 		case "set_editor_text":
 			ui.setEditorText(request.text);

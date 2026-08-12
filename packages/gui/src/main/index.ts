@@ -198,9 +198,17 @@ function registerIpc(): void {
 			return await supervisor.getCommandCompletions(commandName, argumentPrefix);
 		},
 	);
-	registerIpcHandler(IPC_CHANNELS.getEntries, async () => {
+	registerIpcHandler(IPC_CHANNELS.getAutocomplete, async (_event, text: string, cursorOffset: number) => {
 		if (!supervisor) return { ok: false, error: "No window" };
-		return await supervisor.getEntries();
+		return await supervisor.getAutocomplete(text, cursorOffset);
+	});
+	registerIpcHandler(IPC_CHANNELS.interceptTerminalInput, async (_event, data: string) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.interceptTerminalInput(data);
+	});
+	registerIpcHandler(IPC_CHANNELS.getEntries, async (_event, options?: { offset?: number; limit?: number }) => {
+		if (!supervisor) return { ok: false, error: "No window" };
+		return await supervisor.getEntries(options);
 	});
 	registerIpcHandler(IPC_CHANNELS.getShortcuts, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
@@ -266,6 +274,10 @@ function registerIpc(): void {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.setAutoRetry(enabled);
 	});
+	registerIpcHandler(IPC_CHANNELS.updateSettings, async (_event, operations) => {
+		if (!supervisor) throw new Error("No window");
+		return await supervisor.updateSettings(operations);
+	});
 	registerIpcHandler(IPC_CHANNELS.getSessionStats, async () => {
 		if (!supervisor) return { ok: false, error: "No window" };
 		return await supervisor.getSessionStats();
@@ -290,24 +302,43 @@ function registerIpc(): void {
 		if (!supervisor) return [];
 		return await supervisor.searchFiles(query, cwd);
 	});
-	registerIpcHandler(IPC_CHANNELS.listThemes, () => supervisor?.listThemes() ?? []);
+	registerIpcHandler(IPC_CHANNELS.listThemes, async () => (await supervisor?.listThemes()) ?? []);
 	registerIpcHandler(
 		IPC_CHANNELS.getThemeCss,
-		(_event, name?: string) => supervisor?.getThemeCss(name) ?? { name: "dark", cssVariables: {} },
+		async (_event, name?: string) => (await supervisor?.getThemeCss(name)) ?? { name: "dark", cssVariables: {} },
 	);
 	registerIpcHandler(
 		IPC_CHANNELS.getSettings,
-		() => supervisor?.getSettings() ?? { theme: "dark", path: "", exists: false },
+		async () =>
+			(await supervisor?.getSettings()) ?? {
+				theme: "dark",
+				projectOverridesTheme: false,
+				fastMode: { chat: false, workflow: false },
+				hideThinkingBlock: false,
+				steeringMode: "one-at-a-time" as const,
+				followUpMode: "one-at-a-time" as const,
+				autoCompactionEnabled: true,
+				autoRetryEnabled: true,
+				modelScopePatterns: [],
+			},
 	);
-	registerIpcHandler(IPC_CHANNELS.setTheme, (_event, name: string) => {
+	registerIpcHandler(IPC_CHANNELS.reloadSettings, async () => {
 		if (!supervisor) throw new Error("No window");
-		return supervisor.setTheme(name);
+		return await supervisor.reloadSettings();
 	});
-	registerIpcHandler(IPC_CHANNELS.getTrustStatus, (_event, cwd?: string) => supervisor?.getTrustStatus(cwd));
-	registerIpcHandler(IPC_CHANNELS.getTrustOptions, (_event, cwd?: string) => supervisor?.getTrustOptions(cwd) ?? []);
-	registerIpcHandler(IPC_CHANNELS.applyTrust, (_event, optionId: string, cwd?: string) => {
+	registerIpcHandler(IPC_CHANNELS.setFastMode, async (_event, scope: "chat" | "workflow", enabled: boolean) => {
 		if (!supervisor) throw new Error("No window");
-		return supervisor.applyTrust(optionId, cwd);
+		return await supervisor.setFastMode(scope, enabled);
+	});
+	registerIpcHandler(IPC_CHANNELS.setTheme, async (_event, name: string) => {
+		if (!supervisor) throw new Error("No window");
+		return await supervisor.setTheme(name);
+	});
+	registerIpcHandler(IPC_CHANNELS.getTrustStatus, async () => await supervisor?.getTrustStatus());
+	registerIpcHandler(IPC_CHANNELS.getTrustOptions, async () => (await supervisor?.getTrustOptions()) ?? []);
+	registerIpcHandler(IPC_CHANNELS.applyTrust, async (_event, optionId: string) => {
+		if (!supervisor) throw new Error("No window");
+		return await supervisor.applyTrust(optionId);
 	});
 	registerIpcHandler(IPC_CHANNELS.submitInputForm, (_event, componentId: string, values: Record<string, string>) => {
 		supervisor?.submitInputForm(componentId, values);

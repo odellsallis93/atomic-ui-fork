@@ -30,12 +30,19 @@ export type EntryKind =
 	| "branchSummary"
 	| "raw";
 
+export interface TranscriptImage {
+	data: string;
+	mimeType: "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/avif";
+}
+
 export interface TranscriptEntry {
 	id: string;
 	kind: EntryKind;
 	role?: string;
 	text: string;
 	thinking?: string;
+	/** Safe raster attachments emitted by the engine alongside an entry. */
+	images?: TranscriptImage[];
 	toolName?: string;
 	toolCallId?: string;
 	bashCommand?: string;
@@ -162,6 +169,7 @@ export interface SessionState {
 	historyDown: () => string | undefined;
 	toggleRawLog: () => void;
 	toggleThinking: () => void;
+	setHideThinking: (hidden: boolean) => void;
 	appendRawLine: (line: string) => void;
 	ingestEvent: (event: GuiRpcEvent) => void;
 	ingestExtensionUi: (request: ExtensionUiRequest) => void;
@@ -235,6 +243,33 @@ function thinkingFromContent(content: unknown): string | undefined {
 	return parts.length > 0 ? parts.join("\n") : undefined;
 }
 
+const TRANSCRIPT_IMAGE_MIME_TYPES = new Set<TranscriptImage["mimeType"]>([
+	"image/png",
+	"image/jpeg",
+	"image/gif",
+	"image/webp",
+	"image/avif",
+]);
+
+function imagesFromContent(content: unknown): TranscriptImage[] | undefined {
+	if (!Array.isArray(content)) return undefined;
+	const images: TranscriptImage[] = [];
+	for (const block of content) {
+		if (typeof block !== "object" || block === null) continue;
+		const image = block as { type?: unknown; data?: unknown; mimeType?: unknown };
+		if (
+			image.type === "image" &&
+			typeof image.data === "string" &&
+			image.data.length > 0 &&
+			typeof image.mimeType === "string" &&
+			TRANSCRIPT_IMAGE_MIME_TYPES.has(image.mimeType as TranscriptImage["mimeType"])
+		) {
+			images.push({ data: image.data, mimeType: image.mimeType as TranscriptImage["mimeType"] });
+		}
+	}
+	return images.length > 0 ? images : undefined;
+}
+
 function stringify(value: unknown): string {
 	if (typeof value === "string") return value;
 	try {
@@ -289,6 +324,7 @@ function transcriptEntryFromMessage(
 			role,
 			customType: typeof message.customType === "string" ? message.customType : "custom",
 			text: textFromContent(message.content),
+			images: imagesFromContent(message.content),
 			streaming,
 			expanded: false,
 		};
@@ -311,6 +347,7 @@ function transcriptEntryFromMessage(
 			kind: skill ? "skill" : "user",
 			role,
 			...(skill ?? { text }),
+			images: imagesFromContent(message.content),
 			streaming,
 			expanded: false,
 		};
@@ -326,6 +363,7 @@ function transcriptEntryFromMessage(
 			remoteRenderId: toolCallId ? `gui-tool-render:${toolCallId}` : undefined,
 			text: textFromContent(message.content),
 			thinking: role === "assistant" ? thinkingFromContent(message.content) : undefined,
+			images: imagesFromContent(message.content),
 			streaming,
 			expanded: role === "toolResult",
 			error: message.isError === true ? "Tool error" : undefined,
@@ -336,6 +374,7 @@ function transcriptEntryFromMessage(
 		kind: "system",
 		role,
 		text: textFromContent(message.content) || role,
+		images: imagesFromContent(message.content),
 		streaming,
 		expanded: false,
 	};
@@ -391,6 +430,7 @@ function transcriptEntriesFromSessionEntries(entries: unknown[], leafId: string 
 				if (tool) {
 					tool.toolResult = message;
 					tool.text = textFromContent(message.content) || tool.text;
+					tool.images = imagesFromContent(message.content) ?? tool.images;
 					tool.error = message.isError === true ? "Tool error" : undefined;
 					continue;
 				}
@@ -430,6 +470,7 @@ function transcriptEntriesFromSessionEntries(entries: unknown[], leafId: string 
 				kind: "custom",
 				customType: typeof value.customType === "string" ? value.customType : "custom",
 				text: textFromContent(value.content),
+				images: imagesFromContent(value.content),
 				streaming: false,
 				expanded: false,
 				excludeFromContext: value.excludeFromContext === true,
@@ -580,6 +621,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 	},
 	toggleRawLog: () => set({ showRawLog: !get().showRawLog }),
 	toggleThinking: () => set({ hideThinking: !get().hideThinking }),
+	setHideThinking: (hideThinking) => set({ hideThinking }),
 	appendRawLine: (line) =>
 		set((state) => ({
 			rawLines: [...state.rawLines.slice(-400), line],
@@ -1169,6 +1211,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 						remoteRenderGeneration: existing?.remoteRenderGeneration ?? entry.remoteRenderGeneration,
 						remoteRenderAppliedRequestId: existing?.remoteRenderAppliedRequestId,
 						text: entry.text || existing?.text || "",
+						images: entry.images ?? existing?.images,
 						expanded: existing?.expanded ?? entry.expanded,
 						toolResult: entry.role === "toolResult" ? message : existing?.toolResult,
 					}),
@@ -1190,6 +1233,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 							? {
 									...entry,
 									text: textFromContent(message.content) || entry.text,
+									images: imagesFromContent(message.content) ?? entry.images,
 									toolResult: message,
 									streaming: true,
 									remoteRenderGeneration: (entry.remoteRenderGeneration ?? 0) + 1,
@@ -1207,6 +1251,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				const existing = state.entries.find((entry) => entry.id === id);
 				let text = existing?.text ?? textFromContent(message?.content);
 				let thinking = existing?.thinking ?? thinkingFromContent(message?.content);
+				let images = existing?.images ?? imagesFromContent(message?.content);
 				if (assistantMessageEvent?.type === "text_delta" && typeof assistantMessageEvent.delta === "string")
 					text = `${text}${assistantMessageEvent.delta}`;
 				if (assistantMessageEvent?.type === "thinking_delta" && typeof assistantMessageEvent.delta === "string")
@@ -1214,6 +1259,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 				if (!assistantMessageEvent && message?.content !== undefined) {
 					text = textFromContent(message.content);
 					thinking = thinkingFromContent(message.content);
+					images = imagesFromContent(message.content);
 				}
 				const error =
 					typeof assistantMessageEvent?.error === "string" ? assistantMessageEvent.error : existing?.error;
@@ -1224,6 +1270,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 					role: message?.role ?? "assistant",
 					text,
 					thinking,
+					images,
 					streaming,
 					expanded: existing?.expanded ?? false,
 					error,
@@ -1256,6 +1303,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 						...nextEntry,
 						text: nextEntry.text || existing?.text || "",
 						thinking: nextEntry.thinking ?? existing?.thinking,
+						images: nextEntry.images ?? existing?.images,
 						expanded: existing?.expanded ?? nextEntry.expanded,
 						toolName: nextEntry.toolName ?? existing?.toolName,
 						toolCallId: nextEntry.toolCallId ?? existing?.toolCallId,
@@ -1376,6 +1424,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 						kind: "custom",
 						customType: typeof value.customType === "string" ? value.customType : "custom",
 						text: textFromContent(value.content),
+						images: imagesFromContent(value.content),
 						streaming: false,
 						expanded: false,
 						excludeFromContext: value.excludeFromContext === true,
