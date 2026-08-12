@@ -15,6 +15,7 @@ import { SettingsManager } from "../../packages/coding-agent/src/core/settings-m
 import { getUsageCostBreakdown } from "../../packages/coding-agent/src/core/usage-totals.ts";
 import { FooterComponent } from "../../packages/coding-agent/src/modes/interactive/components/footer.ts";
 import { IdleStatus } from "../../packages/coding-agent/src/modes/interactive/components/idle-status.ts";
+import { createSettingsChangeHandler } from "../../packages/coding-agent/src/modes/interactive/components/settings-selector-handlers.ts";
 import { buildSettingsItems } from "../../packages/coding-agent/src/modes/interactive/components/settings-selector-items.ts";
 import { initTheme } from "../../packages/coding-agent/src/modes/interactive/theme/theme.ts";
 import { readClipboardText } from "../../packages/coding-agent/src/utils/clipboard.ts";
@@ -163,11 +164,14 @@ describe("Group 5 parity", () => {
 				terminalTheme: "dark",
 				availableThemes: ["dark"],
 				hideThinkingBlock: false,
+				mermaidRenderingMode: "streaming",
+				latexRenderingEnabled: true,
 				collapseChangelog: false,
 				enableInstallTelemetry: true,
 				doubleEscapeAction: "tree",
 				treeFilterMode: "default",
 				showHardwareCursor: false,
+				fullscreenScrollbar: "auto",
 				editorPaddingX: 0,
 				outputPad: 1,
 				showCacheMissNotices: false,
@@ -183,12 +187,32 @@ describe("Group 5 parity", () => {
 		const ids = items.map((item) => item.id);
 		assert.ok(ids.indexOf("output-padding") < ids.indexOf("autocomplete-max-visible"));
 		assert.ok(ids.includes("cache-miss-notices"));
+		assert.ok(ids.includes("mermaid-rendering"));
+		assert.ok(ids.includes("latex-rendering"));
+	});
+	test("settings selector dispatches Mermaid and LaTeX changes", () => {
+		let mermaidMode: string | undefined;
+		let latexEnabled: boolean | undefined;
+		const handle = createSettingsChangeHandler({
+			onMermaidRenderingModeChange: (mode: "off" | "final" | "streaming") => {
+				mermaidMode = mode;
+			},
+			onLatexRenderingEnabledChange: (enabled: boolean) => {
+				latexEnabled = enabled;
+			},
+		} as never);
+
+		handle("mermaid-rendering", "final");
+		handle("latex-rendering", "false");
+
+		assert.equal(mermaidMode, "final");
+		assert.equal(latexEnabled, false);
 	});
 
 	test("idle status fills two rows", () => {
 		assert.deepEqual(new IdleStatus().render(4), ["    ", "    "]);
 	});
-	test("footer renders branch, session name, and sorted sanitized extension statuses", () => {
+	test("footer renders branch, session name, and sorted sanitized extension statuses with • separators", () => {
 		initTheme("dark");
 		const session = {
 			state: { model: undefined, thinkingLevel: "off" },
@@ -210,7 +234,7 @@ describe("Group 5 parity", () => {
 			.render(120)
 			.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
 		assert.match(lines[0] ?? "", /project \(feature\).*demo/);
-		assert.equal(lines[1], "alpha status zeta status");
+		assert.equal(lines[1], "alpha status • zeta status");
 	});
 
 	test("footer keeps ANSI-colored extension statuses intact instead of leaking stripped sequences", () => {

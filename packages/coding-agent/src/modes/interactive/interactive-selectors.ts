@@ -12,17 +12,37 @@ import {
 
 InteractiveModeBase.prototype.showSelector = function (
 	this: InteractiveModeBase,
-	create: (done: () => void) => { component: Component; focus: Component },
+	create: (done: () => void) => { component: Component; focus: Component; dispose?: () => void },
 ): void {
+	const token = {};
+	let dispose: (() => void) | undefined;
+	let disposed = false;
+	const disposeSelector = () => {
+		if (disposed) return;
+		disposed = true;
+		dispose?.();
+	};
 	const done = () => {
+		disposeSelector();
+		if (this.activeSelectorToken !== token) return;
+		this.activeSelectorToken = undefined;
+		this.activeSelectorDispose = undefined;
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.ui.setFocus(this.editor);
 	};
-	const { component, focus } = create(done);
+	const created = create(done);
+	dispose = created.dispose;
+	if (disposed) {
+		dispose?.();
+		return;
+	}
+	this.disposeActiveSelector();
+	this.activeSelectorToken = token;
+	this.activeSelectorDispose = disposeSelector;
 	this.editorContainer.clear();
-	this.editorContainer.addChild(component);
-	this.ui.setFocus(focus);
+	this.editorContainer.addChild(created.component);
+	this.ui.setFocus(created.focus);
 	this.ui.requestRender();
 };
 
@@ -60,7 +80,7 @@ InteractiveModeBase.prototype.showFastModeSelector = function (this: Interactive
 
 InteractiveModeBase.prototype.showSettingsSelector = function (this: InteractiveModeBase): void {
 	this.showSelector((done) => {
-		const selector = new SettingsSelectorComponent(
+		const component = new SettingsSelectorComponent(
 			{
 				autoCompact: this.session.autoCompactionEnabled,
 				showImages: this.settingsManager.getShowImages(),
@@ -79,11 +99,14 @@ InteractiveModeBase.prototype.showSettingsSelector = function (this: Interactive
 				terminalTheme: this.themeController.getTerminalTheme(),
 				availableThemes: getAvailableThemes(),
 				hideThinkingBlock: this.hideThinkingBlock,
+				mermaidRenderingMode: this.settingsManager.getMermaidRenderingMode(),
+				latexRenderingEnabled: this.settingsManager.getLatexRenderingEnabled(),
 				collapseChangelog: this.settingsManager.getCollapseChangelog(),
 				enableInstallTelemetry: this.settingsManager.getEnableInstallTelemetry(),
 				doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
 				treeFilterMode: this.settingsManager.getTreeFilterMode(),
 				showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
+				fullscreenScrollbar: this.settingsManager.getFullscreenScrollbar(),
 				editorPaddingX: this.settingsManager.getEditorPaddingX(),
 				outputPad: this.settingsManager.getOutputPad(),
 				showCacheMissNotices: this.settingsManager.getShowCacheMissNotices(),
@@ -163,6 +186,15 @@ InteractiveModeBase.prototype.showSettingsSelector = function (this: Interactive
 					this.chatContainer.clear();
 					this.rebuildChatFromMessages();
 				},
+				onMermaidRenderingModeChange: (mode) => {
+					this.settingsManager.setMermaidRenderingMode(mode);
+					this.chatContainer.invalidate();
+					this.ui.requestRender();
+				},
+				onLatexRenderingEnabledChange: (enabled) => {
+					this.settingsManager.setLatexRenderingEnabled(enabled);
+					this.rebuildChatFromMessages();
+				},
 				onCollapseChangelogChange: (collapsed) => {
 					this.settingsManager.setCollapseChangelog(collapsed);
 				},
@@ -184,6 +216,11 @@ InteractiveModeBase.prototype.showSettingsSelector = function (this: Interactive
 				onShowHardwareCursorChange: (enabled) => {
 					this.settingsManager.setShowHardwareCursor(enabled);
 					this.ui.setShowHardwareCursor(enabled);
+				},
+				onFullscreenScrollbarChange: (mode) => {
+					this.settingsManager.setFullscreenScrollbar(mode);
+					this.transcriptScrollView?.setScrollbar(mode);
+					this.ui.requestRender();
 				},
 				onEditorPaddingXChange: (padding) => {
 					this.settingsManager.setEditorPaddingX(padding);
@@ -223,6 +260,6 @@ InteractiveModeBase.prototype.showSettingsSelector = function (this: Interactive
 				},
 			},
 		);
-		return { component: selector, focus: selector.getSettingsList() };
+		return { component, focus: component.getSettingsList() };
 	});
 };

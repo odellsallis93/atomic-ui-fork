@@ -2,14 +2,19 @@
  * Shared state and constructor wiring for interactive mode.
  * Responsibility-specific behavior is installed by sibling modules.
  */
+import { isKeyRelease, isViewportTUI, type ScrollView, type TuiInputListener } from "@earendil-works/pi-tui";
 
 import type { AgentSessionQueuePauseControl } from "../../core/agent-session-methods.ts";
+import type { MarkdownTransformer } from "../../core/extensions/types.ts";
+import type { MermaidRenderingMode } from "../../core/settings-manager.ts";
 import type { EarlyInputSnapshot } from "../../main-early-input.ts";
+import { readClipboardText } from "../../utils/clipboard.ts";
 import { renderEngineDiagnostic } from "../interactive-engine/engine-diagnostic-view.ts";
 import { attachInteractiveEngineHost } from "../interactive-engine/extension-ui-bridge.ts";
 import type { RemoteToolExecutionComponent } from "../interactive-engine/remote-renderer.ts";
 import { KeybindingsReloadCoordinator } from "../rpc/rpc-keybindings-reload.ts";
 import type { AtomicWorkingLoader } from "./components/atomic-working-status.ts";
+import { createMermaidMarkdownTransformer } from "./components/mermaid.ts";
 import {
 	type AgentSession,
 	type AgentSessionRuntime,
@@ -35,13 +40,13 @@ import {
 	KeybindingsManager,
 	type Loader,
 	type LoaderIndicatorOptions,
-	ProcessTerminal,
 	type Spacer,
 	setKeybindings,
 	setRegisteredThemes,
 	type Text,
 	type ToolExecutionComponent,
-	TUI,
+	type TUI,
+	theme,
 	UsageMeterComponent,
 	VERSION,
 } from "./interactive-mode-deps.ts";
@@ -49,6 +54,39 @@ import type {} from "./interactive-mode-surface.ts";
 import type { CompactionQueuedMessage, InteractiveModeOptions } from "./interactive-mode-types.ts";
 import { StartupChatContainer } from "./interactive-startup-chat-container.ts";
 import type { InteractiveSubmission } from "./interactive-submission.ts";
+import { createInteractiveTui, createInteractiveTuiReference, type InteractiveTui } from "./interactive-tui.ts";
+
+const FULLSCREEN_VIEWPORT_ACTIONS = [
+	"tui.altScreen.pageUp",
+	"tui.altScreen.pageDown",
+	"tui.altScreen.halfPageUp",
+	"tui.altScreen.halfPageDown",
+	"tui.altScreen.previousPrompt",
+	"tui.altScreen.nextPrompt",
+	"tui.altScreen.top",
+	"tui.altScreen.bottom",
+] as const;
+
+/**
+ * Decide whether the fullscreen viewport should run before the focused
+ * component. `isMouseInput` is classified by pi-tui's own mouse predicate in
+ * `AtomicTuiAltScreen`, so this policy does not duplicate terminal grammars.
+ * Mouse deferral is limited to actual overlays so inline components do not
+ * disable pi-tui's application-owned transcript selection path.
+ */
+export function shouldHandleFullscreenViewportInput(
+	focused: Component | null,
+	editor: Component,
+	data: string,
+	isMouseInput: boolean,
+	focusedIsOverlay: boolean,
+	keybindings: KeybindingsManager,
+): boolean {
+	if (focused === editor || !focused?.handleInput) return true;
+	if (isMouseInput) return !focusedIsOverlay;
+	if (focusedIsOverlay && keybindings.matches(data, "app.thinking.toggle")) return false;
+	return !FULLSCREEN_VIEWPORT_ACTIONS.some((action) => keybindings.matches(data, action));
+}
 
 function isCommandLikeStartupInput(text: string): boolean {
 	const trimmed = text.trimStart();
@@ -85,12 +123,53 @@ export function seedStartupInput(
 	}
 }
 
+export interface InteractiveTuiInputSubscription {
+	handler: TuiInputListener;
+	unsubscribe: () => void;
+}
+
 export class InteractiveModeBase {
 	runtimeHost: AgentSessionRuntime;
 
 	ui: TUI;
+	private renderer: InteractiveTui;
+
+	private readonly shouldHandleViewportInput = (
+		data: string,
+		isMouseInput: boolean,
+		focusedIsOverlay: boolean,
+	): boolean => {
+		return shouldHandleFullscreenViewportInput(
+			this.renderer.getFocusedComponent(),
+			this.editor,
+			data,
+			isMouseInput,
+			focusedIsOverlay,
+			this.keybindings,
+		);
+	};
+	private readonly onOverlayUnhandledInput = (data: string): boolean => this.handleOverlayUnhandledInput(data);
+
+	/** Dispatch the host thinking action after a focused workflow overlay declines input. */
+	handleOverlayUnhandledInput(data: string): boolean {
+		if (isKeyRelease(data) || !this.keybindings.matches(data, "app.thinking.toggle")) return false;
+		// Reuse the default editor's action dispatcher even while a workflow
+		// overlay owns focus. This keeps the host binding and its user remap as
+		// the source of truth instead of calling the implementation directly.
+		return this.defaultEditor.handleInput(data);
+	}
+
+	private readonly onRightClickPaste = (): void => {
+		void this.handleRightClickPaste();
+	};
 
 	chatContainer: Container;
+	documentContainer: Container;
+
+	transcriptScrollView: ScrollView | undefined;
+
+	fullscreenLayoutRoot: Component | undefined;
+
 	resourceDisclosureContainer: Container;
 	startupNoticesContainer: Container;
 	pendingMessagesContainer: Container;
@@ -111,7 +190,12 @@ export class InteractiveModeBase {
 
 	editorContainer: Container;
 
+	activeSelectorToken: object | undefined;
+
+	activeSelectorDispose: (() => void) | undefined;
+
 	footer: FooterComponent;
+	footerContainer: Container;
 
 	usageMeter: UsageMeterComponent;
 
@@ -199,6 +283,12 @@ export class InteractiveModeBase {
 	hideThinkingBlock = false;
 	outputPad: 0 | 1 = 1;
 
+	mermaidMarkdownTransformer: MarkdownTransformer = createMermaidMarkdownTransformer({
+		getMode: () => this.settingsManager.getMermaidRenderingMode(),
+		theme,
+	});
+	mermaidMarkdownTransformerMode: MermaidRenderingMode | undefined;
+
 	// Skill commands: command name -> skill file path
 	skillCommands = new Map<string, string>();
 
@@ -238,6 +328,9 @@ export class InteractiveModeBase {
 	// Messages queued while compaction is running
 	compactionQueuedMessages: CompactionQueuedMessage[] = [];
 
+	/** Keeps input queued while automatic compaction hands off to a manual request. */
+	manualCompactionTakeoverPending = false;
+
 	// Deferred extension load state (first paint happens before extensions load)
 	deferredStartupPending = false;
 	initialStartupBinding = false;
@@ -257,7 +350,11 @@ export class InteractiveModeBase {
 
 	extensionEditor: ExtensionEditorComponent | undefined = undefined;
 
-	extensionTerminalInputUnsubscribers = new Set<() => void>();
+	tuiInputSubscriptions = new Set<InteractiveTuiInputSubscription>();
+
+	extensionTerminalInputSubscriptions = new Set<InteractiveTuiInputSubscription>();
+
+	tuiRendererChangeListeners = new Set<() => void>();
 
 	blockingInlineCustomUiDepth = 0;
 
@@ -295,6 +392,11 @@ export class InteractiveModeBase {
 		return this.runtimeHost.session as AgentSession & AgentSessionQueuePauseControl;
 	}
 
+	/** Includes the short handoff window that an isolated engine cannot mirror. */
+	get compactionActive(): boolean {
+		return this.session.isCompacting || this.manualCompactionTakeoverPending;
+	}
+
 	get agent() {
 		return this.session.agent;
 	}
@@ -307,13 +409,78 @@ export class InteractiveModeBase {
 		return this.session.settingsManager;
 	}
 
+	/**
+	 * Tears down the selector that owns `editorContainer`, including in-flight
+	 * work such as a model catalog refresh.
+	 *
+	 * This lives on the base class so behavior modules can dispose a selector
+	 * without relying on `interactive-selectors.ts` load order.
+	 */
+	disposeActiveSelector(): void {
+		const dispose = this.activeSelectorDispose;
+		this.activeSelectorToken = undefined;
+		this.activeSelectorDispose = undefined;
+		dispose?.();
+	}
+
+	addTuiInputListener(handler: TuiInputListener): () => void {
+		const subscription: InteractiveTuiInputSubscription = {
+			handler,
+			unsubscribe: this.ui.addInputListener(handler),
+		};
+		this.tuiInputSubscriptions.add(subscription);
+		return () => {
+			subscription.unsubscribe();
+			this.tuiInputSubscriptions.delete(subscription);
+		};
+	}
+
+	rebindTuiInputListeners(): void {
+		for (const subscription of this.tuiInputSubscriptions) {
+			subscription.unsubscribe();
+			subscription.unsubscribe = this.ui.addInputListener(subscription.handler);
+		}
+	}
+
+	onTuiRendererChange(listener: () => void): () => void {
+		this.tuiRendererChangeListeners.add(listener);
+		return () => this.tuiRendererChangeListeners.delete(listener);
+	}
+
+	mountInteractiveTui(tui: TUI, components: readonly Component[]): void {
+		for (const component of components) tui.addChild(component);
+		if (isViewportTUI(tui)) {
+			if (!this.fullscreenLayoutRoot) throw new Error("Fullscreen layout is not initialized");
+			tui.setLayoutRoot(this.fullscreenLayoutRoot);
+		}
+	}
+
+	private async handleRightClickPaste(): Promise<void> {
+		const target = this.renderer.getFocusedComponent();
+		const handleInput = target?.handleInput;
+		if (!target || !handleInput) return;
+		try {
+			const text = await readClipboardText();
+			if (!text || this.renderer.getFocusedComponent() !== target) return;
+			handleInput.call(target, `\x1b[200~${text}\x1b[201~`);
+			this.ui.requestRender();
+		} catch {
+			// Clipboard paste is best-effort; permission and native-module failures are common.
+		}
+	}
+
+	stopInteractiveTui(): void {
+		while (this.renderer.hasOverlayEntries) this.renderer.hideOverlay();
+		this.ui.stop();
+	}
+
 	declare options: InteractiveModeOptions;
 
 	constructor(runtimeHost: AgentSessionRuntime, options: InteractiveModeOptions = {}) {
+		this.runtimeHost = runtimeHost;
 		this.options = options;
 		this.deferredStartupPending = Boolean(options.deferredExtensionLoad);
 		this.autoTrustOnReloadCwd = options.autoTrustOnReloadCwd;
-		this.runtimeHost = runtimeHost;
 		this.runtimeHost.setBeforeSessionInvalidate(() => {
 			this.resetExtensionUI();
 		});
@@ -321,14 +488,21 @@ export class InteractiveModeBase {
 			await this.rebindCurrentSession();
 		});
 		this.version = VERSION;
-		this.ui = new TUI(
-			options.terminal ?? new ProcessTerminal(),
-			this.settingsManager.getShowHardwareCursor(),
-			runtimeHost.services.agentDir,
-		);
+		this.renderer = createInteractiveTui({
+			showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
+			logDirectory: runtimeHost.services.agentDir,
+			terminal: options.terminal,
+			onRightClickPaste: this.onRightClickPaste,
+			shouldHandleViewportInput: this.shouldHandleViewportInput,
+			onOverlayUnhandledInput: this.onOverlayUnhandledInput,
+		});
+		this.ui = createInteractiveTuiReference(() => this.renderer);
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
 		this.headerContainer = new Container();
+		this.documentContainer = new Container();
+		this.documentContainer.addChild(this.headerContainer);
 		this.chatContainer = new StartupChatContainer();
+		this.documentContainer.addChild(this.chatContainer);
 		this.resourceDisclosureContainer = new Container();
 		this.startupNoticesContainer = new Container();
 		// The isolated engine can emit session_start UI requests as soon as its
@@ -355,6 +529,8 @@ export class InteractiveModeBase {
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
+		this.footerContainer = new Container();
+		this.footerContainer.addChild(this.footer);
 		this.usageMeter = new UsageMeterComponent(this.session);
 		this.usageMeter.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 
@@ -379,6 +555,10 @@ export class InteractiveModeBase {
 					showStatus: (message) => this.showStatus(message),
 					showError: (message) => this.showError(message),
 				}),
+			{
+				isFullscreen: () => this.renderer.mode === "fullscreen",
+				onRendererReplaced: (listener) => this.onTuiRendererChange(listener),
+			},
 			(handler) => {
 				this.interactiveEngineShortcutHandler = handler;
 				this.defaultEditor.onExtensionShortcut = handler;

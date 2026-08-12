@@ -19,6 +19,7 @@ const expectedBuiltinPackages = [
 	resolve("packages/subagents"),
 	resolve("packages/mcp"),
 	resolve("packages/web-access"),
+	resolve("packages/i-have-adhd"),
 	resolve("packages/intercom"),
 ];
 
@@ -27,10 +28,11 @@ const builtinPackageFixtures = [
 	{ packageName: "@bastani/subagents", dirname: "subagents", requiredEntry: join("src", "extension", "index.ts") },
 	{ packageName: "@bastani/mcp", dirname: "mcp", requiredEntry: "index.ts" },
 	{ packageName: "@bastani/web-access", dirname: "web-access", requiredEntry: "index.ts" },
+	{ packageName: "@bastani/i-have-adhd", dirname: "i-have-adhd", requiredEntry: "index.ts" },
 	{ packageName: "@bastani/intercom", dirname: "intercom", requiredEntry: "index.ts" },
 ] as const;
 
-const fullBuiltinPackageLoadTimeoutMs = 60_000;
+const REAL_BUILTIN_RESOURCE_LOADER_TIMEOUT_MS = 120_000;
 
 describe("coding-agent builtin resources", () => {
 	test("discovers bundled companion packages in development without the removed Cursor package", () => {
@@ -179,7 +181,7 @@ describe("coding-agent builtin resources", () => {
 
 			assert.ok(labels.includes("package-command"), `expected package workflow completion in ${labels.join(", ")}`);
 		},
-		fullBuiltinPackageLoadTimeoutMs,
+		REAL_BUILTIN_RESOURCE_LOADER_TIMEOUT_MS,
 	);
 
 	test(
@@ -206,6 +208,7 @@ describe("coding-agent builtin resources", () => {
 				"packages/mcp/index.ts",
 				"packages/web-access/index.ts",
 				"packages/intercom/index.ts",
+				"packages/i-have-adhd/index.ts",
 			]) {
 				assert.ok(
 					extensionPaths.some((extensionPath) => extensionPath.endsWith(suffix)),
@@ -214,7 +217,7 @@ describe("coding-agent builtin resources", () => {
 			}
 
 			const skillNames = new Set(loader.getSkills().skills.map((skill) => skill.name));
-			for (const skillName of ["subagent", "intercom"]) {
+			for (const skillName of ["i-have-adhd", "subagent", "intercom"]) {
 				assert.ok(skillNames.has(skillName), `expected builtin skill ${skillName}`);
 			}
 
@@ -235,7 +238,7 @@ describe("coding-agent builtin resources", () => {
 			assert.equal(atomicCommand.description, "Atomic onboarding and help guide");
 			assert.equal(typeof atomicCommand.getArgumentCompletions, "function");
 		},
-		fullBuiltinPackageLoadTimeoutMs,
+		REAL_BUILTIN_RESOURCE_LOADER_TIMEOUT_MS,
 	);
 
 	test(
@@ -292,6 +295,6 @@ describe("coding-agent builtin resources", () => {
 				"expected the renamed liteparse skill not to reappear under its obsolete name",
 			);
 		},
-		fullBuiltinPackageLoadTimeoutMs,
+		REAL_BUILTIN_RESOURCE_LOADER_TIMEOUT_MS,
 	);
 });

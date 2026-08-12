@@ -327,6 +327,34 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("removed --tui-mode flag", () => {
+		test.each(["regular", "fullscreen"])("treats %s as an unknown flag value", (mode) => {
+			const result = parseArgs(["--tui-mode", mode]);
+			expect(result.unknownFlags.get("tui-mode")).toBe(mode);
+		});
+
+		test("treats an invalid mode as an unknown flag value", () => {
+			const result = parseArgs(["--tui-mode", "other"]);
+			expect(result.unknownFlags.get("tui-mode")).toBe("other");
+		});
+
+		test("accepts no mode value", () => {
+			const result = parseArgs(["--tui-mode"]);
+			expect(result.unknownFlags.get("tui-mode")).toBe(true);
+		});
+
+		test("does not consume a following option", () => {
+			const result = parseArgs(["--tui-mode", "--verbose"]);
+			expect(result.unknownFlags.get("tui-mode")).toBe(true);
+			expect(result.verbose).toBe(true);
+		});
+
+		test("continues treating the old --ui-mode flag as unknown", () => {
+			const result = parseArgs(["--ui-mode", "fullscreen"]);
+			expect(result.unknownFlags.get("ui-mode")).toBe("fullscreen");
+		});
+	});
+
 	describe("--offline flag", () => {
 		test("parses --offline flag", () => {
 			const result = parseArgs(["--offline"]);

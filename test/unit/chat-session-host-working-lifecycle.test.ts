@@ -1,7 +1,7 @@
 // @ts-nocheck
 
 import assert from "node:assert/strict";
-import { afterEach, beforeAll, test } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, test } from "vitest";
 import { ChatSessionHost } from "../../packages/coding-agent/src/index.ts";
 import { ATOMIC_WORKING_FRAME_MS } from "../../packages/coding-agent/src/modes/interactive/components/atomic-working-status.ts";
 import { ANIMATION_FRAME_MS } from "../../packages/coding-agent/src/modes/interactive/components/chat-session-host-utils.ts";
@@ -16,6 +16,7 @@ import {
 } from "./chat-session-host-working-lifecycle-fixture.ts";
 
 const originalReducedMotion = process.env.ATOMIC_REDUCED_MOTION;
+const originalNoColor = process.env.NO_COLOR;
 const pulseStyle = {
 	...plainStyle,
 	workingIndicatorPalette: () => ({
@@ -43,12 +44,24 @@ function isBold(host: ChatSessionHost<never>): boolean {
 }
 
 beforeAll(() => {
+	// This suite asserts the emitted ANSI ramp.  Its result must not depend on
+	// a caller (or the desktop test runner) opting out of terminal color.
+	delete process.env.NO_COLOR;
 	setThemeInstance(loadTheme("dark", "truecolor"));
+});
+
+beforeEach(() => {
+	delete process.env.NO_COLOR;
 });
 
 afterEach(() => {
 	if (originalReducedMotion === undefined) delete process.env.ATOMIC_REDUCED_MOTION;
 	else process.env.ATOMIC_REDUCED_MOTION = originalReducedMotion;
+});
+
+afterAll(() => {
+	if (originalNoColor === undefined) delete process.env.NO_COLOR;
+	else process.env.NO_COLOR = originalNoColor;
 });
 
 test("ChatSessionHost advances the exact luminous ramp every lifecycle-relative 88ms", () => {

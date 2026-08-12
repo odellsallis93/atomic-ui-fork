@@ -67,12 +67,24 @@ test("remote custom editors accept input, preserve text, and submit through the 
 	assert.equal(service.setEditorText("draft"), true);
 	assert.equal(service.getEditorText(), "draft");
 	service.handleLine(
-		serializeInteractiveEngineFrame({ type: "engine_custom_input", componentId: open.componentId, data: "!" }),
+		serializeInteractiveEngineFrame({
+			type: "engine_custom_input",
+			componentId: open.componentId,
+			requestId: 1,
+			data: "!",
+		}),
 	);
+	await sleep(0);
 	assert.equal(service.getEditorText(), "draft!");
 	service.handleLine(
-		serializeInteractiveEngineFrame({ type: "engine_custom_input", componentId: open.componentId, data: "\r" }),
+		serializeInteractiveEngineFrame({
+			type: "engine_custom_input",
+			componentId: open.componentId,
+			requestId: 2,
+			data: "\r",
+		}),
 	);
+	await sleep(0);
 	assert.equal(submitted, "draft!");
 	service.dispose();
 });

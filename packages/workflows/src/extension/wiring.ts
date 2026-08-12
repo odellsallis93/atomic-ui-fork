@@ -21,7 +21,11 @@
  *            pi docs/sdk.md createAgentSession
  */
 
-import type { CreateAgentSessionOptions, DefaultResourceLoaderInheritanceSnapshot } from "@bastani/atomic";
+import {
+	type CreateAgentSessionOptions,
+	type DefaultResourceLoaderInheritanceSnapshot,
+	isStaleExtensionContextError,
+} from "@bastani/atomic";
 import type { StageAdapters, StageSessionCreateResult, StageSessionRuntime } from "../runs/foreground/stage-runner.js";
 import { resolveStageGroup, stageHasIntercomAccess } from "../shared/intercom-group.js";
 import { type StageUiBroker, stageUiBroker } from "../shared/stage-ui-broker.js";
@@ -57,7 +61,6 @@ export type {
 	PiKeybindings,
 	PiOverlayHandle,
 	PiOverlayOptions,
-	PiRemoteTerminalControl,
 	PiTheme,
 	PiUIDialogOptions,
 	PiUISurface,
@@ -285,9 +288,31 @@ function emitLateIntercomRoute(
 		workflowStageId: meta.stageId,
 		workflowStageName: meta.stageName,
 	};
-	pi.events.emit(LATE_STAGE_MESSAGE_EVENT, event as unknown as Record<string, unknown>);
+	try {
+		pi.events.emit(LATE_STAGE_MESSAGE_EVENT, event as unknown as Record<string, unknown>);
+	} catch (error) {
+		if (!isStaleExtensionContextError(error)) throw error;
+		// The captured runtime is gone; reject so callers can distinguish this drop
+		// from a route that was accepted. Do not retry through stale sendMessage.
+		return Promise.reject(error);
+	}
 	if (!event.handled) return undefined;
 	return event.completion ?? Promise.resolve();
+}
+
+/**
+ * Preserve one late-route contract: a resolved call means delivery was accepted,
+ * while a stale-runtime rejection tells the caller that the message was dropped.
+ * This helper normalizes stale synchronous host throws without hiding any other
+ * failure.
+ */
+function routeThroughStaleContextGuard(route: () => void | Promise<void>): void | Promise<void> {
+	try {
+		return route();
+	} catch (error) {
+		if (!isStaleExtensionContextError(error)) throw error;
+		return Promise.reject(error);
+	}
 }
 
 function makeWorkflowStageOrchestrationContext(
@@ -308,13 +333,15 @@ function makeWorkflowStageOrchestrationContext(
 			routeMessage(message, options) {
 				const intercomRoute = emitLateIntercomRoute(pi, meta, [message], options, false);
 				if (intercomRoute) return intercomRoute;
-				if (!pi.sendMessage) throw new Error("atomic-workflows: main-chat late-message route is unavailable");
-				return pi.sendMessage(message, options);
+				const sendMessage = pi.sendMessage;
+				if (!sendMessage) throw new Error("atomic-workflows: main-chat late-message route is unavailable");
+				return routeThroughStaleContextGuard(() => sendMessage(message, options));
 			},
 			routeMessages(messages, options) {
 				const intercomRoute = emitLateIntercomRoute(pi, meta, messages, options, true);
 				if (intercomRoute) return intercomRoute;
-				if (pi.sendMessages) return pi.sendMessages(messages, options);
+				const sendMessages = pi.sendMessages;
+				if (sendMessages) return routeThroughStaleContextGuard(() => sendMessages(messages, options));
 				const sendMessage = pi.sendMessage;
 				if (!sendMessage) throw new Error("atomic-workflows: main-chat late-message route is unavailable");
 				return (async () => {

@@ -3,9 +3,10 @@ import type { HostInputFormField, HostSessionPickerRow } from "../../core/extens
 import type { KeyId } from "../../core/keybindings.ts";
 
 /**
- * Version 3 adds a presentation-host descriptor to the ready handshake. The
- * descriptor lets extensions opt into GUI behavior without changing their
- * established `ctx.mode === "tui"` compatibility contract.
+ * Version 3 adds correlated replies for `engine_custom_input` and a
+ * presentation-host descriptor to the ready handshake. The correlated replies
+ * preserve fullscreen input routing, while the descriptor lets extensions opt
+ * into GUI behavior without changing `ctx.mode === "tui"` compatibility.
  */
 export const INTERACTIVE_ENGINE_PROTOCOL_VERSION = 3;
 
@@ -30,14 +31,12 @@ export interface SerializableOverlayOptions {
 }
 
 /**
- * Allowlisted terminal-mode controls a remote custom component may ask the host
+ * Allowlisted terminal-mode control a remote custom component may ask the host
  * to apply to the real host TTY. Deliberately NOT a raw byte channel: the child
  * names an intent and the host owns the concrete escape sequence, so a buggy or
- * compromised child can only toggle these two documented modes.
+ * compromised child can only toggle this documented mode.
  */
-export type EngineTerminalControl =
-	| { kind: "mouse-scroll-tracking"; enabled: boolean }
-	| { kind: "autowrap"; enabled: boolean };
+export type EngineTerminalControl = { kind: "autowrap"; enabled: boolean };
 
 export interface EngineExtensionShortcut {
 	key: string;
@@ -92,6 +91,7 @@ export type InteractiveEngineMessage =
 	  }
 	| { type: "engine_custom_close"; componentId: string }
 	| { type: "engine_custom_frame"; componentId: string; requestId: number; lines: string[] }
+	| { type: "engine_custom_input_result"; componentId: string; requestId: number; handled: boolean }
 	| { type: "engine_custom_invalidate"; componentId: string }
 	| { type: "engine_custom_done"; componentId: string; result?: JsonValue }
 	| { type: "engine_custom_terminal"; componentId: string; control: EngineTerminalControl }
@@ -117,7 +117,7 @@ export type InteractiveEngineMessage =
 export type InteractiveEngineCommand =
 	| { type: "engine_editor_state"; componentId: "composer"; text: string }
 	| { type: "engine_custom_render"; componentId: string; requestId: number; width: number; rows: number }
-	| { type: "engine_custom_input"; componentId: string; data: string }
+	| { type: "engine_custom_input"; componentId: string; requestId: number; data: string }
 	| { type: "engine_custom_dispose"; componentId: string }
 	| {
 			type: "engine_tool_render";
@@ -186,11 +186,10 @@ function isCallbackActivity(value: JsonValue): value is JsonObject & CallbackAct
 }
 
 function parseEngineTerminalControl(value: JsonValue | undefined): EngineTerminalControl | undefined {
-	if (value === undefined || !isJsonObject(value) || typeof value.enabled !== "boolean") return undefined;
-	if (value.kind === "mouse-scroll-tracking" || value.kind === "autowrap") {
-		return { kind: value.kind, enabled: value.enabled };
+	if (value === undefined || !isJsonObject(value) || value.kind !== "autowrap" || typeof value.enabled !== "boolean") {
+		return undefined;
 	}
-	return undefined;
+	return { kind: "autowrap", enabled: value.enabled };
 }
 
 const SESSION_PICKER_MESSAGE_COLORS = ["success", "warning", "accent", "error"] as const;
@@ -393,6 +392,12 @@ export function parseInteractiveEngineMessage(line: string): InteractiveEngineMe
 				value.lines.every((entry) => typeof entry === "string")
 				? { type: value.type, componentId: value.componentId, requestId: value.requestId, lines: value.lines }
 				: undefined;
+		case "engine_custom_input_result":
+			return typeof value.componentId === "string" &&
+				typeof value.requestId === "number" &&
+				typeof value.handled === "boolean"
+				? { type: value.type, componentId: value.componentId, requestId: value.requestId, handled: value.handled }
+				: undefined;
 		case "engine_custom_invalidate":
 			return typeof value.componentId === "string"
 				? { type: value.type, componentId: value.componentId }
@@ -482,8 +487,8 @@ export function parseInteractiveEngineCommand(line: string): InteractiveEngineCo
 			rows: value.rows,
 		};
 	}
-	if (value.type === "engine_custom_input" && typeof value.data === "string")
-		return { type: value.type, componentId: value.componentId, data: value.data };
+	if (value.type === "engine_custom_input" && typeof value.requestId === "number" && typeof value.data === "string")
+		return { type: value.type, componentId: value.componentId, requestId: value.requestId, data: value.data };
 	if (value.type === "engine_custom_dispose" || value.type === "engine_render_dispose")
 		return { type: value.type, componentId: value.componentId };
 	if (

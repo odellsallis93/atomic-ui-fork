@@ -7,6 +7,7 @@ import {
 	fakeFooterAgentSession,
 	flush,
 	makeHandle,
+	makeTestTui,
 	StageChatView,
 	setupRun,
 	stripAnsi,
@@ -41,7 +42,7 @@ describe("StageChatView", () => {
 		view.dispose();
 	});
 
-	test("renders toolcall_end call contents when workflow event snapshots are stale", () => {
+	test("renders toolcall_end call contents from delta-only workflow events", () => {
 		const store = createStore();
 		setupRun(store, "run-1", "stage-a");
 		const { handle, emit } = makeHandle();
@@ -58,17 +59,6 @@ describe("StageChatView", () => {
 
 		emit({
 			type: "message_update",
-			message: {
-				role: "assistant",
-				content: [
-					{
-						type: "toolCall",
-						id: "t-stale",
-						name: "bash",
-						arguments: {},
-					},
-				],
-			},
 			assistantMessageEvent: {
 				type: "toolcall_end",
 				contentIndex: 0,
@@ -448,7 +438,7 @@ describe("StageChatView", () => {
 			handle,
 			onDetach: () => {},
 			onClose: () => {},
-			getViewportRows: () => 12,
+			piTui: makeTestTui(12),
 		});
 
 		const lines = view.render(96).map(stripAnsi);
@@ -471,7 +461,7 @@ describe("StageChatView", () => {
 			handle,
 			onDetach: () => {},
 			onClose: () => {},
-			getViewportRows: () => rows,
+			piTui: makeTestTui(() => rows),
 		});
 
 		assert.equal(view.render(96).length, 44);
@@ -502,7 +492,7 @@ describe("StageChatView", () => {
 			handle,
 			onDetach: () => {},
 			onClose: () => {},
-			getViewportRows: () => 7,
+			piTui: makeTestTui(7),
 		});
 		const rendered = view.render(64).map(stripAnsi).join("\n");
 		assert.match(rendered, /❯/);

@@ -227,10 +227,10 @@ Atomic loads context files at startup. Add an `AGENTS.md` file to tell it how to
 
 Atomic loads:
 
-- `~/.atomic/agent/AGENTS.md` for global instructions
-- `AGENTS.md` or `CLAUDE.md` from parent directories and the current directory
+- `~/.atomic/agent/AGENTS.override.md`, `AGENTS.md`, or `CLAUDE.md` for global instructions (legacy `~/.pi/agent/` also works)
+- `AGENTS.override.md`, `AGENTS.md`, or `CLAUDE.md` from parent directories and the current directory
 
-Restart Atomic, or run `/reload`, after changing context files.
+An `AGENTS.override.md` file replaces the other context files in its directory. Restart Atomic, or run `/reload`, after changing context files.
 
 ## Common things to try
 
@@ -243,7 +243,7 @@ atomic @README.md "Summarize this"
 atomic @src/app.ts @src/app.test.ts "Review these together"
 ```
 
-Images can be pasted with CTRL+V (ALT+V on Windows) or dragged into supported terminals.
+Images can be pasted with native macOS Cmd+V, Ctrl+V (Alt+V on Windows), or dragged into supported terminals. Inside tmux on macOS, use `Ctrl+V` for reliable image paste; native `Cmd+V` depends on terminal forwarding. VS Code's terminal may forward the empty bracketed-paste route through tmux, while Ghostty may not forward its Kitty `super+v` route through tmux. When the clipboard has both text and an image, Ctrl+V prefers the image; Cmd+V may paste text or the image depending on how the terminal delivers the gesture.
 
 ### Run shell commands
 

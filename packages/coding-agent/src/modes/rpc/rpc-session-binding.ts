@@ -7,6 +7,7 @@ import type { EngineCustomUiService } from "../interactive-engine/engine-custom-
 import type { EngineInputFormService } from "../interactive-engine/engine-input-form.ts";
 import type { EngineRenderService } from "../interactive-engine/engine-render-service.ts";
 import type { EngineSessionPickerService } from "../interactive-engine/engine-session-picker.ts";
+import { toJsonEvent } from "../json-event.ts";
 import { RpcAutocompleteService } from "./rpc-autocomplete.ts";
 import { createRpcExtensionUIContext, type RpcPendingExtensionRequests } from "./rpc-extension-ui.ts";
 import type { KeybindingsReloadCoordinator } from "./rpc-keybindings-reload.ts";
@@ -175,7 +176,7 @@ export class RpcSessionBinding {
 		}
 
 		this.unsubscribe = session.subscribe((event) => {
-			this.output(event);
+			this.output(toJsonEvent(event));
 		});
 		this.unsubscribeBackpressure = session.agent.subscribe(async () => {
 			await waitForRawStdoutBackpressure();

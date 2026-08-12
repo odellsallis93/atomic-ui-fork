@@ -18,6 +18,12 @@ import { PROMPT_SCROLL_STEP_ROWS, type StageChatViewContext } from "./stage-chat
 import { Key, matchesKey } from "./text-helpers.js";
 
 export function handleStageChatInput(ctx: StageChatViewContext, data: string): boolean {
+	const keybindings = isKeybindingsLike(ctx.piKeybindings) ? ctx.piKeybindings : undefined;
+	// Only the default physical Ctrl+T belongs to the host thinking action. A
+	// user remap may reuse an editor key, so let that key reach the composer.
+	if (matchesKey(data, Key.ctrl("t")) && matchesAction(keybindings, data, APP_ACTION.thinkingToggle)) {
+		return false;
+	}
 	if (matchesKey(data, Key.ctrl("x"))) {
 		if (ctx.mountedCustomUi) releaseMountedCustomUi(ctx);
 		else {
@@ -26,11 +32,6 @@ export function handleStageChatInput(ctx: StageChatViewContext, data: string): b
 			recordCurrentPromptDraft(ctx);
 		}
 		ctx.onDetach();
-		return true;
-	}
-	if (matchesKey(data, Key.ctrl("t"))) {
-		ctx.mouseScrollCaptureEnabled = !ctx.mouseScrollCaptureEnabled;
-		ctx.requestRender?.();
 		return true;
 	}
 	if (ctx.mountedCustomUi) {
@@ -112,9 +113,9 @@ function handleMountedCustomUiInput(ctx: StageChatViewContext, data: string): bo
 
 	const component = mounted.component;
 	setComponentFocused(component, ctx.focused);
-	component.handleInput?.(data);
+	const handled = component.handleInput?.(data) === true;
 	ctx.requestRender?.();
-	return true;
+	return handled;
 }
 
 function handlePromptInput(ctx: StageChatViewContext, data: string): void {

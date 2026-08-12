@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@bastani/atomic";
+import { type ExtensionAPI, isStaleExtensionContextError } from "@bastani/atomic";
 import { type IntercomBridgeState, resolveSubagentIntercomTarget } from "../../intercom/intercom-bridge.ts";
 import {
 	attachNestedChildrenToResultChildren,
@@ -227,7 +227,12 @@ export function emitControlNotification(input: {
 		noticeText: formatControlNoticeMessage(input.event, childIntercomTarget),
 	};
 	if (input.controlConfig.notifyChannels.includes("event")) {
-		input.pi.events.emit(SUBAGENT_CONTROL_EVENT, payload);
+		try {
+			input.pi.events.emit(SUBAGENT_CONTROL_EVENT, payload);
+		} catch (error) {
+			if (!isStaleExtensionContextError(error)) throw error;
+			// Control notices are best effort after a parent runtime replacement.
+		}
 	}
 	if (
 		input.event.type !== "active_long_running" &&
@@ -235,11 +240,16 @@ export function emitControlNotification(input: {
 		input.intercomBridge.active &&
 		input.intercomBridge.orchestratorTarget
 	) {
-		input.pi.events.emit(SUBAGENT_CONTROL_INTERCOM_EVENT, {
-			...payload,
-			to: input.intercomBridge.orchestratorTarget,
-			message: formatControlIntercomMessage(input.event, childIntercomTarget),
-		});
+		try {
+			input.pi.events.emit(SUBAGENT_CONTROL_INTERCOM_EVENT, {
+				...payload,
+				to: input.intercomBridge.orchestratorTarget,
+				message: formatControlIntercomMessage(input.event, childIntercomTarget),
+			});
+		} catch (error) {
+			if (!isStaleExtensionContextError(error)) throw error;
+			// Intercom control notices are best effort after a parent runtime replacement.
+		}
 	}
 }
 
@@ -299,7 +309,11 @@ export function notifyDetachedForegroundChildExit(input: {
 			noticeLabel: "Detached subagent task",
 		},
 		`foreground-detach-${runId}-${index}`,
-	);
+	).catch((error) => {
+		if (!isStaleExtensionContextError(error)) {
+			console.error("Failed to emit detached subagent completion notification:", error);
+		}
+	});
 }
 
 async function emitForegroundResultIntercom(input: {

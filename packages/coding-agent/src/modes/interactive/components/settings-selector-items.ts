@@ -61,6 +61,13 @@ function insertUiToggles(items: SettingItem[], config: SettingsConfig): void {
 		values: ["true", "false"],
 	});
 	insertAfter(items, "show-hardware-cursor", {
+		id: "fullscreen-scrollbar",
+		label: "Fullscreen scrollbar",
+		description: "Scrollbar behavior for the fullscreen transcript",
+		currentValue: config.fullscreenScrollbar,
+		values: ["auto", "always", "hidden"],
+	});
+	insertAfter(items, "fullscreen-scrollbar", {
 		id: "editor-padding",
 		label: "Editor padding",
 		description: "Horizontal padding for input editor (0-3)",
@@ -158,6 +165,20 @@ export function buildSettingsItems(config: SettingsConfig, callbacks: SettingsCa
 			label: "Hide thinking",
 			description: "Hide thinking blocks in assistant responses",
 			currentValue: config.hideThinkingBlock ? "true" : "false",
+			values: ["true", "false"],
+		},
+		{
+			id: "mermaid-rendering",
+			label: "Mermaid diagrams",
+			description: "Render Mermaid code blocks as Unicode diagrams",
+			currentValue: config.mermaidRenderingMode,
+			values: ["off", "final", "streaming"],
+		},
+		{
+			id: "latex-rendering",
+			label: "LaTeX math",
+			description: "Render LaTeX expressions as Unicode math",
+			currentValue: config.latexRenderingEnabled ? "true" : "false",
 			values: ["true", "false"],
 		},
 		{

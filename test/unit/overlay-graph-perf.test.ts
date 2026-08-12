@@ -8,8 +8,9 @@ import type {
 } from "../../packages/workflows/src/shared/store-types.js";
 import { GraphCanvas } from "../../packages/workflows/src/tui/graph-canvas.js";
 import { GraphView } from "../../packages/workflows/src/tui/graph-view.js";
+import { graphLayoutBodyRows } from "../../packages/workflows/src/tui/graph-view-layout.js";
 import { NODE_H } from "../../packages/workflows/src/tui/layout.js";
-import { defaultTheme, makeSnap, makeStage, makeStore, visibleText } from "./overlay-graph-helpers.js";
+import { defaultTheme, makeSnap, makeStage, makeStore, makeTestTui, visibleText } from "./overlay-graph-helpers.js";
 
 class CountingCanvas extends GraphCanvas {
 	mergedCells = 0;
@@ -115,11 +116,11 @@ class InstrumentedGraphView extends GraphView {
 	}
 
 	bodyRowsForTest(): number {
-		return this._overlayBodyRows(this._overlayPanelLineCount());
+		return graphLayoutBodyRows(this._overlayFrameHeight());
 	}
 
 	graphScrollOffsetForTest(): number {
-		return this.graphScrollOffset;
+		return this._graphScrollTop();
 	}
 
 	countRenderReadsForTest(): void {
@@ -192,7 +193,7 @@ function renderPairGraph(count: number): { composed: number; edges: number; card
 		runId: "run-1",
 		store,
 		graphTheme: defaultTheme,
-		getViewportRows: () => 24,
+		piTui: makeTestTui(24),
 		initialFocusedStageId: "root-0",
 	});
 	try {
@@ -273,7 +274,7 @@ describe("GraphView many-stage performance (#2100)", () => {
 			runId: "run-1",
 			store,
 			graphTheme: defaultTheme,
-			getViewportRows: () => 24,
+			piTui: makeTestTui(24),
 			initialFocusedStageId: "s399",
 		});
 		try {
@@ -307,7 +308,7 @@ describe("GraphView many-stage performance (#2100)", () => {
 			runId: "run-1",
 			store,
 			graphTheme: defaultTheme,
-			getViewportRows: () => 24,
+			piTui: makeTestTui(24),
 			initialFocusedStageId: "s0",
 		});
 		try {
@@ -361,7 +362,7 @@ describe("GraphView many-stage performance (#2100)", () => {
 			runId: "run-1",
 			store: makeStore(snap),
 			graphTheme: defaultTheme,
-			getViewportRows: () => 24,
+			piTui: makeTestTui(24),
 		});
 		try {
 			const text = visibleText(view.render(96));
@@ -515,7 +516,7 @@ describe("GraphView many-stage performance (#2100)", () => {
 			runId: "run-1",
 			store,
 			graphTheme: defaultTheme,
-			getViewportRows: () => 24,
+			piTui: makeTestTui(24),
 			initialFocusedStageId: "s999",
 		});
 		try {
@@ -577,7 +578,7 @@ describe("overlay graph paints what the budgets do not constrain", () => {
 			runId: "run-1",
 			store: twoStageStore(),
 			graphTheme: defaultTheme,
-			getViewportRows: () => 24,
+			piTui: makeTestTui(24),
 		});
 		try {
 			const lines = visibleText(view.render(60)).split("\n");
@@ -611,7 +612,7 @@ describe("overlay graph paints what the budgets do not constrain", () => {
 			runId: "run-1",
 			store: twoStageStore(),
 			graphTheme: defaultTheme,
-			getViewportRows: () => 24,
+			piTui: makeTestTui(24),
 		});
 		try {
 			const header = visibleText(view.render(60))

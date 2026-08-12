@@ -181,6 +181,7 @@ export function App() {
 	const attachedImagesRef = useRef<PromptImage[]>(attachedImages);
 	const pendingImageReads = useRef<Set<Promise<void>>>(new Set());
 	const submitGate = useRef(createSubmitGate());
+	const customInputRequestId = useRef(0);
 	/** Mirrors attachment state into a ref so async submit paths never read a stale snapshot. */
 	const setAttached = useCallback((next: PromptImage[] | ((current: PromptImage[]) => PromptImage[])): void => {
 		const value = typeof next === "function" ? next(attachedImagesRef.current) : next;
@@ -747,6 +748,7 @@ export function App() {
 						void window.atomicGui.sendEngineCommand({
 							type: "engine_custom_input",
 							componentId: customEditor.componentId,
+							requestId: ++customInputRequestId.current,
 							data,
 						})
 					}
@@ -877,7 +879,12 @@ export function App() {
 					void window.atomicGui.sendEngineCommand({ type: "engine_custom_dispose", componentId });
 				}}
 				onInput={(componentId, data) => {
-					void window.atomicGui.sendEngineCommand({ type: "engine_custom_input", componentId, data });
+					void window.atomicGui.sendEngineCommand({
+						type: "engine_custom_input",
+						componentId,
+						requestId: ++customInputRequestId.current,
+						data,
+					});
 				}}
 				onRender={(componentId, requestId, width, rows) => {
 					void window.atomicGui.sendEngineCommand({

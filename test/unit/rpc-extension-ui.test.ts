@@ -94,6 +94,27 @@ test("isolated extension UI exposes and switches engine themes", () => {
 	);
 });
 
+test("RPC extension UI does not render for unchanged tool expansion", () => {
+	let renderRequests = 0;
+	const customUi = {
+		requestRender: () => {
+			renderRequests += 1;
+		},
+	} as unknown as EngineCustomUiService;
+	const ui = createRpcExtensionUIContext({
+		output: () => {},
+		pendingExtensionRequests: new Map(),
+		customUi,
+	});
+
+	ui.setToolsExpanded(false);
+	assert.equal(renderRequests, 0);
+	ui.setToolsExpanded(true);
+	assert.equal(renderRequests, 1);
+	ui.setToolsExpanded(true);
+	assert.equal(renderRequests, 1);
+});
+
 test("isolated extension UI exposes live footer status and cached git data", () => {
 	const provider = new FooterDataProvider(process.cwd());
 	const ui = createRpcExtensionUIContext({

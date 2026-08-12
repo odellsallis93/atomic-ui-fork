@@ -98,15 +98,23 @@ function resolvedSemverFor(lockfile: Lockfile, declarer: string): string | undef
 }
 
 /**
- * The one edge the pin moves outside its declared range, and it moves it *up*.
- * `cross-spawn@6`, reached through `shx -> shelljs -> execa`, asks for `^5.5.0`;
- * its only semver call is `satisfies(process.version, "^4.8.0 || ^5.7.0 || >=
- * 6.0.0", true)`, which 7.8.0 answers identically — a boolean third argument
- * still parses as `loose` — and it is wrapped in `niceTry` regardless. Raising
- * an edge is a choice; holding one below its floor is the defect this table
- * exists to keep out.
+ * The declared edges the pin moves outside their ranges, always *up*. The
+ * Babel, Electron-builder, and tiny-async-pool consumers accept pre-7.8.0
+ * semver versions, so the pin is above their floors. `cross-spawn@6`, reached
+ * through `shx -> shelljs -> execa`, asks for `^5.5.0`; its only semver call is
+ * `satisfies(process.version, "^4.8.0 || ^5.7.0 || >= 6.0.0", true)`, which
+ * 7.8.0 answers identically — a boolean third argument still parses as `loose`
+ * — and it is wrapped in `niceTry` regardless. Raising an edge is a choice;
+ * holding one below its floor is the defect this table exists to keep out.
  */
-const RAISED_SEMVER_EDGES = new Map<string, string>([["node_modules/execa/node_modules/cross-spawn", "^5.5.0"]]);
+const RAISED_SEMVER_EDGES = new Map<string, string>([
+	["node_modules/@babel/core", "^6.3.1"],
+	["node_modules/@babel/helper-compilation-targets", "^6.3.1"],
+	["node_modules/app-builder-lib", "~7.7.3"],
+	["node_modules/app-builder-lib/node_modules/@electron/get", "^6.2.0"],
+	["node_modules/execa/node_modules/cross-spawn", "^5.5.0"],
+	["node_modules/tiny-async-pool", "^5.5.0"],
+]);
 
 /** The six functions this repository imports from `semver`, and nothing else. */
 interface SemverApi {
@@ -122,7 +130,7 @@ interface SemverApi {
 const pinned: SemverApi = { compare, maxSatisfying, rcompare, satisfies, valid, validRange };
 
 /**
- * `@napi-rs/cli` 3.8.1 declares `semver@^7.8.2`, which the pin does not satisfy.
+ * `@napi-rs/cli` 3.8.2 declares `semver@^7.8.2`, which the pin does not satisfy.
  * A flat `semver` override held it below that range and `npm ls` reported the
  * edge invalid, so the override is scoped instead: everything collapses onto
  * 7.8.0 except the CLI, which keeps 7.8.5. The CLI is a build-time
@@ -626,9 +634,11 @@ describe("semver pinned at 7.8.0", () => {
 		assert.equal(natives.devDependencies.semver, undefined, "packages/natives must not declare a semver dependency");
 
 		// The declared range this measurement is about. If @napi-rs/cli moves off
-		// 3.8.1 its semver surface has to be re-measured, so pin the version the
-		// table above was taken against.
-		assert.equal(natives.devDependencies["@napi-rs/cli"], "3.8.1");
+		// 3.8.2 its semver surface has to be re-measured, so pin the version the
+		// table above was taken against. 3.8.2 was diffed against 3.8.1: its
+		// dependency table, semver imports and restrictWasiNodeEngine body are
+		// byte-identical, so the 3.8.1 measurement carries over unchanged.
+		assert.equal(natives.devDependencies["@napi-rs/cli"], "3.8.2");
 		assert.ok(
 			BASELINE_NAPI_WASI_ENGINE.has(natives.engines.node),
 			`packages/natives engines.node ${natives.engines.node} is not in BASELINE_NAPI_WASI_ENGINE`,

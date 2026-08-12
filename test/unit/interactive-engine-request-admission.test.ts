@@ -23,8 +23,9 @@ import {
 import { bunExecutable, moduleDir, sleep } from "../helpers/runtime.js";
 
 const serialTest = process.platform === "win32" ? test.sequential.skip : test.sequential;
+const REAL_RPC_ADMISSION_TIMEOUT_MS = 120_000;
 
-function makeClient(): RpcClient {
+function makeClient(agentDir: string): RpcClient {
 	return new RpcClient({
 		cliPath: join(moduleDir(import.meta.url), "../../packages/coding-agent/src/cli.ts"),
 		cwd: join(moduleDir(import.meta.url), "../.."),
@@ -42,6 +43,7 @@ function makeClient(): RpcClient {
 			"--offline",
 			"--approve",
 		],
+		env: { ATOMIC_CODING_AGENT_DIR: agentDir },
 		interactiveEngine: { onDiagnostic: () => {} },
 	});
 }
@@ -60,7 +62,7 @@ serialTest(
 	async () => {
 		const temp = mkdtempSync(join(tmpdir(), "atomic-admission-"));
 		const marker = join(temp, "side-effect");
-		const client = makeClient();
+		const client = makeClient(join(temp, "agent"));
 		try {
 			await client.start();
 			await client.waitForInteractiveEngineBound();
@@ -96,13 +98,14 @@ serialTest(
 			rmSync(temp, { recursive: true, force: true });
 		}
 	},
-	60_000,
+	REAL_RPC_ADMISSION_TIMEOUT_MS,
 );
 
 serialTest(
 	"a send the child never received stays restorable",
 	async () => {
-		const client = makeClient();
+		const temp = mkdtempSync(join(tmpdir(), "atomic-admission-undelivered-"));
+		const client = makeClient(join(temp, "agent"));
 		try {
 			await client.start();
 			await client.waitForInteractiveEngineBound();
@@ -120,9 +123,10 @@ serialTest(
 			assert.equal(isEngineSendFailure(error), true, "the exact draft must still be restorable");
 		} finally {
 			await client.stop();
+			rmSync(temp, { recursive: true, force: true });
 		}
 	},
-	60_000,
+	REAL_RPC_ADMISSION_TIMEOUT_MS,
 );
 
 serialTest(
@@ -132,9 +136,9 @@ serialTest(
 		// pipe when `exit` fires — the ordering a real dying child cannot be made to
 		// reproduce on demand.
 		const client = new RpcClient({
-			cliPath: join(moduleDir(import.meta.url), "fixtures", "admission-race-engine.ts"),
+			cliPath: join(moduleDir(import.meta.url), "fixtures", "admission-race-engine.mjs"),
 			cwd: join(moduleDir(import.meta.url), "../.."),
-			runtimeExecutable: bunExecutable(),
+			runtimeExecutable: process.execPath,
 			interactiveEngine: { onDiagnostic: () => {} },
 		});
 		try {
@@ -150,7 +154,7 @@ serialTest(
 			await client.stop();
 		}
 	},
-	60_000,
+	REAL_RPC_ADMISSION_TIMEOUT_MS,
 );
 
 /**
@@ -211,7 +215,7 @@ serialTest(
 			rmSync(temp, { recursive: true, force: true });
 		}
 	},
-	60_000,
+	REAL_RPC_ADMISSION_TIMEOUT_MS,
 );
 
 /**
@@ -225,11 +229,15 @@ serialTest(
 		// A fixture that admits and then stays silent: only the host can end this
 		// request, so the stop path is the one under test rather than a race with a
 		// real child's shutdown response.
+		const marker = join(mkdtempSync(join(tmpdir(), "atomic-admission-hold-")), "accepted");
 		const client = new RpcClient({
-			cliPath: join(moduleDir(import.meta.url), "fixtures", "admission-race-engine.ts"),
+			cliPath: join(moduleDir(import.meta.url), "fixtures", "admission-hold-engine.mjs"),
 			cwd: join(moduleDir(import.meta.url), "../.."),
-			runtimeExecutable: bunExecutable(),
-			env: { ATOMIC_ADMISSION_HOLD: "1" },
+			runtimeExecutable: process.execPath,
+			env: {
+				ATOMIC_ADMISSION_HOLD: "1",
+				ATOMIC_ADMISSION_MARKER: marker,
+			},
 			interactiveEngine: { onDiagnostic: () => {} },
 		});
 		try {
@@ -238,7 +246,8 @@ serialTest(
 				() => undefined,
 				(error: unknown) => error,
 			);
-			await sleep(100);
+			assert.ok(marker);
+			await waitFor(() => existsSync(marker), 15_000, "the explicit-stop admission marker");
 
 			await client.stop();
 			const failure = await pending;
@@ -249,7 +258,8 @@ serialTest(
 			assert.equal(isEngineSendFailure(failure), false, "work the child had taken must not be restorable");
 		} finally {
 			await client.stop();
+			rmSync(marker, { force: true });
 		}
 	},
-	60_000,
+	REAL_RPC_ADMISSION_TIMEOUT_MS,
 );

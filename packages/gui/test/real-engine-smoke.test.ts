@@ -920,8 +920,8 @@ test(
 					);
 					assert.deepEqual(initialFrame.lines, ["GUI custom frame", "value: "]);
 
-					client.sendEngineCommand({ type: "engine_custom_input", componentId, data: "o" });
-					client.sendEngineCommand({ type: "engine_custom_input", componentId, data: "k" });
+					client.sendEngineCommand({ type: "engine_custom_input", componentId, requestId: 1, data: "o" });
+					client.sendEngineCommand({ type: "engine_custom_input", componentId, requestId: 2, data: "k" });
 					client.sendEngineCommand({
 						type: "engine_custom_render",
 						componentId,
@@ -936,7 +936,7 @@ test(
 					);
 					assert.deepEqual(updatedFrame.lines, ["GUI custom frame", "value: ok"]);
 
-					client.sendEngineCommand({ type: "engine_custom_input", componentId, data: "\r" });
+					client.sendEngineCommand({ type: "engine_custom_input", componentId, requestId: 3, data: "\r" });
 					const result = await prompt;
 					assert.equal(result.ok, true, result.ok ? undefined : result.error);
 					const status = await waitForEvent(
